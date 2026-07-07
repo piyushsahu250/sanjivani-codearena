@@ -5,8 +5,8 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// --- ADMIN/FACULTY: create a test ---
-router.post("/", authenticate, requireRole("ADMIN", "FACULTY"), async (req, res) => {
+// --- ADMIN/STAFF: create a test ---
+router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const { title, description, durationMin, startTime, endTime, questionIds } = req.body;
     const test = await prisma.test.create({
@@ -30,8 +30,8 @@ router.post("/", authenticate, requireRole("ADMIN", "FACULTY"), async (req, res)
   }
 });
 
-// --- ADMIN/FACULTY: publish/unpublish ---
-router.patch("/:id/publish", authenticate, requireRole("ADMIN", "FACULTY"), async (req, res) => {
+// --- ADMIN/STAFF: publish/unpublish ---
+router.patch("/:id/publish", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   const test = await prisma.test.update({
     where: { id: req.params.id },
     data: { isPublished: !!req.body.isPublished },
@@ -41,7 +41,7 @@ router.patch("/:id/publish", authenticate, requireRole("ADMIN", "FACULTY"), asyn
 
 // --- Everyone authenticated: list tests (students see only published, active/upcoming) ---
 router.get("/", authenticate, async (req, res) => {
-  const isStaff = req.user.role === "ADMIN" || req.user.role === "FACULTY";
+  const isStaff = req.user.role === "ADMIN" || req.user.role === "STAFF";
   const tests = await prisma.test.findMany({
     where: isStaff ? {} : { isPublished: true },
     orderBy: { startTime: "asc" },
@@ -52,7 +52,7 @@ router.get("/", authenticate, async (req, res) => {
 
 // --- Get single test detail (questions without hidden test cases for students) ---
 router.get("/:id", authenticate, async (req, res) => {
-  const isStaff = req.user.role === "ADMIN" || req.user.role === "FACULTY";
+  const isStaff = req.user.role === "ADMIN" || req.user.role === "STAFF";
   const test = await prisma.test.findUnique({
     where: { id: req.params.id },
     include: {
@@ -93,8 +93,8 @@ router.post("/:id/start", authenticate, requireRole("STUDENT"), async (req, res)
   }
 });
 
-// --- ADMIN/FACULTY: leaderboard / results for a test ---
-router.get("/:id/results", authenticate, requireRole("ADMIN", "FACULTY"), async (req, res) => {
+// --- ADMIN/STAFF: leaderboard / results for a test ---
+router.get("/:id/results", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   const attempts = await prisma.testAttempt.findMany({
     where: { testId: req.params.id },
     include: { student: { select: { name: true, email: true, rollNumber: true } } },

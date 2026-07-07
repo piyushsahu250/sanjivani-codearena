@@ -1,26 +1,35 @@
 # Sanjivani CodeArena — University Coding Test Platform
 
-A full-stack platform for running coding assessments: faculty build a question
+A full-stack platform for running coding assessments: staff build a question
 bank, assemble timed tests, students attend them in a live code editor
-(JavaScript & Python), and submissions are auto-judged against test cases with
-a live leaderboard.
+(JavaScript, Python, C, C++, Java), and submissions are auto-judged against
+test cases with a live leaderboard. Three roles — Student, Staff, Admin — each
+have their own routes and permissions.
 
 ## Stack
-- **Backend:** Node.js, Express, Prisma ORM, SQLite (swap to PostgreSQL for production), JWT auth
+- **Backend:** Node.js, Express, Prisma ORM, PostgreSQL, JWT auth
 - **Frontend:** React (Vite), React Router, Monaco Editor (VS Code's editor, in-browser)
-- **Judge engine:** sandboxed subprocess execution for JS & Python (see security note below)
+- **Judge engine:** sandboxed subprocess execution for JS, Python, C, C++, and Java (see security note below)
+
+## Roles & routes
+- **Student** (`/dashboard`, `/test/:id`) — self-registers via `/register`, attends published tests, writes/runs/submits code.
+- **Staff** (`/staff`, `/staff/questions/new`, `/staff/tests/new`, `/staff/tests/:id/results`) — builds the question bank, assembles/publishes tests, views leaderboards.
+- **Admin** (`/admin`) — everything Staff can do (also reachable at `/staff`), plus creates/deletes Staff, Admin, and Student accounts.
+
+Staff and Admin accounts can't self-register — an existing Admin creates them from `/admin` (backed by `POST /api/users`).
 
 ## Project structure
 ```
 sanjivani-platform/
   backend/          Express API
-    prisma/schema.prisma   Database models
-    prisma/seed.js         Creates a default admin account
-    src/routes/            auth, tests, questions, submissions
-    src/utils/judge.js     Code execution & grading engine
+    Dockerfile              Node + gcc/g++/javac/python3 for the judge
+    prisma/schema.prisma    Database models (Role: STUDENT / STAFF / ADMIN)
+    prisma/seed.js          Creates a default admin account
+    src/routes/             auth, users, tests, questions, submissions
+    src/utils/judge.js      Code execution & grading engine (5 languages)
   frontend/         React app (Vite)
-    src/pages/              Login, Register, Student/Admin dashboards, Test-taking, Results
-    src/components/         Navbar, ChalkUnderline (brand mark)
+    src/pages/               Login, Register, Student/Staff/Admin dashboards, Test-taking, Results
+    src/components/          Navbar, ChalkUnderline (brand mark)
 ```
 
 ## Setup
@@ -137,16 +146,17 @@ The rest of the app (routes, DB schema, scoring logic) doesn't need to change
 — only what happens inside `judgeSubmission`.
 
 ## What's already handled
-- Role-based auth (Student / Faculty / Admin) with JWT
+- Role-based auth (Student / Staff / Admin) with JWT, separate routes per role
+- Admin can create/delete Staff, Admin, and Student accounts
 - Question bank with difficulty, points, sample + hidden test cases
 - Test scheduling (start/end window), publish/unpublish
 - Live timer, auto-finalize when time runs out
-- Run-against-sample (ungraded) vs Submit (graded, saved) flows
+- Run-against-sample (ungraded) vs Submit (graded, saved) flows, in JS/Python/C/C++/Java
 - Per-question best-score aggregation into a total test score
 - Leaderboard per test
 
 ## Natural next steps
-- Faculty analytics (per-question difficulty stats, time-to-solve)
+- Staff analytics (per-question difficulty stats, time-to-solve)
 - Plagiarism/similarity detection across submissions
 - More languages (C++, Java) via the Judge0 swap above
 - Email notifications when a test is published

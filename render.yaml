@@ -1,20 +1,13 @@
 services:
   - type: web
     name: sanjivani-codearena-backend
-    runtime: node
+    runtime: docker
     rootDir: backend
-    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy
-    startCommand: npm start
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: JWT_SECRET
         generateValue: true
       - key: DATABASE_URL
-        fromDatabase:
-          name: sanjivani-codearena-db
-          property: connectionString
+        sync: false # set this manually to your Postgres connection string (e.g. from Neon)
       - key: PORT
         value: 4000
-
-databases:
-  - name: sanjivani-codearena-db
-    plan: free

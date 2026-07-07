@@ -6,7 +6,7 @@ const { PrismaClient } = require("@prisma/client");
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Register — role defaults to STUDENT; ADMIN/FACULTY accounts should be created by an existing admin (see /users/create-staff)
+// Register — role defaults to STUDENT; STAFF/ADMIN accounts are created by an existing admin (see POST /api/users)
 router.post("/register", async (req, res) => {
   try {
     const { name, email, password, rollNumber, department } = req.body;

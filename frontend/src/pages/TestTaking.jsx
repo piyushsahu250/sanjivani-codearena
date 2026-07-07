@@ -6,6 +6,9 @@ import api from "../api";
 const LANGUAGES = [
   { id: "javascript", label: "JavaScript", monaco: "javascript" },
   { id: "python", label: "Python", monaco: "python" },
+  { id: "c", label: "C", monaco: "c" },
+  { id: "cpp", label: "C++", monaco: "cpp" },
+  { id: "java", label: "Java", monaco: "java" },
 ];
 
 export default function TestTaking() {
@@ -239,6 +242,16 @@ function ResultBlock({ title, result, score }) {
 }
 
 function defaultStarter(language) {
-  if (language === "python") return "# Read input via input(), print your answer\n";
-  return "// Read input via require('fs').readFileSync(0, 'utf8'), console.log your answer\n";
+  switch (language) {
+    case "python":
+      return "# Read input via input(), print your answer\n";
+    case "c":
+      return '#include <stdio.h>\n\nint main() {\n    // read input with scanf, print your answer with printf\n    return 0;\n}\n';
+    case "cpp":
+      return '#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // read input with cin, print your answer with cout\n    return 0;\n}\n';
+    case "java":
+      return 'import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // read input via sc, print your answer with System.out\n    }\n}\n';
+    default:
+      return "// Read input via require('fs').readFileSync(0, 'utf8'), console.log your answer\n";
+  }
 }

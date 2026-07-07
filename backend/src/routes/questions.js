@@ -6,7 +6,7 @@ const router = express.Router();
 const prisma = new PrismaClient();
 
 // Create a question with test cases
-router.post("/", authenticate, requireRole("ADMIN", "FACULTY"), async (req, res) => {
+router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const { title, description, difficulty, points, timeLimitMs, starterCode, testCases } = req.body;
     const question = await prisma.question.create({
@@ -35,7 +35,7 @@ router.post("/", authenticate, requireRole("ADMIN", "FACULTY"), async (req, res)
 });
 
 // List all questions (question bank) — staff only
-router.get("/", authenticate, requireRole("ADMIN", "FACULTY"), async (req, res) => {
+router.get("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   const questions = await prisma.question.findMany({
     include: { _count: { select: { testCases: true } } },
     orderBy: { createdAt: "desc" },
@@ -43,7 +43,7 @@ router.get("/", authenticate, requireRole("ADMIN", "FACULTY"), async (req, res) 
   res.json(questions);
 });
 
-router.get("/:id", authenticate, requireRole("ADMIN", "FACULTY"), async (req, res) => {
+router.get("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   const question = await prisma.question.findUnique({
     where: { id: req.params.id },
     include: { testCases: true },
@@ -51,7 +51,7 @@ router.get("/:id", authenticate, requireRole("ADMIN", "FACULTY"), async (req, re
   res.json(question);
 });
 
-router.delete("/:id", authenticate, requireRole("ADMIN", "FACULTY"), async (req, res) => {
+router.delete("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   await prisma.question.delete({ where: { id: req.params.id } });
   res.json({ success: true });
 });

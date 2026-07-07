@@ -34,7 +34,7 @@ export default function CreateQuestion() {
     setSaving(true);
     try {
       await api.post("/questions", { ...form, points: Number(form.points), timeLimitMs: Number(form.timeLimitMs), testCases });
-      navigate("/admin");
+      navigate("/staff");
     } catch (err) {
       alert(err.response?.data?.error || "Failed to save question");
     } finally {

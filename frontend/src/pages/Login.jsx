@@ -19,7 +19,8 @@ export default function Login() {
     try {
       const { data } = await api.post("/auth/login", { email, password });
       login(data.token, data.user);
-      navigate(data.user.role === "STUDENT" ? "/dashboard" : "/admin");
+      const homeByRole = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
+      navigate(homeByRole[data.user.role] || "/login");
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");
     } finally {
@@ -53,7 +54,7 @@ export default function Login() {
           hidden test cases.
         </p>
         <div style={{ marginTop: 48, display: "flex", gap: 28 }}>
-          <Stat label="Languages" value="JS · Python" />
+          <Stat label="Languages" value="JS · Py · C · C++ · Java" />
           <Stat label="Grading" value="Auto-judged" />
           <Stat label="Access" value="24/7" />
         </div>

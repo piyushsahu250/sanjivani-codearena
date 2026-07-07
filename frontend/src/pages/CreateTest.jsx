@@ -28,7 +28,7 @@ export default function CreateTest() {
     setSaving(true);
     try {
       await api.post("/tests", { ...form, durationMin: Number(form.durationMin), questionIds: selected });
-      navigate("/admin");
+      navigate("/staff");
     } catch (err) {
       alert(err.response?.data?.error || "Failed to create test");
     } finally {

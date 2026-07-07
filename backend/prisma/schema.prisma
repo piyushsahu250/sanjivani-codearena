@@ -10,7 +10,7 @@ datasource db {
 
 enum Role {
   STUDENT
-  FACULTY
+  STAFF
   ADMIN
 }
 
@@ -114,6 +114,6 @@ model Submission {
   score        Int         @default(0)
   passedCases  Int         @default(0)
   totalCases   Int         @default(0)
-  verdict      String      @default("PENDING") // ACCEPTED, WRONG_ANSWER, TLE, RUNTIME_ERROR, PENDING
+  verdict      String      @default("PENDING") // ACCEPTED, PARTIAL, WRONG_ANSWER, TLE, RUNTIME_ERROR, COMPILE_ERROR, PENDING
   createdAt    DateTime    @default(now())
 }
