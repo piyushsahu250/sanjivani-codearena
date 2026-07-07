@@ -16,4 +16,4 @@ COPY . .
 RUN npx prisma generate
 
 EXPOSE 4000
-CMD ["sh", "-c", "npx prisma db push --skip-generate && (npm run seed || true) && npm start"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && (npm run seed || true) && npm start"]
