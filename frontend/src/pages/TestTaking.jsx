@@ -17,6 +17,11 @@ export default function TestTaking() {
   const { id: testId } = useParams();
   const navigate = useNavigate();
 
+  const [testMeta, setTestMeta] = useState(null);
+  const [metaError, setMetaError] = useState(null);
+  const [started, setStarted] = useState(false);
+  const [starting, setStarting] = useState(false);
+
   const [test, setTest] = useState(null);
   const [attemptId, setAttemptId] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -35,22 +40,38 @@ export default function TestTaking() {
   const attemptIdRef = useRef(null);
   const finalizedRef = useRef(false);
 
+  // Load basic test info up front so we can show a "Begin Test" screen
+  // (fullscreen must be requested from a direct click, not on page load).
   useEffect(() => {
-    async function load() {
-      try {
-        const startRes = await api.post(`/tests/${testId}/start`);
-        setAttemptId(startRes.data.id);
-        attemptIdRef.current = startRes.data.id;
-        const testRes = await api.get(`/tests/${testId}`);
-        setTest(testRes.data);
-        const end = new Date(testRes.data.endTime).getTime();
-        setSecondsLeft(Math.max(0, Math.floor((end - Date.now()) / 1000)));
-      } catch (err) {
-        setLoadError(err.response?.data?.error || "Could not load this test");
-      }
-    }
-    load();
+    api
+      .get(`/tests/${testId}`)
+      .then((res) => setTestMeta(res.data))
+      .catch((err) => setMetaError(err.response?.data?.error || "Could not load this test"));
   }, [testId]);
+
+  async function beginTest() {
+    setStarting(true);
+    // Request fullscreen synchronously in response to the click, before any awaits.
+    try {
+      await document.documentElement.requestFullscreen?.();
+    } catch {
+      // Fullscreen can be denied/unsupported — proceed with the test regardless.
+    }
+    try {
+      const startRes = await api.post(`/tests/${testId}/start`);
+      setAttemptId(startRes.data.id);
+      attemptIdRef.current = startRes.data.id;
+      const testRes = await api.get(`/tests/${testId}`);
+      setTest(testRes.data);
+      const end = new Date(testRes.data.endTime).getTime();
+      setSecondsLeft(Math.max(0, Math.floor((end - Date.now()) / 1000)));
+      setStarted(true);
+    } catch (err) {
+      setLoadError(err.response?.data?.error || "Could not start this test");
+    } finally {
+      setStarting(false);
+    }
+  }
 
   const questions = test?.questions || [];
   const current = questions[activeIdx]?.question;
@@ -102,29 +123,45 @@ export default function TestTaking() {
     setRunResult(null);
   }, [current]);
 
+  function reportViolation(reason) {
+    if (!attemptIdRef.current || finalizedRef.current) return;
+    api
+      .post(`/tests/attempts/${attemptIdRef.current}/violation`)
+      .then(({ data }) => {
+        if (data.autoSubmitted) {
+          finalizedRef.current = true;
+          setAutoSubmitted(true);
+          alert("Your test has been auto-submitted because you left the test window too many times.");
+        } else {
+          const message = `Warning ${data.tabSwitchCount}/${MAX_TAB_VIOLATIONS}: ${reason}. The test will auto-submit if this happens ${MAX_TAB_VIOLATIONS} times.`;
+          setTabWarning(message);
+          alert(message);
+        }
+      })
+      .catch(() => {});
+  }
+
   // Tab-switch / focus-loss detection
   useEffect(() => {
+    if (!started) return;
     function handleVisibilityChange() {
-      if (!document.hidden) return;
-      if (!attemptIdRef.current || finalizedRef.current) return;
-      api
-        .post(`/tests/attempts/${attemptIdRef.current}/violation`)
-        .then(({ data }) => {
-          if (data.autoSubmitted) {
-            finalizedRef.current = true;
-            setAutoSubmitted(true);
-            alert("Your test has been auto-submitted because you switched tabs too many times.");
-          } else {
-            const message = `Warning ${data.tabSwitchCount}/${MAX_TAB_VIOLATIONS}: switching tabs during a test is not allowed. The test will auto-submit if this happens ${MAX_TAB_VIOLATIONS} times.`;
-            setTabWarning(message);
-            alert(message);
-          }
-        })
-        .catch(() => {});
+      if (document.hidden) reportViolation("switching tabs during a test is not allowed");
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, []);
+  }, [started]);
+
+  // Fullscreen-exit detection
+  useEffect(() => {
+    if (!started) return;
+    function handleFullscreenChange() {
+      if (!document.fullscreenElement && !finalizedRef.current) {
+        reportViolation("exiting fullscreen during a test is not allowed");
+      }
+    }
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, [started]);
 
   const answer = current ? answers[current.id] : null;
 
@@ -189,8 +226,31 @@ export default function TestTaking() {
     if (!attemptId || finalizedRef.current) return;
     if (!auto && !confirm("Submit and end the test now? You won't be able to make further changes.")) return;
     finalizedRef.current = true;
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     await api.post(`/submissions/finalize/${attemptId}`);
     navigate("/dashboard");
+  }
+
+  async function resumeFullscreen() {
+    try {
+      await document.documentElement.requestFullscreen?.();
+      setTabWarning(null);
+    } catch {
+      // ignore
+    }
+  }
+
+  if (metaError) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
+        <div className="card" style={{ padding: 32, maxWidth: 440, textAlign: "center" }}>
+          <p style={{ fontSize: 16 }}>{metaError}</p>
+          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate("/dashboard")}>
+            Back to dashboard
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (loadError) {
@@ -211,10 +271,32 @@ export default function TestTaking() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
         <div className="card" style={{ padding: 32, maxWidth: 440, textAlign: "center" }}>
           <p style={{ fontSize: 16, color: "var(--rust)" }}>
-            Your test was automatically submitted after repeated tab switching.
+            Your test was automatically submitted after repeatedly leaving the test window.
           </p>
           <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate("/dashboard")}>
             Back to dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!started) {
+    if (!testMeta) return <div style={{ padding: 48 }} className="mono">Loading test…</div>;
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
+        <div className="card" style={{ padding: 32, maxWidth: 480, textAlign: "center" }}>
+          <h2>{testMeta.title}</h2>
+          {testMeta.description && <p style={{ color: "var(--ink-dim)", marginTop: 8 }}>{testMeta.description}</p>}
+          <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 16 }}>
+            {testMeta.questions?.length || 0} questions · {testMeta.durationMin} minutes
+          </p>
+          <p style={{ fontSize: 13, marginTop: 20 }}>
+            This test runs in fullscreen. Switching tabs or exiting fullscreen is tracked and will auto-submit your
+            test after {MAX_TAB_VIOLATIONS} violations.
+          </p>
+          <button className="btn btn-primary" style={{ marginTop: 20, padding: "12px 24px" }} onClick={beginTest} disabled={starting}>
+            {starting ? "Starting…" : "Begin Test (Fullscreen)"}
           </button>
         </div>
       </div>
@@ -242,8 +324,13 @@ export default function TestTaking() {
       </div>
 
       {tabWarning && (
-        <div style={{ background: "#FCEFD9", color: "var(--rust)", padding: "8px 24px", fontSize: 13, fontWeight: 600 }} className="mono">
-          {tabWarning}
+        <div style={{ background: "#FCEFD9", color: "var(--rust)", padding: "8px 24px", fontSize: 13, fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }} className="mono">
+          <span>{tabWarning}</span>
+          {!document.fullscreenElement && (
+            <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={resumeFullscreen}>
+              Resume fullscreen
+            </button>
+          )}
         </div>
       )}
 
