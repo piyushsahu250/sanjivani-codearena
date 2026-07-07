@@ -1,0 +1,119 @@
+// Sanjivani University Coding Test Platform — Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  FACULTY
+  ADMIN
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(STUDENT)
+  rollNumber   String?  // students only
+  department   String?
+  createdAt    DateTime @default(now())
+
+  createdTests Test[]         @relation("TestCreator")
+  attempts     TestAttempt[]
+  submissions  Submission[]
+}
+
+model Test {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  durationMin Int      @default(60)
+  startTime   DateTime
+  endTime     DateTime
+  isPublished Boolean  @default(false)
+  createdBy   User     @relation("TestCreator", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime @default(now())
+
+  questions TestQuestion[]
+  attempts  TestAttempt[]
+}
+
+model Question {
+  id          String     @id @default(uuid())
+  title       String
+  description String
+  difficulty  Difficulty @default(EASY)
+  points      Int        @default(10)
+  timeLimitMs Int        @default(2000)
+  starterCode String?
+  createdAt   DateTime   @default(now())
+
+  testCases   TestCase[]
+  testLinks   TestQuestion[]
+}
+
+model TestCase {
+  id         String   @id @default(uuid())
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId String
+  input      String
+  expected   String
+  isHidden   Boolean  @default(true) // hidden test cases aren't shown to students
+}
+
+// Join table: which questions belong to which test, in what order
+model TestQuestion {
+  id         String   @id @default(uuid())
+  test       Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  testId     String
+  question   Question @relation(fields: [questionId], references: [id])
+  questionId String
+  order      Int      @default(0)
+
+  @@unique([testId, questionId])
+}
+
+model TestAttempt {
+  id          String    @id @default(uuid())
+  test        Test      @relation(fields: [testId], references: [id])
+  testId      String
+  student     User      @relation(fields: [studentId], references: [id])
+  studentId   String
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  totalScore  Int       @default(0)
+  status      String    @default("IN_PROGRESS") // IN_PROGRESS, SUBMITTED, AUTO_SUBMITTED
+
+  submissions Submission[]
+
+  @@unique([testId, studentId])
+}
+
+model Submission {
+  id           String      @id @default(uuid())
+  attempt      TestAttempt @relation(fields: [attemptId], references: [id])
+  attemptId    String
+  questionId   String
+  student      User        @relation(fields: [studentId], references: [id])
+  studentId    String
+  language     String
+  code         String
+  score        Int         @default(0)
+  passedCases  Int         @default(0)
+  totalCases   Int         @default(0)
+  verdict      String      @default("PENDING") // ACCEPTED, WRONG_ANSWER, TLE, RUNTIME_ERROR, PENDING
+  createdAt    DateTime    @default(now())
+}
