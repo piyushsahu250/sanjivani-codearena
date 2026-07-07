@@ -113,8 +113,11 @@ export default function TestTaking() {
           if (data.autoSubmitted) {
             finalizedRef.current = true;
             setAutoSubmitted(true);
+            alert("Your test has been auto-submitted because you switched tabs too many times.");
           } else {
-            setTabWarning(`Warning ${data.tabSwitchCount}/${MAX_TAB_VIOLATIONS}: switching tabs during a test is not allowed. The test will auto-submit if this happens ${MAX_TAB_VIOLATIONS} times.`);
+            const message = `Warning ${data.tabSwitchCount}/${MAX_TAB_VIOLATIONS}: switching tabs during a test is not allowed. The test will auto-submit if this happens ${MAX_TAB_VIOLATIONS} times.`;
+            setTabWarning(message);
+            alert(message);
           }
         })
         .catch(() => {});
