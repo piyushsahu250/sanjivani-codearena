@@ -82,6 +82,37 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
   }
 });
 
+// ADMIN: look up a student by roll number and see which tests they've completed
+router.get("/by-roll/:rollNumber", authenticate, requireRole("ADMIN"), async (req, res) => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: { rollNumber: req.params.rollNumber, role: "STUDENT" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        rollNumber: true,
+        attempts: {
+          select: {
+            status: true,
+            totalScore: true,
+            startedAt: true,
+            submittedAt: true,
+            tabSwitchCount: true,
+            test: { select: { id: true, title: true, isPublished: true } },
+          },
+          orderBy: { startedAt: "desc" },
+        },
+      },
+    });
+    if (!user) return res.status(404).json({ error: "No student found with that roll number" });
+    res.json(user);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Lookup failed" });
+  }
+});
+
 // ADMIN: delete a user
 router.delete("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
   if (req.params.id === req.user.id) {
