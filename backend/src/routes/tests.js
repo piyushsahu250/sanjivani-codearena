@@ -6,9 +6,10 @@ const router = express.Router();
 const prisma = new PrismaClient();
 
 // --- ADMIN/STAFF: create a test ---
+// questionIds: string[]  |  questionTimeLimits: { [questionId]: seconds } (optional, defaults to 900s/15min each)
 router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { title, description, durationMin, startTime, endTime, questionIds } = req.body;
+    const { title, description, durationMin, startTime, endTime, questionIds, questionTimeLimits } = req.body;
     const test = await prisma.test.create({
       data: {
         title,
@@ -18,7 +19,11 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
         endTime: new Date(endTime),
         createdById: req.user.id,
         questions: {
-          create: (questionIds || []).map((qId, idx) => ({ questionId: qId, order: idx })),
+          create: (questionIds || []).map((qId, idx) => ({
+            questionId: qId,
+            order: idx,
+            timeLimitSec: Number(questionTimeLimits?.[qId]) || 900,
+          })),
         },
       },
       include: { questions: true },
@@ -27,6 +32,17 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to create test" });
+  }
+});
+
+// --- ADMIN: permanently delete a test (and its attempts/submissions) ---
+router.delete("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
+  try {
+    await prisma.test.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete test" });
   }
 });
 
@@ -70,26 +86,59 @@ router.get("/:id", authenticate, async (req, res) => {
   res.json(test);
 });
 
-// --- STUDENT: start/attend a test attempt ---
+// --- STUDENT: start/attend a test attempt (one attempt per student, ever) ---
 router.post("/:id/start", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
     const testId = req.params.id;
     const test = await prisma.test.findUnique({ where: { id: testId } });
     if (!test || !test.isPublished) return res.status(404).json({ error: "Test not available" });
 
+    const existing = await prisma.testAttempt.findUnique({
+      where: { testId_studentId: { testId, studentId: req.user.id } },
+    });
+    if (existing && existing.status !== "IN_PROGRESS") {
+      return res.status(403).json({ error: "Thank you. You have already completed this assessment." });
+    }
+
     const now = new Date();
     if (now < test.startTime) return res.status(403).json({ error: "Test has not started yet" });
     if (now > test.endTime) return res.status(403).json({ error: "Test window has closed" });
 
-    const attempt = await prisma.testAttempt.upsert({
-      where: { testId_studentId: { testId, studentId: req.user.id } },
-      update: {},
-      create: { testId, studentId: req.user.id },
-    });
+    const attempt = existing || (await prisma.testAttempt.create({ data: { testId, studentId: req.user.id } }));
     res.json(attempt);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not start test" });
+  }
+});
+
+// --- STUDENT: report a tab-switch / focus-loss violation during an attempt.
+// After MAX_VIOLATIONS, the attempt is auto-submitted server-side. ---
+const MAX_TAB_VIOLATIONS = 3;
+router.post("/attempts/:attemptId/violation", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const attempt = await prisma.testAttempt.findUnique({ where: { id: req.params.attemptId } });
+    if (!attempt || attempt.studentId !== req.user.id) {
+      return res.status(403).json({ error: "Invalid attempt" });
+    }
+    if (attempt.status !== "IN_PROGRESS") {
+      return res.json({ tabSwitchCount: attempt.tabSwitchCount, autoSubmitted: true });
+    }
+
+    const tabSwitchCount = attempt.tabSwitchCount + 1;
+    const autoSubmitted = tabSwitchCount >= MAX_TAB_VIOLATIONS;
+
+    const updated = await prisma.testAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        tabSwitchCount,
+        ...(autoSubmitted ? { status: "AUTO_SUBMITTED", submittedAt: new Date() } : {}),
+      },
+    });
+    res.json({ tabSwitchCount: updated.tabSwitchCount, autoSubmitted });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to record violation" });
   }
 });
 

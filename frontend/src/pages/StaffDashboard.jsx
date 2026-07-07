@@ -1,20 +1,31 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api";
+import { useAuth } from "../context/AuthContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 
 export default function StaffDashboard() {
+  const { user } = useAuth();
   const [tests, setTests] = useState([]);
 
   useEffect(() => {
-    api.get("/tests").then((res) => setTests(res.data));
+    refresh();
   }, []);
+
+  function refresh() {
+    api.get("/tests").then((res) => setTests(res.data));
+  }
 
   async function togglePublish(test) {
     await api.patch(`/tests/${test.id}/publish`, { isPublished: !test.isPublished });
-    const res = await api.get("/tests");
-    setTests(res.data);
+    refresh();
+  }
+
+  async function deleteTest(test) {
+    if (!confirm(`Permanently delete "${test.title}"? This removes all attempts and submissions for it and cannot be undone.`)) return;
+    await api.delete(`/tests/${test.id}`);
+    refresh();
   }
 
   return (
@@ -43,10 +54,16 @@ export default function StaffDashboard() {
                 </p>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
+                <Link to={`/staff/tests/${test.id}/preview`} className="btn btn-ghost">Preview</Link>
                 <Link to={`/staff/tests/${test.id}/results`} className="btn btn-ghost">Results</Link>
                 <button className="btn btn-dark" onClick={() => togglePublish(test)}>
                   {test.isPublished ? "Unpublish" : "Publish"}
                 </button>
+                {user.role === "ADMIN" && (
+                  <button className="btn btn-ghost" style={{ color: "var(--rust)", borderColor: "var(--rust)" }} onClick={() => deleteTest(test)}>
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           ))}

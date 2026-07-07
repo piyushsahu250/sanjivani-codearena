@@ -11,35 +11,52 @@ const LANGUAGES = [
   { id: "java", label: "Java", monaco: "java" },
 ];
 
+const MAX_TAB_VIOLATIONS = 3;
+
 export default function TestTaking() {
   const { id: testId } = useParams();
   const navigate = useNavigate();
 
   const [test, setTest] = useState(null);
   const [attemptId, setAttemptId] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [language, setLanguage] = useState("javascript");
-  const [code, setCode] = useState("");
+  const [answers, setAnswers] = useState({}); // { [questionId]: { language, code } }
   const [runResult, setRunResult] = useState(null);
   const [submitResult, setSubmitResult] = useState(null);
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submittedQuestions, setSubmittedQuestions] = useState({});
   const [secondsLeft, setSecondsLeft] = useState(null);
+  const [questionSecondsLeft, setQuestionSecondsLeft] = useState(null);
+  const [tabWarning, setTabWarning] = useState(null);
+  const [autoSubmitted, setAutoSubmitted] = useState(false);
   const timerRef = useRef(null);
+  const attemptIdRef = useRef(null);
+  const finalizedRef = useRef(false);
 
   useEffect(() => {
     async function load() {
-      const startRes = await api.post(`/tests/${testId}/start`);
-      setAttemptId(startRes.data.id);
-      const testRes = await api.get(`/tests/${testId}`);
-      setTest(testRes.data);
-      const end = new Date(testRes.data.endTime).getTime();
-      setSecondsLeft(Math.max(0, Math.floor((end - Date.now()) / 1000)));
+      try {
+        const startRes = await api.post(`/tests/${testId}/start`);
+        setAttemptId(startRes.data.id);
+        attemptIdRef.current = startRes.data.id;
+        const testRes = await api.get(`/tests/${testId}`);
+        setTest(testRes.data);
+        const end = new Date(testRes.data.endTime).getTime();
+        setSecondsLeft(Math.max(0, Math.floor((end - Date.now()) / 1000)));
+      } catch (err) {
+        setLoadError(err.response?.data?.error || "Could not load this test");
+      }
     }
     load();
   }, [testId]);
 
+  const questions = test?.questions || [];
+  const current = questions[activeIdx]?.question;
+  const currentTq = questions[activeIdx];
+
+  // Overall test timer
   useEffect(() => {
     if (secondsLeft === null) return;
     timerRef.current = setInterval(() => {
@@ -56,13 +73,57 @@ export default function TestTaking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secondsLeft !== null]);
 
-  const questions = test?.questions || [];
-  const current = questions[activeIdx]?.question;
-
+  // Per-question timer: resets whenever the active question changes, auto-advances on expiry
   useEffect(() => {
-    if (current) setCode(current.starterCode || defaultStarter(language));
+    if (!currentTq) return;
+    setQuestionSecondsLeft(currentTq.timeLimitSec ?? 900);
+    const interval = setInterval(() => {
+      setQuestionSecondsLeft((s) => {
+        if (s === null) return s;
+        if (s <= 1) {
+          clearInterval(interval);
+          setActiveIdx((idx) => (idx < questions.length - 1 ? idx + 1 : idx));
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIdx, currentTq?.id]);
+
+  // Initialize/restore code for the active question, and reset the run result panel
+  useEffect(() => {
+    if (!current) return;
+    setAnswers((prev) => {
+      if (prev[current.id]) return prev;
+      return { ...prev, [current.id]: { language: "javascript", code: current.starterCode || defaultStarter("javascript") } };
+    });
     setRunResult(null);
-  }, [activeIdx, current, language]);
+  }, [current]);
+
+  // Tab-switch / focus-loss detection
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (!document.hidden) return;
+      if (!attemptIdRef.current || finalizedRef.current) return;
+      api
+        .post(`/tests/attempts/${attemptIdRef.current}/violation`)
+        .then(({ data }) => {
+          if (data.autoSubmitted) {
+            finalizedRef.current = true;
+            setAutoSubmitted(true);
+          } else {
+            setTabWarning(`Warning ${data.tabSwitchCount}/${MAX_TAB_VIOLATIONS}: switching tabs during a test is not allowed. The test will auto-submit if this happens ${MAX_TAB_VIOLATIONS} times.`);
+          }
+        })
+        .catch(() => {});
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  const answer = current ? answers[current.id] : null;
 
   const timeLabel = useMemo(() => {
     if (secondsLeft === null) return "--:--:--";
@@ -72,11 +133,32 @@ export default function TestTaking() {
     return `${h}:${m}:${s}`;
   }, [secondsLeft]);
 
+  const questionTimeLabel = useMemo(() => {
+    if (questionSecondsLeft === null) return "--:--";
+    const m = String(Math.floor(questionSecondsLeft / 60)).padStart(2, "0");
+    const s = String(questionSecondsLeft % 60).padStart(2, "0");
+    return `${m}:${s}`;
+  }, [questionSecondsLeft]);
+
+  function setLanguage(language) {
+    if (!current) return;
+    setAnswers((prev) => ({
+      ...prev,
+      [current.id]: { language, code: prev[current.id]?.code || current.starterCode || defaultStarter(language) },
+    }));
+  }
+
+  function setCode(code) {
+    if (!current) return;
+    setAnswers((prev) => ({ ...prev, [current.id]: { ...prev[current.id], code } }));
+  }
+
   async function handleRun() {
+    if (!answer) return;
     setRunning(true);
     setRunResult(null);
     try {
-      const { data } = await api.post("/submissions/run", { questionId: current.id, language, code });
+      const { data } = await api.post("/submissions/run", { questionId: current.id, language: answer.language, code: answer.code });
       setRunResult(data);
     } catch (err) {
       setRunResult({ error: err.response?.data?.error || "Run failed" });
@@ -86,10 +168,11 @@ export default function TestTaking() {
   }
 
   async function handleSubmit() {
+    if (!answer) return;
     setSubmitting(true);
     setSubmitResult(null);
     try {
-      const { data } = await api.post("/submissions/submit", { attemptId, questionId: current.id, language, code });
+      const { data } = await api.post("/submissions/submit", { attemptId, questionId: current.id, language: answer.language, code: answer.code });
       setSubmitResult(data);
       setSubmittedQuestions((prev) => ({ ...prev, [current.id]: data.result.verdict }));
     } catch (err) {
@@ -100,10 +183,39 @@ export default function TestTaking() {
   }
 
   async function finalizeAndExit(auto = false) {
-    if (!attemptId) return;
+    if (!attemptId || finalizedRef.current) return;
     if (!auto && !confirm("Submit and end the test now? You won't be able to make further changes.")) return;
+    finalizedRef.current = true;
     await api.post(`/submissions/finalize/${attemptId}`);
     navigate("/dashboard");
+  }
+
+  if (loadError) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
+        <div className="card" style={{ padding: 32, maxWidth: 440, textAlign: "center" }}>
+          <p style={{ fontSize: 16 }}>{loadError}</p>
+          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate("/dashboard")}>
+            Back to dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (autoSubmitted) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
+        <div className="card" style={{ padding: 32, maxWidth: 440, textAlign: "center" }}>
+          <p style={{ fontSize: 16, color: "var(--rust)" }}>
+            Your test was automatically submitted after repeated tab switching.
+          </p>
+          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate("/dashboard")}>
+            Back to dashboard
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (!test) return <div style={{ padding: 48 }} className="mono">Loading test…</div>;
@@ -115,11 +227,22 @@ export default function TestTaking() {
         <div>
           <strong>{test.title}</strong>
         </div>
-        <div className="mono" style={{ fontSize: 20, color: secondsLeft < 300 ? "var(--rust)" : "var(--amber)" }}>
-          {timeLabel} <span style={{ opacity: 0.6 }}>▊</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <div className="mono" style={{ fontSize: 13, color: "var(--chalk-dim)" }}>
+            Question: {questionTimeLabel}
+          </div>
+          <div className="mono" style={{ fontSize: 20, color: secondsLeft < 300 ? "var(--rust)" : "var(--amber)" }}>
+            {timeLabel} <span style={{ opacity: 0.6 }}>▊</span>
+          </div>
         </div>
         <button className="btn btn-primary" onClick={() => finalizeAndExit(false)}>End test</button>
       </div>
+
+      {tabWarning && (
+        <div style={{ background: "#FCEFD9", color: "var(--rust)", padding: "8px 24px", fontSize: 13, fontWeight: 600 }} className="mono">
+          {tabWarning}
+        </div>
+      )}
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* Question navigator */}
@@ -181,7 +304,7 @@ export default function TestTaking() {
         {/* Editor + results */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
           <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <select value={language} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
+            <select value={answer?.language || "javascript"} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
               {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
             <div style={{ display: "flex", gap: 8 }}>
@@ -193,8 +316,8 @@ export default function TestTaking() {
           <div style={{ flex: 1, minHeight: 0 }}>
             <Editor
               height="100%"
-              language={LANGUAGES.find((l) => l.id === language)?.monaco}
-              value={code}
+              language={LANGUAGES.find((l) => l.id === answer?.language)?.monaco}
+              value={answer?.code || ""}
               onChange={(v) => setCode(v || "")}
               theme="vs-dark"
               options={{ fontSize: 14, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace" }}

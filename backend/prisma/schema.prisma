@@ -4,8 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 enum Role {
@@ -29,6 +30,9 @@ model User {
   rollNumber   String?  // students only
   department   String?
   createdAt    DateTime @default(now())
+
+  resetTokenHash   String?
+  resetTokenExpiry DateTime?
 
   createdTests Test[]         @relation("TestCreator")
   attempts     TestAttempt[]
@@ -82,13 +86,14 @@ model TestQuestion {
   question   Question @relation(fields: [questionId], references: [id])
   questionId String
   order      Int      @default(0)
+  timeLimitSec Int    @default(900) // how long the student gets on this question within the test
 
   @@unique([testId, questionId])
 }
 
 model TestAttempt {
   id          String    @id @default(uuid())
-  test        Test      @relation(fields: [testId], references: [id])
+  test        Test      @relation(fields: [testId], references: [id], onDelete: Cascade)
   testId      String
   student     User      @relation(fields: [studentId], references: [id])
   studentId   String
@@ -96,15 +101,17 @@ model TestAttempt {
   submittedAt DateTime?
   totalScore  Int       @default(0)
   status      String    @default("IN_PROGRESS") // IN_PROGRESS, SUBMITTED, AUTO_SUBMITTED
+  tabSwitchCount Int    @default(0)
 
   submissions Submission[]
 
   @@unique([testId, studentId])
+  @@index([testId])
 }
 
 model Submission {
   id           String      @id @default(uuid())
-  attempt      TestAttempt @relation(fields: [attemptId], references: [id])
+  attempt      TestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   attemptId    String
   questionId   String
   student      User        @relation(fields: [studentId], references: [id])
@@ -116,4 +123,7 @@ model Submission {
   totalCases   Int         @default(0)
   verdict      String      @default("PENDING") // ACCEPTED, PARTIAL, WRONG_ANSWER, TLE, RUNTIME_ERROR, COMPILE_ERROR, PENDING
   createdAt    DateTime    @default(now())
+
+  @@index([attemptId])
+  @@index([questionId])
 }

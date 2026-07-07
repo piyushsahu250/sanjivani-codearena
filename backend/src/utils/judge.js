@@ -20,6 +20,9 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { mapWithConcurrency } = require("./queue");
+
+const CASE_CONCURRENCY = Number(process.env.JUDGE_CASE_CONCURRENCY || 2);
 
 // Compiled languages need the source filename to match what the compiler expects
 // (Java in particular requires the file to be named after its public class, so
@@ -139,36 +142,38 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }
     return { passedCases: 0, totalCases: testCases.length, verdict: "COMPILE_ERROR", details };
   }
 
-  const details = [];
-  let passed = 0;
-
+  let details;
   try {
-    for (const tc of testCases) {
+    // Test cases are independent (same compiled binary, fresh process each run),
+    // so run a bounded number concurrently — this mostly cuts down on wall-clock
+    // time lost to process-startup overhead (especially the JVM) rather than
+    // raw CPU, which matters most on a low-core instance.
+    details = await mapWithConcurrency(testCases, CASE_CONCURRENCY, async (tc) => {
       const result = await prepared.execute(tc.input, timeLimitMs);
       if (!result.ok) {
-        details.push({
+        return {
           input: tc.input,
           expected: tc.expected,
           actual: null,
           verdict: result.timedOut ? "TLE" : "RUNTIME_ERROR",
           error: result.error,
-        });
-        continue;
+        };
       }
       const actual = result.stdout;
       const expected = String(tc.expected).trim();
       const isMatch = actual === expected;
-      if (isMatch) passed += 1;
-      details.push({
+      return {
         input: tc.input,
         expected,
         actual,
         verdict: isMatch ? "PASSED" : "WRONG_ANSWER",
-      });
-    }
+      };
+    });
   } finally {
     prepared.cleanup();
   }
+
+  const passed = details.filter((d) => d.verdict === "PASSED").length;
 
   let verdict = "ACCEPTED";
   if (passed === 0) {

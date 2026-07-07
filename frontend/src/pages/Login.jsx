@@ -41,6 +41,12 @@ export default function Login() {
           justifyContent: "center",
         }}
       >
+        <img
+          src="/logo.png"
+          alt="Sanjivani University"
+          style={{ height: 48, marginBottom: 16, objectFit: "contain" }}
+          onError={(e) => { e.currentTarget.style.display = "none"; }}
+        />
         <span className="mono" style={{ color: "var(--amber)", fontSize: 13, letterSpacing: "0.08em" }}>
           SANJIVANI UNIVERSITY
         </span>
@@ -48,16 +54,9 @@ export default function Login() {
           CodeArena
         </h1>
         <ChalkUnderline width={160} />
-        <p style={{ color: "var(--chalk-dim)", maxWidth: 420, marginTop: 20, lineHeight: 1.6 }}>
-          The department's coding test platform — attend live assessments,
-          write and run code in-browser, and get scored instantly against
-          hidden test cases.
+        <p style={{ color: "var(--chalk-dim)", maxWidth: 420, marginTop: 20, lineHeight: 1.6, fontSize: 17 }}>
+          Empowering Talent Through Smart Coding Assessments.
         </p>
-        <div style={{ marginTop: 48, display: "flex", gap: 28 }}>
-          <Stat label="Languages" value="JS · Py · C · C++ · Java" />
-          <Stat label="Grading" value="Auto-judged" />
-          <Stat label="Access" value="24/7" />
-        </div>
       </div>
 
       {/* Form panel */}
@@ -78,7 +77,12 @@ export default function Login() {
             placeholder="you@sanjivani.edu.in"
           />
 
-          <label style={labelStyle}>Password</label>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <label style={{ ...labelStyle, marginTop: 14 }}>Password</label>
+            <Link to="/forgot-password" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>
+              Forgot password?
+            </Link>
+          </div>
           <input
             style={inputStyle}
             type="password"
@@ -102,20 +106,8 @@ export default function Login() {
               Create an account
             </Link>
           </p>
-          <p style={{ marginTop: 32, fontSize: 12, color: "var(--ink-dim)" }} className="mono">
-            demo admin: admin@sanjivani.edu.in / Admin@123
-          </p>
         </form>
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }) {
-  return (
-    <div>
-      <div className="mono" style={{ fontSize: 15, color: "var(--amber)" }}>{value}</div>
-      <div style={{ fontSize: 12, color: "var(--chalk-dim)", marginTop: 2 }}>{label}</div>
     </div>
   );
 }

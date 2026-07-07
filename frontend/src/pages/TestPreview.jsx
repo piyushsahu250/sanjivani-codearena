@@ -1,0 +1,60 @@
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import api from "../api";
+import Navbar from "../components/Navbar";
+import ChalkUnderline from "../components/ChalkUnderline";
+
+export default function TestPreview() {
+  const { id } = useParams();
+  const [test, setTest] = useState(null);
+
+  useEffect(() => {
+    api.get(`/tests/${id}`).then((res) => setTest(res.data));
+  }, [id]);
+
+  if (!test) return <div style={{ padding: 48 }} className="mono">Loading…</div>;
+
+  return (
+    <div>
+      <Navbar />
+      <div style={{ maxWidth: 800, margin: "0 auto", padding: "48px 24px" }}>
+        <h1>{test.title}</h1>
+        <ChalkUnderline />
+        {test.description && <p style={{ color: "var(--ink-dim)", marginTop: 12 }}>{test.description}</p>}
+        <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 8 }}>
+          {new Date(test.startTime).toLocaleString()} → {new Date(test.endTime).toLocaleString()} · {test.durationMin} min · {test.isPublished ? "Published" : "Draft"}
+        </p>
+
+        <div style={{ display: "grid", gap: 16, marginTop: 32 }}>
+          {test.questions.map((tq, idx) => (
+            <div key={tq.id} className="card" style={{ padding: 20 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <h3 style={{ fontSize: 16 }}>Q{idx + 1}. {tq.question.title}</h3>
+                <span className={`badge badge-${tq.question.difficulty.toLowerCase()}`}>{tq.question.difficulty}</span>
+                <span className="mono" style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-dim)" }}>
+                  {tq.question.points} pts · {Math.round(tq.timeLimitSec / 60)} min
+                </span>
+              </div>
+              <p style={{ whiteSpace: "pre-wrap", fontSize: 14, marginTop: 10, lineHeight: 1.6 }}>{tq.question.description}</p>
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)" }}>TEST CASES ({tq.question.testCases.length})</div>
+                {tq.question.testCases.map((tc) => (
+                  <div key={tc.id} className="card" style={{ padding: 10, marginTop: 6, fontSize: 12 }}>
+                    <div className="mono"><strong>Input:</strong> {tc.input}</div>
+                    <div className="mono"><strong>Expected:</strong> {tc.expected}</div>
+                    {tc.isHidden && <div className="mono" style={{ color: "var(--ink-dim)" }}>hidden</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {test.questions.length === 0 && (
+            <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--ink-dim)" }}>
+              No questions added to this test yet.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

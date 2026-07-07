@@ -2,6 +2,7 @@ const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { judgeSubmission } = require("../utils/judge");
+const { runQueued } = require("../utils/queue");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -16,12 +17,9 @@ router.post("/run", authenticate, requireRole("STUDENT"), async (req, res) => {
     });
     if (!question) return res.status(404).json({ error: "Question not found" });
 
-    const result = await judgeSubmission({
-      language,
-      code,
-      testCases: question.testCases,
-      timeLimitMs: question.timeLimitMs,
-    });
+    const result = await runQueued(() =>
+      judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs })
+    );
     res.json(result);
   } catch (err) {
     console.error(err);
@@ -48,12 +46,9 @@ router.post("/submit", authenticate, requireRole("STUDENT"), async (req, res) =>
     });
     if (!question) return res.status(404).json({ error: "Question not found" });
 
-    const result = await judgeSubmission({
-      language,
-      code,
-      testCases: question.testCases,
-      timeLimitMs: question.timeLimitMs,
-    });
+    const result = await runQueued(() =>
+      judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs })
+    );
 
     const score =
       result.verdict === "ACCEPTED"
