@@ -1,5 +1,6 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
 const { authenticate, requireRole } = require("../middleware/auth");
 
@@ -7,6 +8,47 @@ const router = express.Router();
 const prisma = new PrismaClient();
 
 const SELECT_FIELDS = { id: true, name: true, email: true, role: true, rollNumber: true, department: true, createdAt: true };
+
+// Any authenticated user: change their own email and/or password
+router.patch("/me", authenticate, async (req, res) => {
+  try {
+    const { currentPassword, newEmail, newPassword } = req.body;
+    if (!currentPassword) {
+      return res.status(400).json({ error: "currentPassword is required" });
+    }
+    if (!newEmail && !newPassword) {
+      return res.status(400).json({ error: "Provide newEmail and/or newPassword" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) return res.status(401).json({ error: "Current password is incorrect" });
+
+    const data = {};
+    if (newEmail && newEmail !== user.email) {
+      const existing = await prisma.user.findUnique({ where: { email: newEmail } });
+      if (existing) return res.status(409).json({ error: "Email already in use" });
+      data.email = newEmail;
+    }
+    if (newPassword) {
+      if (newPassword.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
+      data.passwordHash = await bcrypt.hash(newPassword, 10);
+    }
+
+    const updated = await prisma.user.update({ where: { id: user.id }, data, select: SELECT_FIELDS });
+
+    const token = jwt.sign(
+      { id: updated.id, role: updated.role, email: updated.email, name: updated.name },
+      process.env.JWT_SECRET,
+      { expiresIn: "12h" }
+    );
+
+    res.json({ token, user: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update account" });
+  }
+});
 
 // ADMIN: list all users
 router.get("/", authenticate, requireRole("ADMIN"), async (req, res) => {

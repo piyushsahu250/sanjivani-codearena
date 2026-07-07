@@ -29,6 +29,9 @@ export default function Navbar() {
           <span className="mono" style={{ fontSize: 13, color: "var(--chalk-dim)" }}>
             {user.name} · {user.role}
           </span>
+          <Link to="/account" className="btn btn-ghost" style={{ borderColor: "var(--slate-700)", color: "var(--chalk)", textDecoration: "none" }}>
+            Account
+          </Link>
           <button
             className="btn btn-ghost"
             style={{ borderColor: "var(--slate-700)", color: "var(--chalk)" }}

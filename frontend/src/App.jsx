@@ -9,6 +9,7 @@ import StaffDashboard from "./pages/StaffDashboard";
 import CreateQuestion from "./pages/CreateQuestion";
 import CreateTest from "./pages/CreateTest";
 import TestResults from "./pages/TestResults";
+import AccountSettings from "./pages/AccountSettings";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/account" element={<Protected><AccountSettings /></Protected>} />
 
           {/* Student */}
           <Route path="/dashboard" element={<Protected roles={["STUDENT"]}><StudentDashboard /></Protected>} />
