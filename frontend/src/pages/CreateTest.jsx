@@ -27,7 +27,13 @@ export default function CreateTest() {
     if (selected.length === 0) return alert("Select at least one question");
     setSaving(true);
     try {
-      await api.post("/tests", { ...form, durationMin: Number(form.durationMin), questionIds: selected });
+      await api.post("/tests", {
+        ...form,
+        durationMin: Number(form.durationMin),
+        startTime: new Date(form.startTime).toISOString(),
+        endTime: new Date(form.endTime).toISOString(),
+        questionIds: selected,
+      });
       navigate("/staff");
     } catch (err) {
       alert(err.response?.data?.error || "Failed to create test");
