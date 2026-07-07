@@ -101,10 +101,7 @@ export default function Login() {
           </button>
 
           <p style={{ marginTop: 20, fontSize: 14, color: "var(--ink-dim)" }}>
-            New student?{" "}
-            <Link to="/register" style={{ color: "var(--amber-dark)", fontWeight: 600 }}>
-              Create an account
-            </Link>
+            Don't have an account? Contact your admin to get one created.
           </p>
         </form>
       </div>
