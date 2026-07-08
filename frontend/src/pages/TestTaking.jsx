@@ -36,6 +36,7 @@ export default function TestTaking() {
   const [submitResult, setSubmitResult] = useState(null);
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [queueStatus, setQueueStatus] = useState(null);
   const [submittedQuestions, setSubmittedQuestions] = useState({});
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [questionSecondsLeft, setQuestionSecondsLeft] = useState(null);
@@ -377,6 +378,20 @@ export default function TestTaking() {
     });
   }
 
+  // While a Run/Submit is pending, poll how busy the judge is so a slow response under heavy
+  // concurrent load (many students coding at once) reads as "N ahead of you" rather than a
+  // spinner that looks frozen. Purely informational — has no effect on execution itself.
+  useEffect(() => {
+    if (!running && !submitting) {
+      setQueueStatus(null);
+      return;
+    }
+    const poll = () => api.get("/submissions/queue-status").then(({ data }) => setQueueStatus(data)).catch(() => {});
+    poll();
+    const interval = setInterval(poll, 1500);
+    return () => clearInterval(interval);
+  }, [running, submitting]);
+
   async function handleRun() {
     if (!answer || isQuiz) return;
     setRunning(true);
@@ -711,6 +726,7 @@ export default function TestTaking() {
               <p className="mono" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>
                 ⏳ {running ? "Compiling and running" : "Grading"} your {answer?.language || ""} code
                 {["c", "cpp", "java"].includes(answer?.language) ? " — compiled languages take a bit longer" : ""}…
+                {queueStatus?.waiting > 0 && ` (${queueStatus.waiting} student${queueStatus.waiting > 1 ? "s" : ""} ahead of you)`}
               </p>
             )}
             {!running && !submitting && runResult && (

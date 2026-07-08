@@ -1,10 +1,29 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { judgeSubmission } = require("../utils/judge");
-const { runQueued } = require("../utils/queue");
+const { runQueued, getQueueStatus } = require("../utils/queue");
 
 const router = express.Router();
+
+// Per-student (not per-IP) throttling on code execution. Keying by IP would let a single
+// shared campus/lab network IP — which many students behind one router/NAT genuinely share
+// during an exam — collectively exhaust one shared budget, effectively rate-limiting the
+// whole classroom instead of each abusive individual. Runs after `authenticate`, so
+// req.user.id is always populated here.
+const execLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  keyGenerator: (req) => req.user.id,
+});
+
+// Any authenticated user: how busy the judge is right now. Polled by the frontend while a
+// Run/Submit is pending so a slow response under heavy concurrent load reads as "N students
+// ahead of you" instead of a silent, seemingly-frozen spinner.
+router.get("/queue-status", authenticate, (req, res) => {
+  res.json(getQueueStatus());
+});
 
 // Exact-match grading for MCQ / TRUE_FALSE / MULTISELECT: the selected set of
 // option indices must equal the correct set exactly (no partial credit).
@@ -21,7 +40,7 @@ function gradeQuizAnswer(question, selectedOptions) {
 }
 
 // STUDENT: run code against sample (non-hidden) test cases only — for self-check, doesn't save score
-router.post("/run", authenticate, requireRole("STUDENT"), async (req, res) => {
+router.post("/run", authenticate, requireRole("STUDENT"), execLimiter, async (req, res) => {
   try {
     const { questionId, language, code } = req.body;
     const question = await prisma.question.findUnique({
@@ -46,7 +65,7 @@ router.post("/run", authenticate, requireRole("STUDENT"), async (req, res) => {
 // STUDENT: submit final answer for a question — judged/graded and scored.
 // Coding: language + code, judged against ALL test cases.
 // MCQ / TRUE_FALSE / MULTISELECT: selectedOptions (array of option indices).
-router.post("/submit", authenticate, requireRole("STUDENT"), async (req, res) => {
+router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async (req, res) => {
   try {
     const { attemptId, questionId, language, code, selectedOptions } = req.body;
 

@@ -29,6 +29,13 @@ function runQueued(fn) {
   });
 }
 
+// Lets the frontend show "N ahead of you" instead of a silent spinner during heavy load —
+// this instance can only run MAX_CONCURRENT_SUBMISSIONS judge jobs at once, so under a
+// large concurrent class this counter is the honest picture of what's actually happening.
+function getQueueStatus() {
+  return { active, waiting: waiting.length, maxConcurrent: MAX_CONCURRENT_SUBMISSIONS };
+}
+
 // Runs fn(item, index) over items with at most `limit` in flight at once,
 // preserving result order (unlike a plain Promise.all over an unbounded map).
 async function mapWithConcurrency(items, limit, fn) {
@@ -44,4 +51,4 @@ async function mapWithConcurrency(items, limit, fn) {
   return results;
 }
 
-module.exports = { runQueued, mapWithConcurrency };
+module.exports = { runQueued, mapWithConcurrency, getQueueStatus };
