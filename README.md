@@ -119,6 +119,15 @@ automatically:
   publish it.
 - Share the Vercel link + tell students to register.
 
+### Scaling past Render's free tier (optional)
+Render's free tier is fine for a small pilot, but its 0.1 vCPU caps how many
+students can run/submit code at once (the judge queue is deliberately
+throttled to avoid crashing the container). If you need real concurrency —
+e.g. a full class of 100+ students taking a coding test at the same time —
+see [`backend/CLOUD_RUN.md`](backend/CLOUD_RUN.md) for a step-by-step,
+still-free migration to Google Cloud Run, which auto-scales across multiple
+instances instead of one fixed weak box. No application code changes needed.
+
 ### Local testing with Postgres before you deploy
 A `docker-compose.yml` is included so you can run Postgres locally instead of
 using SQLite:
