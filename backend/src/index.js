@@ -8,6 +8,7 @@ const testRoutes = require("./routes/tests");
 const questionRoutes = require("./routes/questions");
 const submissionRoutes = require("./routes/submissions");
 const userRoutes = require("./routes/users");
+const classRoutes = require("./routes/classes");
 
 const app = express();
 app.use(cors());
@@ -24,6 +25,7 @@ app.use("/api/tests", testRoutes);
 app.use("/api/questions", questionRoutes);
 app.use("/api/submissions", submissionRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/classes", classRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Sanjivani Coding Platform API running on port ${PORT}`));
