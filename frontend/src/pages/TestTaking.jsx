@@ -122,6 +122,7 @@ export default function TestTaking() {
   useEffect(() => {
     return () => {
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      clearTimeout(tabWarningTimeoutRef.current);
     };
   }, []);
 
@@ -206,6 +207,7 @@ export default function TestTaking() {
   }, [current]);
 
   const lastViolationAtRef = useRef(0);
+  const tabWarningTimeoutRef = useRef(null);
   function reportViolation(reason) {
     if (!attemptIdRef.current || finalizedRef.current) return;
     // Exiting fullscreen via Escape/Alt-Tab fires both `fullscreenchange` and `visibilitychange`
@@ -222,11 +224,17 @@ export default function TestTaking() {
           setAutoSubmitted(true);
           if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
           mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-          alert("Your test has been auto-submitted due to repeated integrity violations (tab switching, exiting fullscreen, or disabling your camera/microphone).");
+          // No alert() here — a dedicated full-screen message is shown once `autoSubmitted`
+          // is true, and native alert()/confirm() dialogs force the browser to exit
+          // fullscreen before they can render, which would fight the auto-submit cleanup.
         } else {
+          // No alert() here either: showing a native dialog while in fullscreen forces the
+          // browser to silently exit fullscreen first, which was actively working against
+          // the "immediately return to fullscreen" requirement. An on-page banner instead.
           const message = `Warning ${data.tabSwitchCount}/${MAX_TAB_VIOLATIONS}: ${reason}. The test will auto-submit if this happens ${MAX_TAB_VIOLATIONS} times.`;
           setTabWarning(message);
-          alert(message);
+          clearTimeout(tabWarningTimeoutRef.current);
+          tabWarningTimeoutRef.current = setTimeout(() => setTabWarning(null), 6000);
         }
       })
       .catch(() => {});
@@ -256,6 +264,9 @@ export default function TestTaking() {
       if (!document.fullscreenElement && !finalizedRef.current) {
         reportViolation("exiting fullscreen during a test is not allowed");
         document.documentElement.requestFullscreen?.().catch(() => {});
+      } else if (document.fullscreenElement) {
+        clearTimeout(tabWarningTimeoutRef.current);
+        setTabWarning(null);
       }
     }
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -491,10 +502,17 @@ export default function TestTaking() {
       />
 
       {tabWarning && (
-        <div style={{ background: "#FCEFD9", color: "var(--rust)", padding: "8px 24px", fontSize: 13, fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }} className="mono">
-          <span>{tabWarning}</span>
+        <div
+          style={{
+            background: "var(--rust)", color: "#fff", padding: "14px 24px", fontSize: 14, fontWeight: 700,
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+          }}
+          className="mono"
+        >
+          <span>⚠ {tabWarning}</span>
           {!document.fullscreenElement && (
-            <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={resumeFullscreen}>
+            <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px", background: "#fff" }} onClick={resumeFullscreen}>
               Resume fullscreen
             </button>
           )}
