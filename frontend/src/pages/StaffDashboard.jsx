@@ -23,7 +23,6 @@ export default function StaffDashboard() {
   }
 
   async function deleteTest(test) {
-    if (!confirm(`Permanently delete "${test.title}"? This removes all attempts and submissions for it and cannot be undone.`)) return;
     await api.delete(`/tests/${test.id}`);
     refresh();
   }

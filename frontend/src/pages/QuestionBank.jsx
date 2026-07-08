@@ -44,7 +44,6 @@ export default function QuestionBank() {
   }
 
   async function handleDelete(question) {
-    if (!confirm(`Delete "${question.title || "this question"}"?`)) return;
     try {
       await api.delete(`/questions/${question.id}`);
       load();
