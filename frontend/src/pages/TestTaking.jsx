@@ -40,6 +40,13 @@ export default function TestTaking() {
   const attemptIdRef = useRef(null);
   const finalizedRef = useRef(false);
 
+  const [mediaGranted, setMediaGranted] = useState(false);
+  const [mediaError, setMediaError] = useState(null);
+  const [requestingMedia, setRequestingMedia] = useState(false);
+  const mediaStreamRef = useRef(null);
+  const preflightVideoRef = useRef(null);
+  const liveVideoRef = useRef(null);
+
   // Load basic test info up front so we can show a "Begin Test" screen
   // (fullscreen must be requested from a direct click, not on page load).
   useEffect(() => {
@@ -48,6 +55,67 @@ export default function TestTaking() {
       .then((res) => setTestMeta(res.data))
       .catch((err) => setMetaError(err.response?.data?.error || "Could not load this test"));
   }, [testId]);
+
+  async function requestMedia() {
+    setRequestingMedia(true);
+    setMediaError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      mediaStreamRef.current = stream;
+      setMediaGranted(true);
+      if (preflightVideoRef.current) preflightVideoRef.current.srcObject = stream;
+    } catch (err) {
+      const reason =
+        err.name === "NotAllowedError"
+          ? "Camera and microphone access was denied. Please allow both to begin this test."
+          : err.name === "NotFoundError"
+          ? "No camera or microphone was found on this device. Both are required to begin this test."
+          : "Could not access your camera/microphone. Please check your device and browser permissions.";
+      setMediaError(reason);
+      setMediaGranted(false);
+    } finally {
+      setRequestingMedia(false);
+    }
+  }
+
+  // Keep the live self-view (shown during the test) in sync with the granted stream
+  useEffect(() => {
+    if (started && liveVideoRef.current && mediaStreamRef.current) {
+      liveVideoRef.current.srcObject = mediaStreamRef.current;
+    }
+  }, [started]);
+
+  // Continuously monitor that the webcam/mic stay live — a device going 'ended' (unplugged,
+  // permission revoked mid-session, etc.) or dropping out of the "live" state counts as a violation.
+  useEffect(() => {
+    if (!started) return;
+    const stream = mediaStreamRef.current;
+    if (!stream) return;
+
+    const tracks = stream.getTracks();
+    function handleEnded() {
+      reportViolation("your camera or microphone was turned off or disconnected");
+    }
+    tracks.forEach((t) => t.addEventListener("ended", handleEnded));
+
+    const pollInterval = setInterval(() => {
+      const stillLive = stream.getTracks().every((t) => t.readyState === "live");
+      if (!stillLive) reportViolation("your camera or microphone was turned off or disconnected");
+    }, 5000);
+
+    return () => {
+      tracks.forEach((t) => t.removeEventListener("ended", handleEnded));
+      clearInterval(pollInterval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started]);
+
+  // Release camera/mic when the test ends or the component unmounts
+  useEffect(() => {
+    return () => {
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
 
   async function beginTest() {
     setStarting(true);
@@ -137,7 +205,9 @@ export default function TestTaking() {
         if (data.autoSubmitted) {
           finalizedRef.current = true;
           setAutoSubmitted(true);
-          alert("Your test has been auto-submitted because you left the test window too many times.");
+          if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+          mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+          alert("Your test has been auto-submitted due to repeated integrity violations (tab switching, exiting fullscreen, or disabling your camera/microphone).");
         } else {
           const message = `Warning ${data.tabSwitchCount}/${MAX_TAB_VIOLATIONS}: ${reason}. The test will auto-submit if this happens ${MAX_TAB_VIOLATIONS} times.`;
           setTabWarning(message);
@@ -251,6 +321,7 @@ export default function TestTaking() {
     if (!auto && !confirm("Submit and end the test now? You won't be able to make further changes.")) return;
     finalizedRef.current = true;
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     await api.post(`/submissions/finalize/${attemptId}`);
     navigate("/dashboard");
   }
@@ -295,7 +366,8 @@ export default function TestTaking() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
         <div className="card" style={{ padding: 32, maxWidth: 440, textAlign: "center" }}>
           <p style={{ fontSize: 16, color: "var(--rust)" }}>
-            Your test was automatically submitted after repeatedly leaving the test window.
+            Your test was automatically submitted after repeated integrity violations (leaving the test window,
+            exiting fullscreen, or your camera/microphone being turned off).
           </p>
           <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate("/dashboard")}>
             Back to dashboard
@@ -316,10 +388,43 @@ export default function TestTaking() {
             {testMeta.questions?.length || 0} questions · {testMeta.durationMin} minutes
           </p>
           <p style={{ fontSize: 13, marginTop: 20 }}>
-            This test runs in fullscreen. Switching tabs or exiting fullscreen is tracked and will auto-submit your
-            test after {MAX_TAB_VIOLATIONS} violations.
+            This test runs in fullscreen with your camera and microphone on for the full duration. Switching tabs,
+            exiting fullscreen, or disabling your camera/mic is tracked and will auto-submit your test after{" "}
+            {MAX_TAB_VIOLATIONS} violations.
           </p>
-          <button className="btn btn-primary" style={{ marginTop: 20, padding: "12px 24px" }} onClick={beginTest} disabled={starting}>
+
+          <div style={{ marginTop: 20, padding: 16, border: "1px solid var(--line)", borderRadius: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>Camera &amp; microphone check</div>
+            {mediaGranted ? (
+              <>
+                <video
+                  ref={preflightVideoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  style={{ width: 160, height: 120, borderRadius: 8, marginTop: 10, background: "#000", objectFit: "cover" }}
+                />
+                <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 8, fontWeight: 600 }}>✓ Camera and microphone are ready</p>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 6 }}>
+                  Both are required before you can begin — they stay on for the whole test.
+                </p>
+                <button className="btn btn-dark" style={{ marginTop: 10 }} onClick={requestMedia} disabled={requestingMedia}>
+                  {requestingMedia ? "Requesting access…" : "Grant camera & microphone access"}
+                </button>
+                {mediaError && <p style={{ fontSize: 12, color: "var(--rust)", marginTop: 8 }}>{mediaError}</p>}
+              </>
+            )}
+          </div>
+
+          <button
+            className="btn btn-primary"
+            style={{ marginTop: 20, padding: "12px 24px", opacity: mediaGranted ? 1 : 0.4 }}
+            onClick={beginTest}
+            disabled={starting || !mediaGranted}
+          >
             {starting ? "Starting…" : "Begin Test (Fullscreen)"}
           </button>
         </div>
@@ -346,6 +451,17 @@ export default function TestTaking() {
         </div>
         <button className="btn btn-primary" onClick={() => finalizeAndExit(false)}>End test</button>
       </div>
+
+      <video
+        ref={liveVideoRef}
+        autoPlay
+        muted
+        playsInline
+        style={{
+          position: "fixed", bottom: 16, right: 16, width: 140, height: 105, borderRadius: 8,
+          objectFit: "cover", background: "#000", border: "2px solid var(--amber)", zIndex: 50,
+        }}
+      />
 
       {tabWarning && (
         <div style={{ background: "#FCEFD9", color: "var(--rust)", padding: "8px 24px", fontSize: 13, fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }} className="mono">
