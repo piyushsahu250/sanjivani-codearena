@@ -20,6 +20,7 @@ import TestPreview from "./pages/TestPreview";
 import AccountSettings from "./pages/AccountSettings";
 import BulkUpload from "./pages/BulkUpload";
 import ClassManagement from "./pages/ClassManagement";
+import ClassStudents from "./pages/ClassStudents";
 import InstituteManagement from "./pages/InstituteManagement";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -83,6 +84,7 @@ export default function App() {
           <Route path="/admin" element={<Protected roles={["ADMIN"]}><AdminDashboard /></Protected>} />
           <Route path="/admin/bulk-upload" element={<Protected roles={["ADMIN"]}><BulkUpload /></Protected>} />
           <Route path="/admin/classes" element={<Protected roles={["ADMIN"]}><ClassManagement /></Protected>} />
+          <Route path="/admin/classes/:id/students" element={<Protected roles={["ADMIN"]}><ClassStudents /></Protected>} />
           <Route path="/admin/institutes" element={<Protected roles={["ADMIN"]}><InstituteManagement /></Protected>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />

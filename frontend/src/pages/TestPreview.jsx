@@ -35,7 +35,7 @@ export default function TestPreview() {
                 <span className="badge">{TYPE_LABELS[tq.question.questionType]}</span>
                 <span className={`badge badge-${tq.question.difficulty.toLowerCase()}`}>{tq.question.difficulty}</span>
                 <span className="mono" style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-dim)" }}>
-                  {tq.question.points} pts · {Math.round(tq.timeLimitSec / 60)} min
+                  {tq.question.points} pts
                 </span>
               </div>
               <p style={{ whiteSpace: "pre-wrap", fontSize: 14, marginTop: 10, lineHeight: 1.6 }}>{tq.question.description}</p>

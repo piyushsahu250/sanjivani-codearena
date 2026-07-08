@@ -45,6 +45,8 @@ model Class {
   id        String   @id @default(uuid())
   name      String // e.g. "MCA", "B.Tech CSE"
   code      String?
+  batchYear String? // e.g. "2025" — nullable at the DB level (existing classes predate this field);
+                     // required at the application layer for newly created classes
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
@@ -54,7 +56,7 @@ model Class {
   users           User[]
   testAssignments TestClass[]
 
-  @@unique([instituteId, name])
+  @@unique([instituteId, name, batchYear])
 }
 
 model User {

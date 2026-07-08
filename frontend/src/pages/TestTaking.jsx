@@ -39,8 +39,9 @@ export default function TestTaking() {
   const [queueStatus, setQueueStatus] = useState(null);
   const [submittedQuestions, setSubmittedQuestions] = useState({});
   const [secondsLeft, setSecondsLeft] = useState(null);
-  const [questionSecondsLeft, setQuestionSecondsLeft] = useState(null);
   const [tabWarning, setTabWarning] = useState(null);
+  const [showQuestionPanel, setShowQuestionPanel] = useState(true);
+  const [showResultsPanel, setShowResultsPanel] = useState(true);
   const [autoSubmitted, setAutoSubmitted] = useState(false);
   const timerRef = useRef(null);
   const attemptIdRef = useRef(null);
@@ -56,6 +57,10 @@ export default function TestTaking() {
   const [faceMissing, setFaceMissing] = useState(false);
   const faceModelRef = useRef(null);
   const faceMissingRef = useRef(false); // mirrors faceMissing for use inside the polling interval closure
+
+  const [noiseWarning, setNoiseWarning] = useState(false);
+  const noiseWarningTimeoutRef = useRef(null);
+  const lastNoiseWarningAtRef = useRef(0);
 
   // Load basic test info up front so we can show a "Begin Test" screen
   // (fullscreen must be requested from a direct click, not on page load).
@@ -178,6 +183,58 @@ export default function TestTaking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
 
+  // Background-noise monitoring — purely informational, per spec: it never reports a
+  // violation, never touches the 3-strike counter, and never blocks the candidate. Just a
+  // courtesy nudge if the mic picks up sustained loud audio (conversation, TV, etc.).
+  useEffect(() => {
+    if (!started) return;
+    const stream = mediaStreamRef.current;
+    if (!stream || stream.getAudioTracks().length === 0) return;
+
+    let audioContext;
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    } catch {
+      return;
+    }
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+
+    const NOISE_RMS_THRESHOLD = 0.35; // conservative, tuned to avoid flagging normal typing/breathing
+    const NOISE_WARNING_COOLDOWN_MS = 20000; // don't re-nag more than once per ~20s
+
+    const interval = setInterval(() => {
+      if (document.hidden || finalizedRef.current) return;
+      analyser.getByteTimeDomainData(data);
+      let sumSquares = 0;
+      for (let i = 0; i < data.length; i++) {
+        const normalized = (data[i] - 128) / 128;
+        sumSquares += normalized * normalized;
+      }
+      const rms = Math.sqrt(sumSquares / data.length);
+      if (rms > NOISE_RMS_THRESHOLD) {
+        const now = Date.now();
+        if (now - lastNoiseWarningAtRef.current > NOISE_WARNING_COOLDOWN_MS) {
+          lastNoiseWarningAtRef.current = now;
+          setNoiseWarning(true);
+          clearTimeout(noiseWarningTimeoutRef.current);
+          noiseWarningTimeoutRef.current = setTimeout(() => setNoiseWarning(false), 5000);
+        }
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(noiseWarningTimeoutRef.current);
+      source.disconnect();
+      audioContext.close().catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started]);
+
   // Release camera/mic when the test ends or the component unmounts
   useEffect(() => {
     return () => {
@@ -212,7 +269,6 @@ export default function TestTaking() {
 
   const questions = test?.questions || [];
   const current = questions[activeIdx]?.question;
-  const currentTq = questions[activeIdx];
   const isQuiz = current && current.questionType !== "CODING";
   const isMulti = current?.questionType === "MULTISELECT";
 
@@ -232,25 +288,6 @@ export default function TestTaking() {
     return () => clearInterval(timerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secondsLeft !== null]);
-
-  // Per-question timer: resets whenever the active question changes, auto-advances on expiry
-  useEffect(() => {
-    if (!currentTq) return;
-    setQuestionSecondsLeft(currentTq.timeLimitSec ?? 900);
-    const interval = setInterval(() => {
-      setQuestionSecondsLeft((s) => {
-        if (s === null) return s;
-        if (s <= 1) {
-          clearInterval(interval);
-          setActiveIdx((idx) => (idx < questions.length - 1 ? idx + 1 : idx));
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIdx, currentTq?.id]);
 
   // Initialize/restore the answer for the active question, and reset the run result panel
   useEffect(() => {
@@ -342,13 +379,6 @@ export default function TestTaking() {
     const s = String(secondsLeft % 60).padStart(2, "0");
     return `${h}:${m}:${s}`;
   }, [secondsLeft]);
-
-  const questionTimeLabel = useMemo(() => {
-    if (questionSecondsLeft === null) return "--:--";
-    const m = String(Math.floor(questionSecondsLeft / 60)).padStart(2, "0");
-    const s = String(questionSecondsLeft % 60).padStart(2, "0");
-    return `${m}:${s}`;
-  }, [questionSecondsLeft]);
 
   function setLanguage(language) {
     if (!current) return;
@@ -553,10 +583,13 @@ export default function TestTaking() {
         <div>
           <strong>{test.title}</strong>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <div className="mono" style={{ fontSize: 13, color: "var(--chalk-dim)" }}>
-            Question: {questionTimeLabel}
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setShowQuestionPanel((v) => !v)}>
+            {showQuestionPanel ? "Hide questions" : "Show questions"}
+          </button>
+          <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setShowResultsPanel((v) => !v)}>
+            {showResultsPanel ? "Hide results" : "Show results"}
+          </button>
           <div className="mono" style={{ fontSize: 20, color: secondsLeft < 300 ? "var(--rust)" : "var(--amber)" }}>
             {timeLabel} <span style={{ opacity: 0.6 }}>▊</span>
           </div>
@@ -575,6 +608,18 @@ export default function TestTaking() {
           border: faceMissing ? "3px solid var(--rust)" : "2px solid var(--amber)",
         }}
       />
+
+      {noiseWarning && (
+        <div
+          style={{
+            background: "var(--amber)", color: "#3a2c00", padding: "10px 24px", fontSize: 13, fontWeight: 600,
+            textAlign: "center",
+          }}
+          className="mono"
+        >
+          🔊 Please maintain a quiet environment during the examination.
+        </div>
+      )}
 
       {faceMissing && (
         <div
@@ -641,6 +686,7 @@ export default function TestTaking() {
         </div>
 
         {/* Question description */}
+        {showQuestionPanel && (
         <div style={{ width: "38%", padding: 24, overflowY: "auto", borderRight: "1px solid var(--line)" }}>
           {current && (
             <>
@@ -665,6 +711,7 @@ export default function TestTaking() {
             </>
           )}
         </div>
+        )}
 
         {/* Answer panel: code editor for Coding, options for quiz types */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
@@ -721,6 +768,7 @@ export default function TestTaking() {
             </>
           )}
 
+          {showResultsPanel && (
           <div style={{ maxHeight: "30%", overflowY: "auto", borderTop: "1px solid var(--line)", padding: 16, background: "#FBF9F4" }}>
             {(running || submitting) && (
               <p className="mono" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>
@@ -743,6 +791,7 @@ export default function TestTaking() {
               </p>
             )}
           </div>
+          )}
         </div>
       </div>
     </div>

@@ -180,7 +180,17 @@ router.get("/", authenticate, async (req, res) => {
 
   const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true } });
   const visible = tests.filter((t) => t.classes.length === 0 || (student.classId && t.classes.some((c) => c.classId === student.classId)));
-  res.json(visible);
+
+  // Surface the student's own attempt status per test so the dashboard can show "Completed"
+  // upfront, rather than only after they click Attend and get bounced by a 403.
+  const myAttempts = await prisma.testAttempt.findMany({
+    where: { studentId: req.user.id, testId: { in: visible.map((t) => t.id) } },
+    select: { testId: true, status: true },
+  });
+  const statusByTest = Object.fromEntries(myAttempts.map((a) => [a.testId, a.status]));
+  const withStatus = visible.map((t) => ({ ...t, myStatus: statusByTest[t.id] || null }));
+
+  res.json(withStatus);
 });
 
 // --- Get single test detail (questions without hidden test cases, and without

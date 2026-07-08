@@ -19,6 +19,9 @@ export default function StudentDashboard() {
   const now = new Date();
 
   function statusOf(test) {
+    if (test.myStatus === "SUBMITTED" || test.myStatus === "AUTO_SUBMITTED") {
+      return { label: "Completed", color: "var(--mint)", completed: true };
+    }
     const start = new Date(test.startTime);
     const end = new Date(test.endTime);
     if (now < start) return { label: "Upcoming", color: "var(--ink-dim)" };
@@ -66,12 +69,17 @@ export default function StudentDashboard() {
                     </span>
                   </div>
                   <p style={{ color: "var(--ink-dim)", fontSize: 14, margin: "6px 0" }}>{test.description}</p>
+                  {status.completed && (
+                    <p className="mono" style={{ fontSize: 12, color: "var(--mint)", fontWeight: 600, margin: "0 0 6px" }}>
+                      You have already completed this test.
+                    </p>
+                  )}
                   <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
                     {test._count?.questions || 0} questions · {test.durationMin} min ·{" "}
                     {new Date(test.startTime).toLocaleString()} → {new Date(test.endTime).toLocaleString()}
                   </p>
                 </div>
-                {status.label === "Closed" ? (
+                {status.completed || status.label === "Closed" ? (
                   <Link to={`/test/${test.id}/result`} className="btn btn-ghost">View result →</Link>
                 ) : (
                   <button

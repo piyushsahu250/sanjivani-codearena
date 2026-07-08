@@ -18,7 +18,7 @@ const SELECT_FIELDS = {
   mobile: true, program: true, batchYear: true, section: true, createdAt: true,
   mustChangePassword: true,
   institute: { select: { id: true, name: true } },
-  class: { select: { id: true, name: true } },
+  class: { select: { id: true, name: true, batchYear: true } },
 };
 
 // Deterministic auto-generated password from an institute name, e.g. "Sanjivani University" -> "SanjivaniUniversity@123"
@@ -344,6 +344,26 @@ router.get("/by-roll/:rollNumber", authenticate, requireRole("ADMIN"), async (re
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Lookup failed" });
+  }
+});
+
+// ADMIN: reset a student's (or any account's) password back to the platform default.
+// The account is flagged to force a password change on next login, same as any other reset.
+const DEFAULT_RESET_PASSWORD = "Sanjivani@1";
+router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const passwordHash = await bcrypt.hash(DEFAULT_RESET_PASSWORD, 10);
+    await prisma.user.update({
+      where: { id: req.params.id },
+      data: { passwordHash, mustChangePassword: true },
+    });
+    res.json({ success: true, defaultPassword: DEFAULT_RESET_PASSWORD });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to reset password" });
   }
 });
 

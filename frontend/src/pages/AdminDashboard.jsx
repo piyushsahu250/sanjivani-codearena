@@ -61,8 +61,21 @@ export default function AdminDashboard() {
   }
 
   async function handleDelete(id) {
-    await api.delete(`/users/${id}`);
-    load();
+    try {
+      await api.delete(`/users/${id}`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to delete account");
+    }
+  }
+
+  async function handleResetPassword(u) {
+    try {
+      const { data } = await api.post(`/users/${u.id}/reset-password`);
+      alert(`Password reset for ${u.name} to "${data.defaultPassword}". They'll be asked to set a new one on next login.`);
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to reset password");
+    }
   }
 
   async function handleRollLookup(e) {
@@ -201,7 +214,7 @@ export default function AdminDashboard() {
                     <label style={labelStyle}>Class{form.role === "STUDENT" ? "" : " (optional)"}</label>
                     <select style={inputStyle} required={form.role === "STUDENT"} value={form.classId} onChange={updateField("classId")} disabled={!form.instituteId}>
                       <option value="">Select class…</option>
-                      {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {classes.map((c) => <option key={c.id} value={c.id}>{c.name}{c.batchYear ? ` (${c.batchYear})` : ""}</option>)}
                     </select>
                   </>
                 )}
@@ -247,11 +260,20 @@ export default function AdminDashboard() {
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
                     <div className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>{u.email}</div>
                     <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)" }}>
-                      {u.institute?.name || "—"}{u.class?.name ? ` · ${u.class.name}` : ""}
+                      {u.institute?.name || "—"}{u.class?.name ? ` · ${u.class.name}${u.class.batchYear ? ` (${u.class.batchYear})` : ""}` : ""}
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <span className="badge">{u.role}</span>
+                    {u.role === "STUDENT" && (
+                      <button
+                        onClick={() => handleResetPassword(u)}
+                        className="btn btn-ghost"
+                        style={{ fontSize: 12, padding: "4px 10px" }}
+                      >
+                        Reset password
+                      </button>
+                    )}
                     <button
                       onClick={() => handleDelete(u.id)}
                       style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 13 }}

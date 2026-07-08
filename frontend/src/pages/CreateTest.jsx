@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 
-const DEFAULT_MINUTES_PER_QUESTION = 15;
 const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "True/False", MULTISELECT: "Multiple Select" };
 
 const emptyForm = { title: "", code: "", description: "", instructions: "", durationMin: 60, passingMarks: "", showResults: true, startTime: "", endTime: "" };
@@ -23,7 +22,6 @@ export default function CreateTest() {
   const [questions, setQuestions] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
-  const [minutesById, setMinutesById] = useState({});
   const [form, setForm] = useState(emptyForm);
   const [classes, setClasses] = useState([]);
   const [classIds, setClassIds] = useState([]);
@@ -50,9 +48,6 @@ export default function CreateTest() {
       setClassIds((t.classes || []).map((c) => c.classId));
       const qIds = t.questions.map((tq) => tq.question.id);
       setSelected(qIds);
-      const minutes = {};
-      t.questions.forEach((tq) => { minutes[tq.question.id] = Math.round(tq.timeLimitSec / 60); });
-      setMinutesById(minutes);
       setQuestions((prev) => {
         const known = new Set(prev.map((q) => q.id));
         const extra = t.questions.map((tq) => tq.question).filter((q) => !known.has(q.id));
@@ -64,7 +59,6 @@ export default function CreateTest() {
 
   function toggle(qId) {
     setSelected((prev) => (prev.includes(qId) ? prev.filter((id2) => id2 !== qId) : [...prev, qId]));
-    setMinutesById((prev) => (prev[qId] ? prev : { ...prev, [qId]: DEFAULT_MINUTES_PER_QUESTION }));
   }
 
   function toggleClass(classId) {
@@ -85,10 +79,6 @@ export default function CreateTest() {
     if (selected.length === 0) return alert("Select at least one question");
     setSaving(true);
     try {
-      const questionTimeLimits = {};
-      selected.forEach((qId) => {
-        questionTimeLimits[qId] = (Number(minutesById[qId]) || DEFAULT_MINUTES_PER_QUESTION) * 60;
-      });
       const payload = {
         ...form,
         durationMin: Number(form.durationMin),
@@ -96,7 +86,6 @@ export default function CreateTest() {
         startTime: new Date(form.startTime).toISOString(),
         endTime: new Date(form.endTime).toISOString(),
         questionIds: selected,
-        questionTimeLimits,
         classIds,
       };
       if (isEdit) {
@@ -175,7 +164,7 @@ export default function CreateTest() {
           <div style={{ marginTop: 24, fontWeight: 700, fontSize: 14 }}>
             Select questions from the bank <span className="mono" style={{ fontWeight: 400, color: "var(--ink-dim)" }}>· Total marks: {totalMarks}</span>
           </div>
-          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>Add as many as you need — coding and quiz questions can be mixed. Each gets its own time allowance — the test auto-advances to the next question when a question's time runs out.</p>
+          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>Add as many as you need — coding and quiz questions can be mixed. Candidates get the full test duration to split across all questions however they like, and can move between questions freely.</p>
           <input
             style={{ ...inputStyle, marginTop: 10 }}
             placeholder="Search questions…"
@@ -192,19 +181,6 @@ export default function CreateTest() {
                 <span className="mono" style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-dim)" }}>
                   {q.points} pts{q.questionType === "CODING" && q._count ? ` · ${q._count.testCases} cases` : ""}
                 </span>
-                {selected.includes(q.id) && (
-                  <span className="mono" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
-                    <input
-                      type="number"
-                      min={1}
-                      style={{ width: 48, padding: "4px 6px", borderRadius: 6, border: "1px solid var(--line)" }}
-                      value={minutesById[q.id] ?? DEFAULT_MINUTES_PER_QUESTION}
-                      onClick={(e) => e.preventDefault()}
-                      onChange={(e) => setMinutesById((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                    />
-                    min
-                  </span>
-                )}
               </label>
             ))}
             {questions.length === 0 && <p style={{ color: "var(--ink-dim)" }}>No questions in the bank yet — create one first.</p>}
