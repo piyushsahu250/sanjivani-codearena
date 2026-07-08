@@ -43,7 +43,6 @@ export default function AdminDashboard() {
   }
 
   async function handleDelete(id) {
-    if (!confirm("Delete this account?")) return;
     await api.delete(`/users/${id}`);
     load();
   }
