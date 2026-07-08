@@ -367,13 +367,39 @@ router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (re
   }
 });
 
-// ADMIN: delete a user
+// ADMIN: delete a user. Deleting a student also removes their own test attempts/submissions
+// (scoped only to that student — nothing anyone else can see is affected). Deleting a staff/
+// admin account that has created tests is blocked instead of cascading, since that would
+// delete a shared Test (and every student's attempts on it), not just this one account's data.
 router.delete("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
   if (req.params.id === req.user.id) {
     return res.status(400).json({ error: "You cannot delete your own account" });
   }
-  await prisma.user.delete({ where: { id: req.params.id } });
-  res.json({ success: true });
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    if (user.role !== "STUDENT") {
+      const createdTestCount = await prisma.test.count({ where: { createdById: req.params.id } });
+      if (createdTestCount > 0) {
+        return res.status(409).json({
+          error: `This account has created ${createdTestCount} test${createdTestCount === 1 ? "" : "s"}. Reassign or delete ${createdTestCount === 1 ? "it" : "them"} first, then delete the account.`,
+        });
+      }
+      await prisma.user.delete({ where: { id: req.params.id } });
+    } else {
+      await prisma.$transaction([
+        prisma.submission.deleteMany({ where: { studentId: req.params.id } }),
+        prisma.testAttempt.deleteMany({ where: { studentId: req.params.id } }),
+        prisma.user.delete({ where: { id: req.params.id } }),
+      ]);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete account" });
+  }
 });
 
 module.exports = router;
