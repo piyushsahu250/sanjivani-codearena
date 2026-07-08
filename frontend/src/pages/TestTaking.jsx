@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Editor from "@monaco-editor/react";
+import * as tf from "@tensorflow/tfjs";
+import * as blazeface from "@tensorflow-models/blazeface";
 import api from "../api";
+
+const FACE_CHECK_INTERVAL_MS = 2000;
+const FACE_CONFIDENCE_THRESHOLD = 0.7;
 
 const LANGUAGES = [
   { id: "javascript", label: "JavaScript", monaco: "javascript" },
@@ -46,6 +51,10 @@ export default function TestTaking() {
   const mediaStreamRef = useRef(null);
   const preflightVideoRef = useRef(null);
   const liveVideoRef = useRef(null);
+
+  const [faceMissing, setFaceMissing] = useState(false);
+  const faceModelRef = useRef(null);
+  const faceMissingRef = useRef(false); // mirrors faceMissing for use inside the polling interval closure
 
   // Load basic test info up front so we can show a "Begin Test" screen
   // (fullscreen must be requested from a direct click, not on page load).
@@ -115,6 +124,56 @@ export default function TestTaking() {
       tracks.forEach((t) => t.removeEventListener("ended", handleEnded));
       clearInterval(pollInterval);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started]);
+
+  // Load the face-detection model as soon as the page opens (independent of camera permission,
+  // since it's just a network fetch) so it's ready by the time the candidate actually begins.
+  // Face detection is best-effort: if the model fails to load (e.g. blocked network), it simply
+  // never runs rather than blocking the candidate from taking the test at all.
+  useEffect(() => {
+    let cancelled = false;
+    tf.ready()
+      .then(() => blazeface.load())
+      .then((model) => {
+        if (!cancelled) faceModelRef.current = model;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Continuously check that a face is present in frame. Unlike other violations, "no face"
+  // is a *state*, not a one-off event: the warning must stay up the whole time no face is
+  // detected, and it should count as a single warning per disappearance — not once per poll.
+  useEffect(() => {
+    if (!started) return;
+    const video = liveVideoRef.current;
+    if (!video) return;
+
+    const interval = setInterval(async () => {
+      const model = faceModelRef.current;
+      if (!model || document.hidden || video.readyState < 2 || finalizedRef.current) return;
+      let predictions;
+      try {
+        predictions = await model.estimateFaces(video, false);
+      } catch {
+        return;
+      }
+      const faceFound = predictions.some((p) => (p.probability?.[0] ?? 1) >= FACE_CONFIDENCE_THRESHOLD);
+
+      if (!faceFound && !faceMissingRef.current) {
+        faceMissingRef.current = true;
+        setFaceMissing(true);
+        reportViolation("no face was detected in the camera frame — stay visible for the whole test");
+      } else if (faceFound && faceMissingRef.current) {
+        faceMissingRef.current = false;
+        setFaceMissing(false);
+      }
+    }, FACE_CHECK_INTERVAL_MS);
+
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
 
@@ -405,7 +464,7 @@ export default function TestTaking() {
         <div className="card" style={{ padding: 32, maxWidth: 440, textAlign: "center" }}>
           <p style={{ fontSize: 16, color: "var(--rust)" }}>
             Your test was automatically submitted after repeated integrity violations (leaving the test window,
-            exiting fullscreen, or your camera/microphone being turned off).
+            exiting fullscreen, your camera/microphone being turned off, or no face being detected in frame).
           </p>
           <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate("/dashboard")}>
             Back to dashboard
@@ -426,9 +485,9 @@ export default function TestTaking() {
             {testMeta.questions?.length || 0} questions · {testMeta.durationMin} minutes
           </p>
           <p style={{ fontSize: 13, marginTop: 20 }}>
-            This test runs in fullscreen with your camera and microphone on for the full duration. Switching tabs,
-            exiting fullscreen, or disabling your camera/mic is tracked and will auto-submit your test after{" "}
-            {MAX_TAB_VIOLATIONS} violations.
+            This test runs in fullscreen with your camera and microphone on for the full duration, and your face
+            must stay visible in frame. Switching tabs, exiting fullscreen, disabling your camera/mic, or moving out
+            of camera view is tracked and will auto-submit your test after {MAX_TAB_VIOLATIONS} violations.
           </p>
 
           <div style={{ marginTop: 20, padding: 16, border: "1px solid var(--line)", borderRadius: 10 }}>
@@ -497,9 +556,23 @@ export default function TestTaking() {
         playsInline
         style={{
           position: "fixed", bottom: 16, right: 16, width: 140, height: 105, borderRadius: 8,
-          objectFit: "cover", background: "#000", border: "2px solid var(--amber)", zIndex: 50,
+          objectFit: "cover", background: "#000", zIndex: 50,
+          border: faceMissing ? "3px solid var(--rust)" : "2px solid var(--amber)",
         }}
       />
+
+      {faceMissing && (
+        <div
+          style={{
+            background: "var(--rust)", color: "#fff", padding: "14px 24px", fontSize: 14, fontWeight: 700,
+            textAlign: "center", boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+          }}
+          className="mono"
+        >
+          ⚠ No face detected — please stay visible in the camera frame. This warning stays up until your face is
+          detected again.
+        </div>
+      )}
 
       {tabWarning && (
         <div

@@ -1,10 +1,15 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import StudentDashboard from "./pages/StudentDashboard";
-import TestTaking from "./pages/TestTaking";
 import StudentTestResult from "./pages/StudentTestResult";
+
+// Lazy-loaded: pulls in @tensorflow/tfjs + blazeface for face detection, which is only
+// needed once a student actually opens a test — bundling it eagerly would add that weight
+// to every page load for every user (login, admin, staff included).
+const TestTaking = lazy(() => import("./pages/TestTaking"));
 import AdminDashboard from "./pages/AdminDashboard";
 import StaffDashboard from "./pages/StaffDashboard";
 import CreateQuestion from "./pages/CreateQuestion";
@@ -52,7 +57,16 @@ export default function App() {
 
           {/* Student */}
           <Route path="/dashboard" element={<Protected roles={["STUDENT"]}><StudentDashboard /></Protected>} />
-          <Route path="/test/:id" element={<Protected roles={["STUDENT"]}><TestTaking /></Protected>} />
+          <Route
+            path="/test/:id"
+            element={
+              <Protected roles={["STUDENT"]}>
+                <Suspense fallback={<div style={{ padding: 48 }} className="mono">Loading test…</div>}>
+                  <TestTaking />
+                </Suspense>
+              </Protected>
+            }
+          />
           <Route path="/test/:id/result" element={<Protected roles={["STUDENT"]}><StudentTestResult /></Protected>} />
 
           {/* Staff (and Admin, who can also manage tests/questions) */}
