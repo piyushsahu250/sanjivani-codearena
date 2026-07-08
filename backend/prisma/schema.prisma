@@ -29,6 +29,10 @@ model User {
   role         Role     @default(STUDENT)
   rollNumber   String?  // students only
   department   String?
+  mobile       String?
+  program      String?  // e.g. MCA, B.Tech, M.Tech
+  batchYear    String?
+  section      String?
   createdAt    DateTime @default(now())
 
   resetTokenHash   String?

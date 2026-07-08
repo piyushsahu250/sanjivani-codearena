@@ -11,6 +11,7 @@ import CreateTest from "./pages/CreateTest";
 import TestResults from "./pages/TestResults";
 import TestPreview from "./pages/TestPreview";
 import AccountSettings from "./pages/AccountSettings";
+import BulkUpload from "./pages/BulkUpload";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 
@@ -54,6 +55,7 @@ export default function App() {
 
           {/* Admin only: account management */}
           <Route path="/admin" element={<Protected roles={["ADMIN"]}><AdminDashboard /></Protected>} />
+          <Route path="/admin/bulk-upload" element={<Protected roles={["ADMIN"]}><BulkUpload /></Protected>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -73,7 +73,10 @@ export default function AdminDashboard() {
             <h1>Admin control room</h1>
             <ChalkUnderline />
           </div>
-          <Link to="/staff" className="btn btn-ghost">Manage tests &amp; questions →</Link>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Link to="/admin/bulk-upload" className="btn btn-primary">⬆ Bulk student upload</Link>
+            <Link to="/staff" className="btn btn-ghost">Manage tests &amp; questions →</Link>
+          </div>
         </div>
 
         <div className="card" style={{ padding: 24, marginTop: 32 }}>
