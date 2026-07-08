@@ -2,11 +2,10 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const { PrismaClient } = require("@prisma/client");
+const prisma = require("../prisma");
 const { sendMail } = require("../utils/mailer");
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour

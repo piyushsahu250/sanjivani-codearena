@@ -1,11 +1,10 @@
 const express = require("express");
 const multer = require("multer");
 const XLSX = require("xlsx");
-const { PrismaClient } = require("@prisma/client");
+const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
-const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const QUESTION_TYPES = ["CODING", "MCQ", "TRUE_FALSE", "MULTISELECT"];

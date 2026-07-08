@@ -63,7 +63,6 @@ export default function TestTaking() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       mediaStreamRef.current = stream;
       setMediaGranted(true);
-      if (preflightVideoRef.current) preflightVideoRef.current.srcObject = stream;
     } catch (err) {
       const reason =
         err.name === "NotAllowedError"
@@ -77,6 +76,15 @@ export default function TestTaking() {
       setRequestingMedia(false);
     }
   }
+
+  // Attach the granted stream to the preflight preview. This must be an effect (not done
+  // inline in requestMedia) because the <video> element only mounts once mediaGranted flips
+  // true — assigning srcObject synchronously inside requestMedia hits a ref that's still null.
+  useEffect(() => {
+    if (mediaGranted && preflightVideoRef.current && mediaStreamRef.current) {
+      preflightVideoRef.current.srcObject = mediaStreamRef.current;
+    }
+  }, [mediaGranted]);
 
   // Keep the live self-view (shown during the test) in sync with the granted stream
   useEffect(() => {
@@ -197,8 +205,15 @@ export default function TestTaking() {
     setSubmitResult(null);
   }, [current]);
 
+  const lastViolationAtRef = useRef(0);
   function reportViolation(reason) {
     if (!attemptIdRef.current || finalizedRef.current) return;
+    // Exiting fullscreen via Escape/Alt-Tab fires both `fullscreenchange` and `visibilitychange`
+    // within the same instant — without this guard a single action was double-counted as 2
+    // violations, which made the 3-strike limit feel broken/erratic.
+    const now = Date.now();
+    if (now - lastViolationAtRef.current < 1500) return;
+    lastViolationAtRef.current = now;
     api
       .post(`/tests/attempts/${attemptIdRef.current}/violation`)
       .then(({ data }) => {
@@ -217,22 +232,30 @@ export default function TestTaking() {
       .catch(() => {});
   }
 
-  // Tab-switch / focus-loss detection
+  // Tab-switch / focus-loss detection — also auto re-requests fullscreen the moment the
+  // tab regains focus, so the candidate is dropped straight back into the locked-down view.
   useEffect(() => {
     if (!started) return;
     function handleVisibilityChange() {
-      if (document.hidden) reportViolation("switching tabs during a test is not allowed");
+      if (document.hidden) {
+        reportViolation("switching tabs during a test is not allowed");
+      } else if (!finalizedRef.current && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+      }
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [started]);
 
-  // Fullscreen-exit detection
+  // Fullscreen-exit detection — immediately attempts to force back into fullscreen. Browsers
+  // that block programmatic re-entry without a fresh user gesture will silently no-op the
+  // request; the warning banner's "Resume fullscreen" button is the fallback for that case.
   useEffect(() => {
     if (!started) return;
     function handleFullscreenChange() {
       if (!document.fullscreenElement && !finalizedRef.current) {
         reportViolation("exiting fullscreen during a test is not allowed");
+        document.documentElement.requestFullscreen?.().catch(() => {});
       }
     }
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -258,10 +281,14 @@ export default function TestTaking() {
 
   function setLanguage(language) {
     if (!current) return;
+    // Switching language always loads that language's own default template — keeping the
+    // previous language's code around makes no sense and reads as "the compiler is broken".
     setAnswers((prev) => ({
       ...prev,
-      [current.id]: { language, code: prev[current.id]?.code || current.starterCode || defaultStarter(language) },
+      [current.id]: { language, code: defaultStarter(language) },
     }));
+    setRunResult(null);
+    setSubmitResult(null);
   }
 
   function setCode(code) {
@@ -589,13 +616,19 @@ export default function TestTaking() {
           )}
 
           <div style={{ maxHeight: "30%", overflowY: "auto", borderTop: "1px solid var(--line)", padding: 16, background: "#FBF9F4" }}>
-            {runResult && (
+            {(running || submitting) && (
+              <p className="mono" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>
+                ⏳ {running ? "Compiling and running" : "Grading"} your {answer?.language || ""} code
+                {["c", "cpp", "java"].includes(answer?.language) ? " — compiled languages take a bit longer" : ""}…
+              </p>
+            )}
+            {!running && !submitting && runResult && (
               <ResultBlock title="Sample run result" result={runResult} />
             )}
-            {submitResult && (
+            {!running && !submitting && submitResult && (
               <ResultBlock title="Submission result" result={submitResult.result} score={submitResult.submission.score} isQuiz={isQuiz} />
             )}
-            {!runResult && !submitResult && (
+            {!running && !submitting && !runResult && !submitResult && (
               <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
                 {isQuiz
                   ? "Choose an answer and submit — quiz questions are graded instantly."

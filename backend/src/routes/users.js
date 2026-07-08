@@ -3,12 +3,11 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const XLSX = require("xlsx");
-const { PrismaClient } = require("@prisma/client");
+const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { sendMail } = require("../utils/mailer");
 
 const router = express.Router();
-const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";

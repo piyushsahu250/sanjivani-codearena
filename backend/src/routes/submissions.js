@@ -1,11 +1,10 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
+const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { judgeSubmission } = require("../utils/judge");
 const { runQueued } = require("../utils/queue");
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // Exact-match grading for MCQ / TRUE_FALSE / MULTISELECT: the selected set of
 // option indices must equal the correct set exactly (no partial credit).

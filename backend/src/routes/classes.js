@@ -1,9 +1,8 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
+const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // ADMIN/STAFF: list classes/programs — optionally scoped to one institute
 router.get("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
