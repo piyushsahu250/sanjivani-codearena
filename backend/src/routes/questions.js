@@ -1,46 +1,331 @@
 const express = require("express");
+const multer = require("multer");
+const XLSX = require("xlsx");
 const { PrismaClient } = require("@prisma/client");
 const { authenticate, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
 const prisma = new PrismaClient();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-// Create a question with test cases
+const QUESTION_TYPES = ["CODING", "MCQ", "TRUE_FALSE", "MULTISELECT"];
+const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
+
+const TEMPLATE_HEADERS = [
+  "Question Name", "Subject", "Topic", "Question Text", "Question Type",
+  "Options", "Correct Answer", "Marks", "Difficulty Level", "Explanation",
+];
+
+// Normalizes/validates the type-specific fields (options + correctAnswer) for
+// MCQ / TRUE_FALSE / MULTISELECT questions. Returns { options, correctAnswer }
+// or throws a descriptive error.
+function normalizeOptions(questionType, rawOptions, rawCorrectAnswer) {
+  if (questionType === "TRUE_FALSE") {
+    const options = ["True", "False"];
+    const idx = normalizeCorrectIndices(rawCorrectAnswer, options, false)[0];
+    if (idx === undefined) throw new Error("True/False questions need a correct answer of True or False");
+    return { options, correctAnswer: [idx] };
+  }
+
+  const options = (Array.isArray(rawOptions) ? rawOptions : [])
+    .map((o) => String(o ?? "").trim())
+    .filter(Boolean);
+  if (options.length < 2) throw new Error("Provide at least 2 options");
+
+  const isMulti = questionType === "MULTISELECT";
+  const correctAnswer = normalizeCorrectIndices(rawCorrectAnswer, options, isMulti);
+  if (correctAnswer.length === 0) throw new Error("Select at least one correct answer");
+  if (!isMulti && correctAnswer.length > 1) throw new Error("Multiple Choice questions can only have one correct answer");
+
+  return { options, correctAnswer };
+}
+
+// Accepts correctAnswer as an array of 0-based indices (from the app UI) or
+// as text (from spreadsheet import: option text or 1-based numbers, comma/pipe separated).
+function normalizeCorrectIndices(raw, options, isMulti) {
+  let tokens;
+  if (Array.isArray(raw)) {
+    tokens = raw;
+  } else {
+    tokens = String(raw ?? "").split(/[,|]/).map((s) => s.trim()).filter(Boolean);
+  }
+
+  const indices = tokens
+    .map((t) => {
+      if (typeof t === "number") return t;
+      const s = String(t).trim();
+      if (/^\d+$/.test(s)) {
+        const n = Number(s);
+        // Heuristic: treat as a 1-based option number if in range, else 0-based index
+        if (n >= 1 && n <= options.length) return n - 1;
+        if (n >= 0 && n < options.length) return n;
+        return -1;
+      }
+      return options.findIndex((o) => o.trim().toLowerCase() === s.toLowerCase());
+    })
+    .filter((i) => i >= 0 && i < options.length);
+
+  const unique = [...new Set(indices)];
+  return isMulti ? unique : unique.slice(0, 1);
+}
+
+function buildWhere(query) {
+  const where = {};
+  if (query.subject) where.subject = query.subject;
+  if (query.topic) where.topic = query.topic;
+  if (query.difficulty && DIFFICULTIES.includes(query.difficulty)) where.difficulty = query.difficulty;
+  if (query.questionType && QUESTION_TYPES.includes(query.questionType)) where.questionType = query.questionType;
+  if (query.q) {
+    where.OR = [
+      { title: { contains: query.q, mode: "insensitive" } },
+      { description: { contains: query.q, mode: "insensitive" } },
+      { subject: { contains: query.q, mode: "insensitive" } },
+      { topic: { contains: query.q, mode: "insensitive" } },
+    ];
+  }
+  return where;
+}
+
+// Create a question (any type)
 router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { title, description, difficulty, points, timeLimitMs, starterCode, testCases } = req.body;
-    const question = await prisma.question.create({
-      data: {
-        title,
-        description,
-        difficulty: difficulty || "EASY",
-        points: points ?? 10,
-        timeLimitMs: timeLimitMs ?? 2000,
-        starterCode: starterCode || "",
-        testCases: {
-          create: (testCases || []).map((tc) => ({
-            input: tc.input,
-            expected: tc.expected,
-            isHidden: tc.isHidden ?? true,
-          })),
-        },
-      },
-      include: { testCases: true },
-    });
+    const {
+      title, description, subject, topic, questionType, difficulty, points, explanation,
+      timeLimitMs, starterCode, testCases, options, correctAnswer,
+    } = req.body;
+
+    if (!description) return res.status(400).json({ error: "Question text is required" });
+    const type = QUESTION_TYPES.includes(questionType) ? questionType : "CODING";
+
+    const data = {
+      title: title || null,
+      description,
+      subject: subject || null,
+      topic: topic || null,
+      questionType: type,
+      difficulty: difficulty || "EASY",
+      points: points ?? 10,
+      explanation: explanation || null,
+    };
+
+    if (type === "CODING") {
+      data.timeLimitMs = timeLimitMs ?? 2000;
+      data.starterCode = starterCode || "";
+      data.testCases = {
+        create: (testCases || []).map((tc) => ({
+          input: tc.input,
+          expected: tc.expected,
+          isHidden: tc.isHidden ?? true,
+        })),
+      };
+    } else {
+      const normalized = normalizeOptions(type, options, correctAnswer);
+      data.options = normalized.options;
+      data.correctAnswer = normalized.correctAnswer;
+    }
+
+    const question = await prisma.question.create({ data, include: { testCases: true } });
     res.json(question);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to create question" });
+    res.status(400).json({ error: err.message || "Failed to create question" });
   }
 });
 
-// List all questions (question bank) — staff only
+// Question Bank: list with search + filters
 router.get("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   const questions = await prisma.question.findMany({
+    where: buildWhere(req.query),
     include: { _count: { select: { testCases: true } } },
     orderBy: { createdAt: "desc" },
   });
   res.json(questions);
+});
+
+// Distinct subjects/topics — powers the filter dropdowns
+router.get("/meta/filters", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+  const [subjects, topics] = await Promise.all([
+    prisma.question.findMany({ where: { subject: { not: null } }, select: { subject: true }, distinct: ["subject"] }),
+    prisma.question.findMany({ where: { topic: { not: null } }, select: { topic: true }, distinct: ["topic"] }),
+  ]);
+  res.json({
+    subjects: subjects.map((s) => s.subject).filter(Boolean).sort(),
+    topics: topics.map((t) => t.topic).filter(Boolean).sort(),
+  });
+});
+
+// Download a sample .xlsx template for bulk question import (quiz types only)
+router.get("/bulk-template", authenticate, requireRole("ADMIN", "STAFF"), (req, res) => {
+  const sampleRows = [
+    ["Capital of France", "Geography", "Europe", "What is the capital of France?", "Multiple Choice", "Paris|London|Berlin|Madrid", "Paris", 5, "Easy", "Paris has been the capital since 987 AD."],
+    ["Water boils at 100C", "Science", "Physics", "Water boils at 100°C at sea level.", "True/False", "", "True", 2, "Easy", ""],
+    ["Prime numbers", "Math", "Number Theory", "Which of the following are prime numbers?", "Multiple Select", "2|3|4|9", "2,3", 5, "Medium", "2 and 3 are prime; 4 and 9 are not."],
+  ];
+  const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ...sampleRows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "Questions");
+  const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", "attachment; filename=question-bank-template.xlsx");
+  res.send(buffer);
+});
+
+// Export the current (optionally filtered) question bank to .xlsx
+router.get("/export", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+  const questions = await prisma.question.findMany({ where: buildWhere(req.query), orderBy: { questionNumber: "asc" } });
+
+  const rows = questions.map((q) => {
+    const options = Array.isArray(q.options) ? q.options : [];
+    const correctAnswer = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
+    return [
+      `Q${q.questionNumber}`,
+      q.title || "",
+      q.subject || "",
+      q.topic || "",
+      q.description,
+      TYPE_LABELS[q.questionType] || q.questionType,
+      options.join("|"),
+      correctAnswer.map((i) => options[i]).filter(Boolean).join(","),
+      q.points,
+      DIFFICULTY_LABELS[q.difficulty] || q.difficulty,
+      q.explanation || "",
+    ];
+  });
+
+  const sheet = XLSX.utils.aoa_to_sheet([["Question ID", ...TEMPLATE_HEADERS], ...rows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "Questions");
+  const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", "attachment; filename=question-bank-export.xlsx");
+  res.send(buffer);
+});
+
+const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "True/False", MULTISELECT: "Multiple Select" };
+const DIFFICULTY_LABELS = { EASY: "Easy", MEDIUM: "Medium", HARD: "Hard" };
+const TYPE_ALIASES = {
+  "multiple choice": "MCQ", mcq: "MCQ",
+  "true false": "TRUE_FALSE", "true/false": "TRUE_FALSE", truefalse: "TRUE_FALSE",
+  "multiple select": "MULTISELECT", "multi select": "MULTISELECT", multiselect: "MULTISELECT",
+  coding: "CODING",
+};
+const DIFFICULTY_ALIASES = { easy: "EASY", medium: "MEDIUM", hard: "HARD" };
+
+const IMPORT_HEADER_ALIASES = {
+  title: ["question name", "name"],
+  subject: ["subject"],
+  topic: ["topic"],
+  description: ["question text", "question", "text"],
+  questionType: ["question type", "type"],
+  options: ["options"],
+  correctAnswer: ["correct answer", "answer"],
+  points: ["marks", "points"],
+  difficulty: ["difficulty level", "difficulty"],
+  explanation: ["explanation"],
+};
+
+function normalizeHeader(str) {
+  return String(str || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function buildHeaderMap(headers) {
+  const map = {};
+  for (const header of headers) {
+    const norm = normalizeHeader(header);
+    for (const [field, aliases] of Object.entries(IMPORT_HEADER_ALIASES)) {
+      if (!map[field] && aliases.includes(norm)) map[field] = header;
+    }
+  }
+  return map;
+}
+
+// Bulk-import quiz questions (MCQ / True-False / Multiple Select) from .xlsx/.csv.
+// Coding questions aren't supported via spreadsheet import — their test cases
+// don't map cleanly to flat rows — use the question form for those.
+router.post("/bulk-import", authenticate, requireRole("ADMIN", "STAFF"), upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    let workbook;
+    try {
+      workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    } catch {
+      return res.status(400).json({ error: "Could not read this file. Please upload a valid .xlsx or .csv file." });
+    }
+
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = sheet ? XLSX.utils.sheet_to_json(sheet, { defval: "" }) : [];
+    if (rows.length === 0) return res.status(400).json({ error: "The uploaded file has no data rows." });
+
+    const headerMap = buildHeaderMap(Object.keys(rows[0]));
+    if (!headerMap.description || !headerMap.questionType) {
+      return res.status(400).json({ error: "Missing required columns. The file must include Question Text and Question Type." });
+    }
+
+    const field = (row, key) => (headerMap[key] ? String(row[headerMap[key]] ?? "").trim() : "");
+    const created = [];
+    const errors = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const rowNum = i + 2;
+      const row = rows[i];
+      const title = field(row, "title");
+      const description = field(row, "description");
+      const typeRaw = field(row, "questionType");
+
+      if (!title && !description && !typeRaw) continue; // blank row
+
+      if (!description) {
+        errors.push({ row: rowNum, reason: "Missing Question Text" });
+        continue;
+      }
+      const questionType = TYPE_ALIASES[normalizeHeader(typeRaw)];
+      if (!questionType) {
+        errors.push({ row: rowNum, reason: `Unrecognized Question Type "${typeRaw}"` });
+        continue;
+      }
+      if (questionType === "CODING") {
+        errors.push({ row: rowNum, reason: "Coding questions can't be bulk-imported — use the question form" });
+        continue;
+      }
+
+      const subject = field(row, "subject");
+      const topic = field(row, "topic");
+      const optionsRaw = field(row, "options").split("|").map((s) => s.trim()).filter(Boolean);
+      const correctAnswerRaw = field(row, "correctAnswer");
+      const pointsRaw = field(row, "points");
+      const difficultyRaw = field(row, "difficulty");
+      const explanation = field(row, "explanation");
+
+      try {
+        const normalized = normalizeOptions(questionType, optionsRaw, correctAnswerRaw);
+        const question = await prisma.question.create({
+          data: {
+            title: title || null,
+            description,
+            subject: subject || null,
+            topic: topic || null,
+            questionType,
+            difficulty: DIFFICULTY_ALIASES[normalizeHeader(difficultyRaw)] || "EASY",
+            points: Number(pointsRaw) || 10,
+            explanation: explanation || null,
+            options: normalized.options,
+            correctAnswer: normalized.correctAnswer,
+          },
+        });
+        created.push(question);
+      } catch (err) {
+        errors.push({ row: rowNum, reason: err.message || "Failed to create question" });
+      }
+    }
+
+    res.json({ total: rows.length, createdCount: created.length, errorCount: errors.length, errors });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Bulk import failed" });
+  }
 });
 
 router.get("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
@@ -48,12 +333,70 @@ router.get("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res)
     where: { id: req.params.id },
     include: { testCases: true },
   });
+  if (!question) return res.status(404).json({ error: "Question not found" });
   res.json(question);
 });
 
+// Edit a question (any type)
+router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+  try {
+    const existing = await prisma.question.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Question not found" });
+
+    const {
+      title, description, subject, topic, questionType, difficulty, points, explanation,
+      timeLimitMs, starterCode, testCases, options, correctAnswer,
+    } = req.body;
+
+    const type = QUESTION_TYPES.includes(questionType) ? questionType : existing.questionType;
+
+    const data = {
+      title: title ?? existing.title,
+      description: description ?? existing.description,
+      subject: subject ?? existing.subject,
+      topic: topic ?? existing.topic,
+      questionType: type,
+      difficulty: difficulty || existing.difficulty,
+      points: points ?? existing.points,
+      explanation: explanation ?? existing.explanation,
+    };
+
+    if (type === "CODING") {
+      data.timeLimitMs = timeLimitMs ?? existing.timeLimitMs;
+      data.starterCode = starterCode ?? existing.starterCode;
+      data.options = null;
+      data.correctAnswer = null;
+      if (testCases) {
+        await prisma.testCase.deleteMany({ where: { questionId: existing.id } });
+        data.testCases = {
+          create: testCases.map((tc) => ({ input: tc.input, expected: tc.expected, isHidden: tc.isHidden ?? true })),
+        };
+      }
+    } else {
+      const normalized = normalizeOptions(type, options ?? existing.options, correctAnswer ?? existing.correctAnswer);
+      data.options = normalized.options;
+      data.correctAnswer = normalized.correctAnswer;
+    }
+
+    const question = await prisma.question.update({ where: { id: existing.id }, data, include: { testCases: true } });
+    res.json(question);
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.message || "Failed to update question" });
+  }
+});
+
 router.delete("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
-  await prisma.question.delete({ where: { id: req.params.id } });
-  res.json({ success: true });
+  try {
+    await prisma.question.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === "P2003" || err.code === "P2014") {
+      return res.status(409).json({ error: "This question is used in one or more tests and can't be deleted." });
+    }
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete question" });
+  }
 });
 
 module.exports = router;

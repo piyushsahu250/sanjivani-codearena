@@ -26,7 +26,7 @@ export default function TestTaking() {
   const [attemptId, setAttemptId] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [answers, setAnswers] = useState({}); // { [questionId]: { language, code } }
+  const [answers, setAnswers] = useState({}); // { [questionId]: { language, code } | { selected: number[] } }
   const [runResult, setRunResult] = useState(null);
   const [submitResult, setSubmitResult] = useState(null);
   const [running, setRunning] = useState(false);
@@ -76,6 +76,8 @@ export default function TestTaking() {
   const questions = test?.questions || [];
   const current = questions[activeIdx]?.question;
   const currentTq = questions[activeIdx];
+  const isQuiz = current && current.questionType !== "CODING";
+  const isMulti = current?.questionType === "MULTISELECT";
 
   // Overall test timer
   useEffect(() => {
@@ -113,14 +115,18 @@ export default function TestTaking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIdx, currentTq?.id]);
 
-  // Initialize/restore code for the active question, and reset the run result panel
+  // Initialize/restore the answer for the active question, and reset the run result panel
   useEffect(() => {
     if (!current) return;
     setAnswers((prev) => {
       if (prev[current.id]) return prev;
-      return { ...prev, [current.id]: { language: "javascript", code: current.starterCode || defaultStarter("javascript") } };
+      if (current.questionType === "CODING") {
+        return { ...prev, [current.id]: { language: "javascript", code: current.starterCode || defaultStarter("javascript") } };
+      }
+      return { ...prev, [current.id]: { selected: [] } };
     });
     setRunResult(null);
+    setSubmitResult(null);
   }, [current]);
 
   function reportViolation(reason) {
@@ -193,8 +199,19 @@ export default function TestTaking() {
     setAnswers((prev) => ({ ...prev, [current.id]: { ...prev[current.id], code } }));
   }
 
+  function toggleOption(idx) {
+    if (!current) return;
+    setAnswers((prev) => {
+      const prevSelected = prev[current.id]?.selected || [];
+      const nextSelected = isMulti
+        ? (prevSelected.includes(idx) ? prevSelected.filter((i) => i !== idx) : [...prevSelected, idx])
+        : [idx];
+      return { ...prev, [current.id]: { ...prev[current.id], selected: nextSelected } };
+    });
+  }
+
   async function handleRun() {
-    if (!answer) return;
+    if (!answer || isQuiz) return;
     setRunning(true);
     setRunResult(null);
     try {
@@ -212,7 +229,14 @@ export default function TestTaking() {
     setSubmitting(true);
     setSubmitResult(null);
     try {
-      const { data } = await api.post("/submissions/submit", { attemptId, questionId: current.id, language: answer.language, code: answer.code });
+      const payload = { attemptId, questionId: current.id };
+      if (isQuiz) {
+        payload.selectedOptions = answer.selected || [];
+      } else {
+        payload.language = answer.language;
+        payload.code = answer.code;
+      }
+      const { data } = await api.post("/submissions/submit", payload);
       setSubmitResult(data);
       setSubmittedQuestions((prev) => ({ ...prev, [current.id]: data.result.verdict }));
     } catch (err) {
@@ -356,7 +380,7 @@ export default function TestTaking() {
                   fontSize: 13,
                 }}
               >
-                Q{idx + 1}. {tq.question.title}
+                Q{idx + 1}. {tq.question.title || "(untitled)"}
                 {verdict && (
                   <span style={{ display: "block", fontSize: 11, marginTop: 2, color: verdict === "ACCEPTED" ? "var(--mint)" : "var(--rust)" }} className="mono">
                     {verdict}
@@ -372,58 +396,94 @@ export default function TestTaking() {
           {current && (
             <>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <h2 style={{ fontSize: 20 }}>{current.title}</h2>
+                <h2 style={{ fontSize: 20 }}>{current.title || "(untitled)"}</h2>
                 <span className={`badge badge-${current.difficulty.toLowerCase()}`}>{current.difficulty}</span>
               </div>
               <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>{current.points} points</p>
               <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14, marginTop: 16 }}>{current.description}</p>
 
-              <div style={{ marginTop: 24 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)" }}>SAMPLE TEST CASES</div>
-                {current.testCases.map((tc, i) => (
-                  <div key={tc.id} className="card" style={{ padding: 12, marginTop: 8, fontSize: 13 }}>
-                    <div className="mono"><strong>Input:</strong> {tc.input}</div>
-                    <div className="mono"><strong>Expected:</strong> {tc.expected}</div>
-                  </div>
-                ))}
-              </div>
+              {!isQuiz && (
+                <div style={{ marginTop: 24 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)" }}>SAMPLE TEST CASES</div>
+                  {current.testCases.map((tc, i) => (
+                    <div key={tc.id} className="card" style={{ padding: 12, marginTop: 8, fontSize: 13 }}>
+                      <div className="mono"><strong>Input:</strong> {tc.input}</div>
+                      <div className="mono"><strong>Expected:</strong> {tc.expected}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
 
-        {/* Editor + results */}
+        {/* Answer panel: code editor for Coding, options for quiz types */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-          <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <select value={answer?.language || "javascript"} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
-              {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-            </select>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-ghost" onClick={handleRun} disabled={running}>{running ? "Running…" : "▶ Run sample"}</button>
-              <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>{submitting ? "Submitting…" : "Submit answer"}</button>
-            </div>
-          </div>
+          {isQuiz ? (
+            <>
+              <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
+                  {isMulti ? "Select all that apply" : "Select one answer"}
+                </span>
+                <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting || !(answer?.selected?.length)}>
+                  {submitting ? "Submitting…" : "Submit answer"}
+                </button>
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+                {(current.options || []).map((opt, idx) => (
+                  <label
+                    key={idx}
+                    className="card"
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, marginBottom: 10, cursor: "pointer" }}
+                  >
+                    <input
+                      type={isMulti ? "checkbox" : "radio"}
+                      name="quiz-option"
+                      checked={(answer?.selected || []).includes(idx)}
+                      onChange={() => toggleOption(idx)}
+                    />
+                    <span style={{ fontSize: 14 }}>{opt}</span>
+                  </label>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <select value={answer?.language || "javascript"} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
+                  {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+                </select>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn btn-ghost" onClick={handleRun} disabled={running}>{running ? "Running…" : "▶ Run sample"}</button>
+                  <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>{submitting ? "Submitting…" : "Submit answer"}</button>
+                </div>
+              </div>
 
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <Editor
-              height="100%"
-              language={LANGUAGES.find((l) => l.id === answer?.language)?.monaco}
-              value={answer?.code || ""}
-              onChange={(v) => setCode(v || "")}
-              theme="vs-dark"
-              options={{ fontSize: 14, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace" }}
-            />
-          </div>
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <Editor
+                  height="100%"
+                  language={LANGUAGES.find((l) => l.id === answer?.language)?.monaco}
+                  value={answer?.code || ""}
+                  onChange={(v) => setCode(v || "")}
+                  theme="vs-dark"
+                  options={{ fontSize: 14, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace" }}
+                />
+              </div>
+            </>
+          )}
 
           <div style={{ maxHeight: "30%", overflowY: "auto", borderTop: "1px solid var(--line)", padding: 16, background: "#FBF9F4" }}>
             {runResult && (
               <ResultBlock title="Sample run result" result={runResult} />
             )}
             {submitResult && (
-              <ResultBlock title="Submission result" result={submitResult.result} score={submitResult.submission.score} />
+              <ResultBlock title="Submission result" result={submitResult.result} score={submitResult.submission.score} isQuiz={isQuiz} />
             )}
             {!runResult && !submitResult && (
               <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
-                Run against sample cases before submitting. Submission is graded against all (including hidden) test cases.
+                {isQuiz
+                  ? "Choose an answer and submit — quiz questions are graded instantly."
+                  : "Run against sample cases before submitting. Submission is graded against all (including hidden) test cases."}
               </p>
             )}
           </div>
@@ -433,7 +493,7 @@ export default function TestTaking() {
   );
 }
 
-function ResultBlock({ title, result, score }) {
+function ResultBlock({ title, result, score, isQuiz }) {
   if (result.error) {
     return <p style={{ color: "var(--rust)" }} className="mono">{title}: {result.error}</p>;
   }
@@ -441,10 +501,12 @@ function ResultBlock({ title, result, score }) {
   return (
     <div>
       <div className="mono" style={{ fontWeight: 700, color }}>
-        {title}: {result.verdict} — {result.passedCases}/{result.totalCases} test cases passed
-        {score !== undefined && ` · ${score} points`}
+        {title}: {result.verdict === "ACCEPTED" ? "Correct" : result.verdict === "PARTIAL" ? "Partially correct" : "Incorrect"}
+        {isQuiz
+          ? (score !== undefined && ` · ${score} points`)
+          : ` — ${result.passedCases}/${result.totalCases} test cases passed${score !== undefined ? ` · ${score} points` : ""}`}
       </div>
-      {result.details?.map((d, i) => (
+      {!isQuiz && result.details?.map((d, i) => (
         <div key={i} style={{ fontSize: 12, marginTop: 6 }} className="mono">
           <span style={{ color: d.verdict === "PASSED" ? "var(--mint)" : "var(--rust)" }}>[{d.verdict}]</span>{" "}
           input: {d.input} | expected: {d.expected} | got: {d.actual ?? d.error}

@@ -7,6 +7,20 @@ const { runQueued } = require("../utils/queue");
 const router = express.Router();
 const prisma = new PrismaClient();
 
+// Exact-match grading for MCQ / TRUE_FALSE / MULTISELECT: the selected set of
+// option indices must equal the correct set exactly (no partial credit).
+function gradeQuizAnswer(question, selectedOptions) {
+  const correct = Array.isArray(question.correctAnswer) ? [...question.correctAnswer].sort() : [];
+  const selected = Array.isArray(selectedOptions) ? [...new Set(selectedOptions)].sort() : [];
+  const isMatch = correct.length === selected.length && correct.every((v, i) => v === selected[i]);
+  return {
+    passedCases: isMatch ? 1 : 0,
+    totalCases: 1,
+    verdict: isMatch ? "ACCEPTED" : "WRONG_ANSWER",
+    details: [{ verdict: isMatch ? "PASSED" : "WRONG_ANSWER" }],
+  };
+}
+
 // STUDENT: run code against sample (non-hidden) test cases only — for self-check, doesn't save score
 router.post("/run", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
@@ -16,6 +30,9 @@ router.post("/run", authenticate, requireRole("STUDENT"), async (req, res) => {
       include: { testCases: { where: { isHidden: false } } },
     });
     if (!question) return res.status(404).json({ error: "Question not found" });
+    if (question.questionType !== "CODING") {
+      return res.status(400).json({ error: "Run is only available for coding questions" });
+    }
 
     const result = await runQueued(() =>
       judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs })
@@ -27,10 +44,12 @@ router.post("/run", authenticate, requireRole("STUDENT"), async (req, res) => {
   }
 });
 
-// STUDENT: submit final answer for a question — judged against ALL test cases, saved & scored
+// STUDENT: submit final answer for a question — judged/graded and scored.
+// Coding: language + code, judged against ALL test cases.
+// MCQ / TRUE_FALSE / MULTISELECT: selectedOptions (array of option indices).
 router.post("/submit", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
-    const { attemptId, questionId, language, code } = req.body;
+    const { attemptId, questionId, language, code, selectedOptions } = req.body;
 
     const attempt = await prisma.testAttempt.findUnique({ where: { id: attemptId } });
     if (!attempt || attempt.studentId !== req.user.id) {
@@ -46,9 +65,19 @@ router.post("/submit", authenticate, requireRole("STUDENT"), async (req, res) =>
     });
     if (!question) return res.status(404).json({ error: "Question not found" });
 
-    const result = await runQueued(() =>
-      judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs })
-    );
+    let result;
+    let submissionLanguage = language || "";
+    let submissionCode = code || "";
+
+    if (question.questionType === "CODING") {
+      result = await runQueued(() =>
+        judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs })
+      );
+    } else {
+      result = gradeQuizAnswer(question, selectedOptions);
+      submissionLanguage = question.questionType;
+      submissionCode = JSON.stringify(selectedOptions || []);
+    }
 
     const score =
       result.verdict === "ACCEPTED"
@@ -60,8 +89,8 @@ router.post("/submit", authenticate, requireRole("STUDENT"), async (req, res) =>
         attemptId,
         questionId,
         studentId: req.user.id,
-        language,
-        code,
+        language: submissionLanguage,
+        code: submissionCode,
         score,
         passedCases: result.passedCases,
         totalCases: result.totalCases,

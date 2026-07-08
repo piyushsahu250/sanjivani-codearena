@@ -4,9 +4,11 @@ import api from "../api";
 import Navbar from "../components/Navbar";
 
 const DEFAULT_MINUTES_PER_QUESTION = 15;
+const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "True/False", MULTISELECT: "Multiple Select" };
 
 export default function CreateTest() {
   const [questions, setQuestions] = useState([]);
+  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
   const [minutesById, setMinutesById] = useState({});
   const [form, setForm] = useState({ title: "", description: "", durationMin: 60, startTime: "", endTime: "" });
@@ -14,8 +16,8 @@ export default function CreateTest() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.get("/questions").then((res) => setQuestions(res.data));
-  }, []);
+    api.get("/questions", { params: search ? { q: search } : {} }).then((res) => setQuestions(res.data));
+  }, [search]);
 
   function toggle(qId) {
     setSelected((prev) => (prev.includes(qId) ? prev.filter((id) => id !== qId) : [...prev, qId]));
@@ -79,13 +81,23 @@ export default function CreateTest() {
           </div>
 
           <div style={{ marginTop: 24, fontWeight: 700, fontSize: 14 }}>Select questions from the bank</div>
-          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>Add as many as you need. Each gets its own time allowance — the test auto-advances to the next question when a question's time runs out.</p>
+          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>Add as many as you need — coding and quiz questions can be mixed. Each gets its own time allowance — the test auto-advances to the next question when a question's time runs out.</p>
+          <input
+            style={{ ...inputStyle, marginTop: 10 }}
+            placeholder="Search questions…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
           <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
             {questions.map((q) => (
               <label key={q.id} className="card" style={{ padding: 12, display: "flex", alignItems: "center", gap: 10, fontSize: 14 }}>
                 <input type="checkbox" checked={selected.includes(q.id)} onChange={() => toggle(q.id)} />
-                {q.title} <span className={`badge badge-${q.difficulty.toLowerCase()}`}>{q.difficulty}</span>
-                <span className="mono" style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-dim)" }}>{q.points} pts · {q._count.testCases} cases</span>
+                {q.title || "(untitled)"}
+                <span className="badge">{TYPE_LABELS[q.questionType]}</span>
+                <span className={`badge badge-${q.difficulty.toLowerCase()}`}>{q.difficulty}</span>
+                <span className="mono" style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-dim)" }}>
+                  {q.points} pts{q.questionType === "CODING" ? ` · ${q._count.testCases} cases` : ""}
+                </span>
                 {selected.includes(q.id) && (
                   <span className="mono" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
                     <input

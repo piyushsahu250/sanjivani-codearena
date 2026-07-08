@@ -4,6 +4,8 @@ import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 
+const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "True/False", MULTISELECT: "Multiple Select" };
+
 export default function TestPreview() {
   const { id } = useParams();
   const [test, setTest] = useState(null);
@@ -28,24 +30,47 @@ export default function TestPreview() {
         <div style={{ display: "grid", gap: 16, marginTop: 32 }}>
           {test.questions.map((tq, idx) => (
             <div key={tq.id} className="card" style={{ padding: 20 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <h3 style={{ fontSize: 16 }}>Q{idx + 1}. {tq.question.title}</h3>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <h3 style={{ fontSize: 16 }}>Q{idx + 1}. {tq.question.title || "(untitled)"}</h3>
+                <span className="badge">{TYPE_LABELS[tq.question.questionType]}</span>
                 <span className={`badge badge-${tq.question.difficulty.toLowerCase()}`}>{tq.question.difficulty}</span>
                 <span className="mono" style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-dim)" }}>
                   {tq.question.points} pts · {Math.round(tq.timeLimitSec / 60)} min
                 </span>
               </div>
               <p style={{ whiteSpace: "pre-wrap", fontSize: 14, marginTop: 10, lineHeight: 1.6 }}>{tq.question.description}</p>
-              <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)" }}>TEST CASES ({tq.question.testCases.length})</div>
-                {tq.question.testCases.map((tc) => (
-                  <div key={tc.id} className="card" style={{ padding: 10, marginTop: 6, fontSize: 12 }}>
-                    <div className="mono"><strong>Input:</strong> {tc.input}</div>
-                    <div className="mono"><strong>Expected:</strong> {tc.expected}</div>
-                    {tc.isHidden && <div className="mono" style={{ color: "var(--ink-dim)" }}>hidden</div>}
+
+              {tq.question.questionType === "CODING" ? (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)" }}>TEST CASES ({tq.question.testCases.length})</div>
+                  {tq.question.testCases.map((tc) => (
+                    <div key={tc.id} className="card" style={{ padding: 10, marginTop: 6, fontSize: 12 }}>
+                      <div className="mono"><strong>Input:</strong> {tc.input}</div>
+                      <div className="mono"><strong>Expected:</strong> {tc.expected}</div>
+                      {tc.isHidden && <div className="mono" style={{ color: "var(--ink-dim)" }}>hidden</div>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)" }}>OPTIONS</div>
+                  <div style={{ display: "grid", gap: 4, marginTop: 6 }}>
+                    {(tq.question.options || []).map((opt, i) => {
+                      const isCorrect = (tq.question.correctAnswer || []).includes(i);
+                      return (
+                        <div key={i} style={{ fontSize: 13, color: isCorrect ? "var(--mint)" : "inherit", fontWeight: isCorrect ? 700 : 400 }}>
+                          {isCorrect ? "✓ " : "· "}{opt}
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
+                  {tq.question.explanation && (
+                    <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 10 }}>
+                      <strong>Explanation:</strong> {tq.question.explanation}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           {test.questions.length === 0 && (

@@ -21,6 +21,13 @@ enum Difficulty {
   HARD
 }
 
+enum QuestionType {
+  CODING
+  MCQ
+  TRUE_FALSE
+  MULTISELECT
+}
+
 model User {
   id           String   @id @default(uuid())
   name         String
@@ -60,17 +67,32 @@ model Test {
 }
 
 model Question {
-  id          String     @id @default(uuid())
-  title       String
-  description String
-  difficulty  Difficulty @default(EASY)
-  points      Int        @default(10)
-  timeLimitMs Int        @default(2000)
-  starterCode String?
-  createdAt   DateTime   @default(now())
+  id             String       @id @default(uuid())
+  questionNumber Int          @default(autoincrement()) @unique // human-friendly display ID, e.g. "Q102"
+  title          String?      // question name (optional label)
+  description    String       // question text
+  subject        String?
+  topic          String?
+  questionType   QuestionType @default(CODING)
+  difficulty     Difficulty   @default(EASY)
+  points         Int          @default(10) // marks
+  explanation    String?
+  createdAt      DateTime     @default(now())
 
-  testCases   TestCase[]
-  testLinks   TestQuestion[]
+  // CODING-only fields
+  timeLimitMs Int     @default(2000)
+  starterCode String?
+
+  // MCQ / TRUE_FALSE / MULTISELECT fields
+  options       Json? // array of option strings
+  correctAnswer Json? // array of correct option indices
+
+  testCases TestCase[]
+  testLinks TestQuestion[]
+
+  @@index([subject])
+  @@index([topic])
+  @@index([questionType])
 }
 
 model TestCase {

@@ -66,7 +66,8 @@ router.get("/", authenticate, async (req, res) => {
   res.json(tests);
 });
 
-// --- Get single test detail (questions without hidden test cases for students) ---
+// --- Get single test detail (questions without hidden test cases, and without
+// correctAnswer/explanation, for students — those would leak the answer key) ---
 router.get("/:id", authenticate, async (req, res) => {
   const isStaff = req.user.role === "ADMIN" || req.user.role === "STAFF";
   const test = await prisma.test.findUnique({
@@ -75,7 +76,23 @@ router.get("/:id", authenticate, async (req, res) => {
       questions: {
         include: {
           question: {
-            include: { testCases: isStaff ? true : { where: { isHidden: false } } },
+            select: {
+              id: true,
+              questionNumber: true,
+              title: true,
+              description: true,
+              subject: true,
+              topic: true,
+              questionType: true,
+              difficulty: true,
+              points: true,
+              timeLimitMs: true,
+              starterCode: true,
+              options: true,
+              correctAnswer: isStaff,
+              explanation: isStaff,
+              testCases: { where: isStaff ? {} : { isHidden: false } },
+            },
           },
         },
         orderBy: { order: "asc" },
