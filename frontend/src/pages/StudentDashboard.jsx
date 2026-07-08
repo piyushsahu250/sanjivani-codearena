@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
@@ -71,14 +71,18 @@ export default function StudentDashboard() {
                     {new Date(test.startTime).toLocaleString()} → {new Date(test.endTime).toLocaleString()}
                   </p>
                 </div>
-                <button
-                  className="btn btn-dark"
-                  disabled={status.label !== "Live now"}
-                  style={{ opacity: status.label !== "Live now" ? 0.4 : 1 }}
-                  onClick={() => attend(test)}
-                >
-                  {status.label === "Live now" ? "Attend test →" : status.label}
-                </button>
+                {status.label === "Closed" ? (
+                  <Link to={`/test/${test.id}/result`} className="btn btn-ghost">View result →</Link>
+                ) : (
+                  <button
+                    className="btn btn-dark"
+                    disabled={status.label !== "Live now"}
+                    style={{ opacity: status.label !== "Live now" ? 0.4 : 1 }}
+                    onClick={() => attend(test)}
+                  >
+                    {status.label === "Live now" ? "Attend test →" : status.label}
+                  </button>
+                )}
               </div>
             );
           })}

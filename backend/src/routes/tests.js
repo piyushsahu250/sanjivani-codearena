@@ -5,33 +5,146 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const router = express.Router();
 const prisma = new PrismaClient();
 
+function questionCreateData(questionIds, questionTimeLimits) {
+  return (questionIds || []).map((qId, idx) => ({
+    questionId: qId,
+    order: idx,
+    timeLimitSec: Number(questionTimeLimits?.[qId]) || 900,
+  }));
+}
+
+// A student can see/take a test if it has no class assignment (open to all, legacy default)
+// or their class is one of the assigned classes.
+async function studentCanAccessTest(test, studentClassId) {
+  const links = await prisma.testClass.count({ where: { testId: test.id } });
+  if (links === 0) return true;
+  if (!studentClassId) return false;
+  const match = await prisma.testClass.findUnique({
+    where: { testId_classId: { testId: test.id, classId: studentClassId } },
+  });
+  return !!match;
+}
+
 // --- ADMIN/STAFF: create a test ---
 // questionIds: string[]  |  questionTimeLimits: { [questionId]: seconds } (optional, defaults to 900s/15min each)
+// classIds: string[] (optional) — assign the test to specific classes; omitted/empty = open to all classes
 router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { title, description, durationMin, startTime, endTime, questionIds, questionTimeLimits } = req.body;
+    const {
+      title, code, description, instructions, durationMin, passingMarks, showResults,
+      startTime, endTime, questionIds, questionTimeLimits, classIds,
+    } = req.body;
     const test = await prisma.test.create({
       data: {
         title,
+        code: code?.trim() || null,
         description,
+        instructions: instructions?.trim() || null,
         durationMin: durationMin || 60,
+        passingMarks: passingMarks !== undefined && passingMarks !== "" ? Number(passingMarks) : null,
+        showResults: showResults === undefined ? true : !!showResults,
         startTime: new Date(startTime),
         endTime: new Date(endTime),
         createdById: req.user.id,
-        questions: {
-          create: (questionIds || []).map((qId, idx) => ({
-            questionId: qId,
-            order: idx,
-            timeLimitSec: Number(questionTimeLimits?.[qId]) || 900,
-          })),
-        },
+        questions: { create: questionCreateData(questionIds, questionTimeLimits) },
+        classes: { create: (classIds || []).map((classId) => ({ classId })) },
       },
-      include: { questions: true },
+      include: { questions: true, classes: true },
     });
     res.json(test);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to create test" });
+  }
+});
+
+// --- ADMIN/STAFF: edit an existing test (replaces questions + class assignment) ---
+router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+  try {
+    const existing = await prisma.test.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Test not found" });
+
+    const {
+      title, code, description, instructions, durationMin, passingMarks, showResults,
+      startTime, endTime, questionIds, questionTimeLimits, classIds,
+    } = req.body;
+
+    const data = {
+      title: title ?? existing.title,
+      code: code !== undefined ? (code?.trim() || null) : existing.code,
+      description: description ?? existing.description,
+      instructions: instructions !== undefined ? (instructions?.trim() || null) : existing.instructions,
+      durationMin: durationMin !== undefined ? Number(durationMin) : existing.durationMin,
+      passingMarks: passingMarks !== undefined ? (passingMarks === "" ? null : Number(passingMarks)) : existing.passingMarks,
+      showResults: showResults === undefined ? existing.showResults : !!showResults,
+      startTime: startTime ? new Date(startTime) : existing.startTime,
+      endTime: endTime ? new Date(endTime) : existing.endTime,
+    };
+
+    await prisma.$transaction(async (tx) => {
+      await tx.test.update({ where: { id: existing.id }, data });
+
+      if (questionIds) {
+        await tx.testQuestion.deleteMany({ where: { testId: existing.id } });
+        await tx.testQuestion.createMany({
+          data: questionCreateData(questionIds, questionTimeLimits).map((q) => ({ ...q, testId: existing.id })),
+        });
+      }
+
+      if (classIds) {
+        await tx.testClass.deleteMany({ where: { testId: existing.id } });
+        if (classIds.length > 0) {
+          await tx.testClass.createMany({ data: classIds.map((classId) => ({ testId: existing.id, classId })) });
+        }
+      }
+    });
+
+    const test = await prisma.test.findUnique({
+      where: { id: existing.id },
+      include: { questions: true, classes: true },
+    });
+    res.json(test);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update test" });
+  }
+});
+
+// --- ADMIN/STAFF: duplicate a test (questions + class assignment cloned, always starts unpublished) ---
+router.post("/:id/duplicate", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+  try {
+    const original = await prisma.test.findUnique({
+      where: { id: req.params.id },
+      include: { questions: true, classes: true },
+    });
+    if (!original) return res.status(404).json({ error: "Test not found" });
+
+    const copy = await prisma.test.create({
+      data: {
+        title: `Copy of ${original.title}`,
+        code: original.code,
+        description: original.description,
+        instructions: original.instructions,
+        durationMin: original.durationMin,
+        passingMarks: original.passingMarks,
+        showResults: original.showResults,
+        startTime: original.startTime,
+        endTime: original.endTime,
+        isPublished: false,
+        createdById: req.user.id,
+        questions: {
+          create: original.questions.map((q) => ({ questionId: q.questionId, order: q.order, timeLimitSec: q.timeLimitSec })),
+        },
+        classes: {
+          create: original.classes.map((c) => ({ classId: c.classId })),
+        },
+      },
+      include: { questions: true, classes: true },
+    });
+    res.json(copy);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to duplicate test" });
   }
 });
 
@@ -55,15 +168,20 @@ router.patch("/:id/publish", authenticate, requireRole("ADMIN", "STAFF"), async 
   res.json(test);
 });
 
-// --- Everyone authenticated: list tests (students see only published, active/upcoming) ---
+// --- Everyone authenticated: list tests (students see only published tests assigned to their class) ---
 router.get("/", authenticate, async (req, res) => {
   const isStaff = req.user.role === "ADMIN" || req.user.role === "STAFF";
   const tests = await prisma.test.findMany({
     where: isStaff ? {} : { isPublished: true },
     orderBy: { startTime: "asc" },
-    include: { _count: { select: { questions: true, attempts: true } } },
+    include: { _count: { select: { questions: true, attempts: true } }, classes: { select: { classId: true } } },
   });
-  res.json(tests);
+
+  if (isStaff) return res.json(tests);
+
+  const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true } });
+  const visible = tests.filter((t) => t.classes.length === 0 || (student.classId && t.classes.some((c) => c.classId === student.classId)));
+  res.json(visible);
 });
 
 // --- Get single test detail (questions without hidden test cases, and without
@@ -73,6 +191,7 @@ router.get("/:id", authenticate, async (req, res) => {
   const test = await prisma.test.findUnique({
     where: { id: req.params.id },
     include: {
+      classes: { select: { classId: true } },
       questions: {
         include: {
           question: {
@@ -100,6 +219,13 @@ router.get("/:id", authenticate, async (req, res) => {
     },
   });
   if (!test) return res.status(404).json({ error: "Test not found" });
+
+  if (!isStaff) {
+    const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true } });
+    const allowed = test.classes.length === 0 || (student.classId && test.classes.some((c) => c.classId === student.classId));
+    if (!allowed) return res.status(404).json({ error: "Test not found" });
+  }
+
   res.json(test);
 });
 
@@ -109,6 +235,10 @@ router.post("/:id/start", authenticate, requireRole("STUDENT"), async (req, res)
     const testId = req.params.id;
     const test = await prisma.test.findUnique({ where: { id: testId } });
     if (!test || !test.isPublished) return res.status(404).json({ error: "Test not available" });
+
+    const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true } });
+    const allowed = await studentCanAccessTest(test, student.classId);
+    if (!allowed) return res.status(404).json({ error: "Test not available" });
 
     const existing = await prisma.testAttempt.findUnique({
       where: { testId_studentId: { testId, studentId: req.user.id } },
@@ -167,6 +297,37 @@ router.get("/:id/results", authenticate, requireRole("ADMIN", "STAFF"), async (r
     orderBy: { totalScore: "desc" },
   });
   res.json(attempts);
+});
+
+// --- STUDENT: view their own result for a test, respecting the test's showResults toggle ---
+router.get("/:id/my-result", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const test = await prisma.test.findUnique({ where: { id: req.params.id } });
+    if (!test) return res.status(404).json({ error: "Test not found" });
+
+    const attempt = await prisma.testAttempt.findUnique({
+      where: { testId_studentId: { testId: test.id, studentId: req.user.id } },
+      include: { submissions: true },
+    });
+    if (!attempt) return res.status(404).json({ error: "You have not attempted this test" });
+    if (attempt.status === "IN_PROGRESS") return res.status(403).json({ error: "Test not yet submitted" });
+    if (!test.showResults) {
+      return res.json({ status: attempt.status, showResults: false });
+    }
+
+    res.json({
+      status: attempt.status,
+      showResults: true,
+      totalScore: attempt.totalScore,
+      passingMarks: test.passingMarks,
+      submittedAt: attempt.submittedAt,
+      tabSwitchCount: attempt.tabSwitchCount,
+      submissions: attempt.submissions,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load result" });
+  }
 });
 
 module.exports = router;

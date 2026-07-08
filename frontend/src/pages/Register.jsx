@@ -5,7 +5,7 @@ export default function Register() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    alert("Self-registration is disabled. Please contact admin to get your account created.");
+    alert("User registration is managed by the administrator. Please contact your institute administrator to receive your login credentials.");
     navigate("/login", { replace: true });
   }, [navigate]);
 

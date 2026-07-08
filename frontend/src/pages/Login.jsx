@@ -19,6 +19,10 @@ export default function Login() {
     try {
       const { data } = await api.post("/auth/login", { email, password });
       login(data.token, data.user);
+      if (data.user.mustChangePassword) {
+        navigate("/change-password");
+        return;
+      }
       const homeByRole = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
       navigate(homeByRole[data.user.role] || "/login");
     } catch (err) {

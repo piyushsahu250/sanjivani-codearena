@@ -19,7 +19,7 @@ function hashToken(token) {
 // created by an admin via POST /api/users. This route is kept only to give
 // anyone hitting it directly a clear, consistent message.
 router.post("/register", async (req, res) => {
-  res.status(403).json({ error: "Self-registration is disabled. Please contact admin to get your account created." });
+  res.status(403).json({ error: "User registration is managed by the administrator. Please contact your institute administrator to receive your login credentials." });
 });
 
 router.post("/login", async (req, res) => {
@@ -37,7 +37,7 @@ router.post("/login", async (req, res) => {
       { expiresIn: "12h" }
     );
 
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, mustChangePassword: user.mustChangePassword } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Login failed" });

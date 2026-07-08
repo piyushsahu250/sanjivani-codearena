@@ -12,13 +12,20 @@ const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";
-const DEFAULT_STUDENT_PASSWORD = "Sanjivani@1";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const SELECT_FIELDS = {
   id: true, name: true, email: true, role: true, rollNumber: true, department: true,
   mobile: true, program: true, batchYear: true, section: true, createdAt: true,
+  mustChangePassword: true,
+  institute: { select: { id: true, name: true } },
+  class: { select: { id: true, name: true } },
 };
+
+// Deterministic auto-generated password from an institute name, e.g. "Sanjivani University" -> "SanjivaniUniversity@123"
+function passwordForInstitute(instituteName) {
+  return `${String(instituteName).replace(/\s+/g, "")}@123`;
+}
 
 // Maps flexible spreadsheet header text -> our field names
 const FIELD_ALIASES = {
@@ -30,6 +37,8 @@ const FIELD_ALIASES = {
   program: ["program", "course"],
   batchYear: ["batch/year", "batch year", "batch", "year"],
   section: ["section"],
+  instituteName: ["institute", "institute name", "college", "college name"],
+  className: ["class", "class name", "program/class"],
 };
 
 function normalizeHeader(str) {
@@ -47,7 +56,7 @@ function buildHeaderMap(headers) {
   return map;
 }
 
-const TEMPLATE_HEADERS = ["Student Name", "Roll Number", "Official Email ID", "Mobile Number", "Department", "Program", "Batch/Year", "Section"];
+const TEMPLATE_HEADERS = ["Student Name", "Roll Number", "Official Email ID", "Institute", "Class", "Mobile Number", "Department", "Program", "Batch/Year", "Section"];
 
 // Any authenticated user: change their own email and/or password
 router.patch("/me", authenticate, async (req, res) => {
@@ -73,6 +82,7 @@ router.patch("/me", authenticate, async (req, res) => {
     if (newPassword) {
       if (newPassword.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
       data.passwordHash = await bcrypt.hash(newPassword, 10);
+      data.mustChangePassword = false;
     }
 
     const updated = await prisma.user.update({ where: { id: user.id }, data, select: SELECT_FIELDS });
@@ -96,26 +106,51 @@ router.get("/", authenticate, requireRole("ADMIN"), async (req, res) => {
   res.json(users);
 });
 
-// ADMIN: create a Staff, Admin, or Student account directly (no self-registration needed)
+// ADMIN: create a Staff, Admin, or Student account directly (no self-registration needed).
+// Password is auto-generated from the institute name (InstituteName@123) — the admin never types one —
+// and the account is flagged to force a password change on first login.
 router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
   try {
-    const { name, email, password, role, rollNumber, department, mobile, program, batchYear, section } = req.body;
-    if (!name || !email || !password || !role) {
-      return res.status(400).json({ error: "name, email, password, and role are required" });
+    const { name, email, role, rollNumber, department, mobile, program, batchYear, section, instituteId, classId } = req.body;
+    if (!name || !email || !role) {
+      return res.status(400).json({ error: "name, email, and role are required" });
     }
     if (!["STUDENT", "STAFF", "ADMIN"].includes(role)) {
       return res.status(400).json({ error: "role must be STUDENT, STAFF, or ADMIN" });
+    }
+    if (!instituteId) return res.status(400).json({ error: "An institute is required" });
+    if (role === "STUDENT" && !classId) return res.status(400).json({ error: "A class is required for students" });
+
+    const institute = await prisma.institute.findUnique({ where: { id: instituteId } });
+    if (!institute) return res.status(404).json({ error: "Institute not found" });
+
+    if (classId) {
+      const cls = await prisma.class.findUnique({ where: { id: classId } });
+      if (!cls || cls.instituteId !== instituteId) {
+        return res.status(400).json({ error: "Selected class does not belong to the selected institute" });
+      }
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return res.status(409).json({ error: "Email already registered" });
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const generatedPassword = passwordForInstitute(institute.name);
+    const passwordHash = await bcrypt.hash(generatedPassword, 10);
     const user = await prisma.user.create({
-      data: { name, email, passwordHash, role, rollNumber, department, mobile, program, batchYear, section },
+      data: {
+        name, email, passwordHash, role, rollNumber, department, mobile, program, batchYear, section,
+        instituteId, classId: classId || null, mustChangePassword: true,
+      },
       select: SELECT_FIELDS,
     });
-    res.json(user);
+
+    sendMail({
+      to: user.email,
+      subject: "Your Sanjivani CodeArena account",
+      html: `<p>Hi ${user.name},</p><p>Your account has been created.</p><p><strong>Login email:</strong> ${user.email}<br/><strong>Temporary password:</strong> ${generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`,
+    }).catch(() => {});
+
+    res.json({ ...user, generatedPassword });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to create user" });
@@ -124,7 +159,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
 
 // ADMIN: download a sample .xlsx template for bulk student upload
 router.get("/bulk-template", authenticate, requireRole("ADMIN"), (req, res) => {
-  const sampleRow = ["John Doe", "MCA2024001", "john.doe@sanjivani.edu.in", "9876543210", "Computer Applications", "MCA", "2024-26", "A"];
+  const sampleRow = ["John Doe", "MCA2024001", "john.doe@sanjivani.edu.in", "Sanjivani University", "MCA", "9876543210", "Computer Applications", "MCA", "2024-26", "A"];
   const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, sampleRow]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, "Students");
@@ -136,7 +171,9 @@ router.get("/bulk-template", authenticate, requireRole("ADMIN"), (req, res) => {
 });
 
 // ADMIN: bulk-create student accounts from an uploaded .xlsx/.csv file.
-// All accounts get the default password Sanjivani@1 (hashed before storage).
+// Each row must name an existing Institute and, under it, an existing Class — both are validated
+// against the database. The password for each row is auto-generated from that row's institute name
+// (InstituteName@123), and the account is flagged to force a password change on first login.
 router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -158,16 +195,25 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
         error: "Missing required columns. The file must include Student Name, Roll Number, and Official Email ID.",
       });
     }
+    if (!headerMap.instituteName || !headerMap.className) {
+      return res.status(400).json({
+        error: "Missing required columns. The file must include Institute and Class.",
+      });
+    }
 
     const sendCredentials = req.body.sendCredentials === "true";
 
-    const existingUsers = await prisma.user.findMany({ select: { email: true, rollNumber: true } });
+    const [existingUsers, institutes, classes] = await Promise.all([
+      prisma.user.findMany({ select: { email: true, rollNumber: true } }),
+      prisma.institute.findMany(),
+      prisma.class.findMany(),
+    ]);
     const existingEmails = new Set(existingUsers.map((u) => u.email.toLowerCase()));
     const existingRolls = new Set(existingUsers.filter((u) => u.rollNumber).map((u) => u.rollNumber.toLowerCase()));
     const seenEmails = new Set();
     const seenRolls = new Set();
+    const instituteByName = new Map(institutes.map((i) => [i.name.toLowerCase(), i]));
 
-    const passwordHash = await bcrypt.hash(DEFAULT_STUDENT_PASSWORD, 10);
     const created = [];
     const duplicates = [];
     const errors = [];
@@ -185,17 +231,31 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
       const program = field(row, "program");
       const batchYear = field(row, "batchYear");
       const section = field(row, "section");
+      const instituteName = field(row, "instituteName");
+      const className = field(row, "className");
 
       if (!name && !rollNumber && !email) continue; // blank row
 
-      if (!name || !rollNumber || !email) {
-        errors.push({ row: rowNum, name, email, rollNumber, reason: "Missing required field (name, roll number, or email)" });
+      if (!name || !rollNumber || !email || !instituteName || !className) {
+        errors.push({ row: rowNum, name, email, rollNumber, reason: "Missing required field (name, roll number, email, institute, or class)" });
         continue;
       }
       if (!EMAIL_RE.test(email)) {
         errors.push({ row: rowNum, name, email, rollNumber, reason: "Invalid email format" });
         continue;
       }
+
+      const institute = instituteByName.get(instituteName.toLowerCase());
+      if (!institute) {
+        errors.push({ row: rowNum, name, email, rollNumber, reason: `Institute "${instituteName}" was not found. Create it first in Institute Management.` });
+        continue;
+      }
+      const cls = classes.find((c) => c.instituteId === institute.id && c.name.toLowerCase() === className.toLowerCase());
+      if (!cls) {
+        errors.push({ row: rowNum, name, email, rollNumber, reason: `Class "${className}" was not found under institute "${instituteName}". Create it first in Class Management.` });
+        continue;
+      }
+
       const rollKey = rollNumber.toLowerCase();
       if (existingEmails.has(email) || seenEmails.has(email)) {
         duplicates.push({ row: rowNum, name, email, rollNumber, reason: "Email already exists" });
@@ -209,6 +269,9 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
       seenEmails.add(email);
       seenRolls.add(rollKey);
 
+      const generatedPassword = passwordForInstitute(institute.name);
+      const passwordHash = await bcrypt.hash(generatedPassword, 10);
+
       try {
         const user = await prisma.user.create({
           data: {
@@ -218,9 +281,12 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
             program: program || null,
             batchYear: batchYear || null,
             section: section || null,
+            instituteId: institute.id,
+            classId: cls.id,
+            mustChangePassword: true,
           },
         });
-        created.push(user);
+        created.push({ ...user, generatedPassword });
       } catch (err) {
         errors.push({ row: rowNum, name, email, rollNumber, reason: "Failed to create account" });
       }
@@ -231,7 +297,7 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
         sendMail({
           to: u.email,
           subject: "Your Sanjivani CodeArena account",
-          html: `<p>Hi ${u.name},</p><p>Your student account has been created.</p><p><strong>Login email:</strong> ${u.email}<br/><strong>Temporary password:</strong> ${DEFAULT_STUDENT_PASSWORD}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> and change your password from Account settings after logging in.</p>`,
+          html: `<p>Hi ${u.name},</p><p>Your student account has been created.</p><p><strong>Login email:</strong> ${u.email}<br/><strong>Temporary password:</strong> ${u.generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`,
         }).catch(() => {});
       }
     }
@@ -241,6 +307,7 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
       createdCount: created.length,
       duplicateCount: duplicates.length,
       errorCount: errors.length,
+      created: created.map((u) => ({ name: u.name, email: u.email, rollNumber: u.rollNumber, generatedPassword: u.generatedPassword })),
       duplicates,
       errors,
     });

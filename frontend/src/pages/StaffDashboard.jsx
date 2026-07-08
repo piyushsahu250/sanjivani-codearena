@@ -27,6 +27,11 @@ export default function StaffDashboard() {
     refresh();
   }
 
+  async function duplicateTest(test) {
+    await api.post(`/tests/${test.id}/duplicate`);
+    refresh();
+  }
+
   return (
     <div>
       <Navbar />
@@ -52,8 +57,10 @@ export default function StaffDashboard() {
                   {test.isPublished ? "Published" : "Draft"}
                 </p>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <Link to={`/staff/tests/${test.id}/preview`} className="btn btn-ghost">Preview</Link>
+                <Link to={`/staff/tests/${test.id}/edit`} className="btn btn-ghost">Edit</Link>
+                <button className="btn btn-ghost" onClick={() => duplicateTest(test)}>Duplicate</button>
                 <Link to={`/staff/tests/${test.id}/results`} className="btn btn-ghost">Results</Link>
                 <button className="btn btn-dark" onClick={() => togglePublish(test)}>
                   {test.isPublished ? "Unpublish" : "Publish"}

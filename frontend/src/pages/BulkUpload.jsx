@@ -64,9 +64,9 @@ export default function BulkUpload() {
         </div>
 
         <p style={{ color: "var(--ink-dim)", marginTop: 16, fontSize: 14 }}>
-          Upload an Excel (.xlsx) or CSV file to create student accounts for an entire batch at once. Every account
-          gets the default password <strong className="mono">Sanjivani@1</strong> — students should change it after
-          first login.
+          Upload an Excel (.xlsx) or CSV file to create student accounts for an entire batch at once. Each row's
+          Institute and Class must already exist (create them first under Institute/Class Management) — the
+          password for each account is auto-generated from its institute name and must be changed on first login.
         </p>
 
         <div className="card" style={{ padding: 24, marginTop: 24 }}>
@@ -74,8 +74,8 @@ export default function BulkUpload() {
             <div>
               <div style={{ fontWeight: 600, fontSize: 14 }}>Required columns</div>
               <p style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 4 }}>
-                Student Name, Roll Number, Official Email ID — plus optional Mobile Number, Department, Program,
-                Batch/Year, Section.
+                Student Name, Roll Number, Official Email ID, Institute, Class — plus optional Mobile Number,
+                Department, Program, Batch/Year, Section.
               </p>
             </div>
             <button className="btn btn-ghost" onClick={downloadTemplate} disabled={downloadingTemplate}>
@@ -116,6 +116,34 @@ export default function BulkUpload() {
               </p>
             </div>
 
+            {result.created?.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "var(--mint)" }}>Created accounts &amp; passwords</div>
+                <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>
+                  Share these temporary passwords with students — they'll be asked to set a new one on first login.
+                </p>
+                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
+                  <thead>
+                    <tr style={{ textAlign: "left", borderBottom: "2px solid var(--line)", fontSize: 12, color: "var(--ink-dim)" }}>
+                      <th style={{ padding: "6px 4px" }}>Name</th>
+                      <th>Email</th>
+                      <th>Roll no.</th>
+                      <th>Temporary password</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.created.map((u, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid var(--line)", fontSize: 13 }}>
+                        <td style={{ padding: "6px 4px" }}>{u.name}</td>
+                        <td className="mono">{u.email}</td>
+                        <td className="mono">{u.rollNumber}</td>
+                        <td className="mono" style={{ fontWeight: 700 }}>{u.generatedPassword}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             {result.duplicates.length > 0 && (
               <ResultTable title="Duplicate records (skipped)" rows={result.duplicates} color="var(--amber-dark)" />
             )}

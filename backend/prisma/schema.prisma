@@ -28,12 +28,33 @@ enum QuestionType {
   MULTISELECT
 }
 
+model Institute {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  code      String?
+  address   String?
+  contact   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  classes Class[]
+  users   User[]
+}
+
 model Class {
   id        String   @id @default(uuid())
-  name      String   @unique // e.g. "MCA", "B.Tech CSE"
+  name      String // e.g. "MCA", "B.Tech CSE"
   code      String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
+
+  institute   Institute? @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  instituteId String?
+
+  users           User[]
+  testAssignments TestClass[]
+
+  @@unique([instituteId, name])
 }
 
 model User {
@@ -42,13 +63,19 @@ model User {
   email        String   @unique
   passwordHash String
   role         Role     @default(STUDENT)
-  rollNumber   String?  // students only
+  rollNumber   String?  // students only — a.k.a. College/Institute ID
   department   String?
   mobile       String?
-  program      String?  // e.g. MCA, B.Tech, M.Tech
+  program      String?  // free-text fallback if no Class relation is set
   batchYear    String?
   section      String?
+  mustChangePassword Boolean @default(false)
   createdAt    DateTime @default(now())
+
+  institute   Institute? @relation(fields: [instituteId], references: [id])
+  instituteId String?
+  class       Class?     @relation(fields: [classId], references: [id])
+  classId     String?
 
   resetTokenHash   String?
   resetTokenExpiry DateTime?
@@ -59,19 +86,35 @@ model User {
 }
 
 model Test {
-  id          String   @id @default(uuid())
-  title       String
-  description String?
-  durationMin Int      @default(60)
-  startTime   DateTime
-  endTime     DateTime
-  isPublished Boolean  @default(false)
-  createdBy   User     @relation("TestCreator", fields: [createdById], references: [id])
-  createdById String
-  createdAt   DateTime @default(now())
+  id           String   @id @default(uuid())
+  title        String
+  code         String?
+  description  String?
+  instructions String?
+  durationMin  Int      @default(60)
+  passingMarks Int?
+  showResults  Boolean  @default(true)
+  startTime    DateTime
+  endTime      DateTime
+  isPublished  Boolean  @default(false)
+  createdBy    User     @relation("TestCreator", fields: [createdById], references: [id])
+  createdById  String
+  createdAt    DateTime @default(now())
 
   questions TestQuestion[]
   attempts  TestAttempt[]
+  classes   TestClass[] // empty = open to all classes (legacy/unscoped tests)
+}
+
+// Join table: which classes a test is assigned to
+model TestClass {
+  id      String @id @default(uuid())
+  test    Test   @relation(fields: [testId], references: [id], onDelete: Cascade)
+  testId  String
+  class   Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId String
+
+  @@unique([testId, classId])
 }
 
 model Question {
