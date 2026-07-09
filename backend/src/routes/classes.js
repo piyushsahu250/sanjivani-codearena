@@ -2,23 +2,10 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
+const { attachRequesterInstitute } = require("../middleware/institute");
 
 const router = express.Router();
 const DEFAULT_RESET_PASSWORD = "Sanjivani@1";
-
-// Fetches the requester's own instituteId so ADMIN/STAFF accounts tied to a specific
-// institute only ever see/manage classes under it. Accounts with no instituteId (e.g. the
-// seeded "Platform Admin") are platform-level and stay unscoped, seeing every institute.
-async function attachRequesterInstitute(req, res, next) {
-  try {
-    const requester = await prisma.user.findUnique({ where: { id: req.user.id }, select: { instituteId: true } });
-    req.requesterInstituteId = requester?.instituteId || null;
-    next();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to verify institute scope" });
-  }
-}
 
 // ADMIN/STAFF: list classes/programs, with a student headcount per class. Institute-scoped
 // accounts always see only their own institute; platform-level accounts (no instituteId)

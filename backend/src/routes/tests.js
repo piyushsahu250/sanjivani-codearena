@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
+const { attachRequesterInstitute } = require("../middleware/institute");
 
 const router = express.Router();
 
@@ -167,16 +168,40 @@ router.patch("/:id/publish", authenticate, requireRole("ADMIN", "STAFF"), async 
   res.json(test);
 });
 
-// --- Everyone authenticated: list tests (students see only published tests assigned to their class) ---
-router.get("/", authenticate, async (req, res) => {
+// --- Everyone authenticated: list tests (students see only published tests assigned to their
+// class; staff/admin see full assignment detail — institute, class, batch year, headcount,
+// creator — scoped to their own institute unless they're platform-level) ---
+router.get("/", authenticate, attachRequesterInstitute, async (req, res) => {
   const isStaff = req.user.role === "ADMIN" || req.user.role === "STAFF";
   const tests = await prisma.test.findMany({
     where: isStaff ? {} : { isPublished: true },
     orderBy: { startTime: "asc" },
-    include: { _count: { select: { questions: true, attempts: true } }, classes: { select: { classId: true } } },
+    include: {
+      _count: { select: { questions: true, attempts: true } },
+      classes: {
+        include: {
+          class: {
+            select: {
+              id: true,
+              name: true,
+              batchYear: true,
+              instituteId: true,
+              institute: { select: { id: true, name: true } },
+              _count: { select: { users: true } },
+            },
+          },
+        },
+      },
+      createdBy: { select: { id: true, name: true } },
+    },
   });
 
-  if (isStaff) return res.json(tests);
+  if (isStaff) {
+    const visible = req.requesterInstituteId
+      ? tests.filter((t) => t.classes.length === 0 || t.classes.some((tc) => tc.class.instituteId === req.requesterInstituteId))
+      : tests;
+    return res.json(visible);
+  }
 
   const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true } });
   const visible = tests.filter((t) => t.classes.length === 0 || (student.classId && t.classes.some((c) => c.classId === student.classId)));
