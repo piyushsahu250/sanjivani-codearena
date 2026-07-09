@@ -286,7 +286,10 @@ router.post("/:id/start", authenticate, requireRole("STUDENT"), async (req, res)
     if (now > test.endTime) return res.status(403).json({ error: "Test window has closed" });
 
     const attempt = existing || (await prisma.testAttempt.create({ data: { testId, studentId: req.user.id } }));
-    res.json(attempt);
+    // Include already-saved submissions (auto-saved MCQ answers, locked coding submissions)
+    // so a page refresh mid-test restores exactly where the candidate left off.
+    const submissions = await prisma.submission.findMany({ where: { attemptId: attempt.id } });
+    res.json({ ...attempt, submissions });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not start test" });

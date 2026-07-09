@@ -65,6 +65,18 @@ export default function TestTaking() {
   const noiseWarningTimeoutRef = useRef(null);
   const lastNoiseWarningAtRef = useRef(0);
 
+  // MCQ/TRUE_FALSE/MULTISELECT auto-save: selecting an option schedules a debounced background
+  // save (reusing the existing grade-and-store endpoint) instead of requiring an explicit
+  // per-question Submit click. Coding questions are unaffected — they keep their deliberate
+  // one-shot Submit-then-lock flow.
+  const [savingAnswer, setSavingAnswer] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const autoSaveTimeoutRef = useRef(null);
+  const pendingAutoSaveRef = useRef(null);
+  const justSavedTimeoutRef = useRef(null);
+
+  const [markedForReview, setMarkedForReview] = useState({});
+
   // Load basic test info up front so we can show a "Begin Test" screen
   // (fullscreen must be requested from a direct click, not on page load).
   useEffect(() => {
@@ -243,6 +255,8 @@ export default function TestTaking() {
     return () => {
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
       clearTimeout(tabWarningTimeoutRef.current);
+      clearTimeout(autoSaveTimeoutRef.current);
+      clearTimeout(justSavedTimeoutRef.current);
     };
   }, []);
 
@@ -297,6 +311,34 @@ export default function TestTaking() {
       attemptIdRef.current = startRes.data.id;
       const testRes = await api.get(`/tests/${testId}`);
       setTest(testRes.data);
+
+      // Restore previously auto-saved/submitted answers — a page refresh mid-test shouldn't
+      // lose anything already persisted server-side.
+      const existingSubs = startRes.data.submissions || [];
+      if (existingSubs.length > 0) {
+        const restoredAnswers = {};
+        const restoredSubmitted = {};
+        existingSubs.forEach((s) => {
+          restoredSubmitted[s.questionId] = true;
+          if (["MCQ", "TRUE_FALSE", "MULTISELECT"].includes(s.language)) {
+            try {
+              restoredAnswers[s.questionId] = { selected: JSON.parse(s.code) };
+            } catch {
+              restoredAnswers[s.questionId] = { selected: [] };
+            }
+          } else {
+            restoredAnswers[s.questionId] = { language: s.language, code: s.code };
+          }
+        });
+        setAnswers((prev) => ({ ...restoredAnswers, ...prev }));
+        setSubmittedQuestions((prev) => ({ ...restoredSubmitted, ...prev }));
+      }
+      try {
+        setMarkedForReview(JSON.parse(localStorage.getItem(`markedForReview:${startRes.data.id}`) || "{}"));
+      } catch {
+        // ignore
+      }
+
       const end = new Date(testRes.data.endTime).getTime();
       setSecondsLeft(Math.max(0, Math.floor((end - Date.now()) / 1000)));
       setStarted(true);
@@ -446,12 +488,53 @@ export default function TestTaking() {
 
   function toggleOption(idx) {
     if (!current) return;
-    setAnswers((prev) => {
-      const prevSelected = prev[current.id]?.selected || [];
-      const nextSelected = isMulti
-        ? (prevSelected.includes(idx) ? prevSelected.filter((i) => i !== idx) : [...prevSelected, idx])
-        : [idx];
-      return { ...prev, [current.id]: { ...prev[current.id], selected: nextSelected } };
+    const prevSelected = answer?.selected || [];
+    const nextSelected = isMulti
+      ? (prevSelected.includes(idx) ? prevSelected.filter((i) => i !== idx) : [...prevSelected, idx])
+      : [idx];
+    setAnswers((prev) => ({ ...prev, [current.id]: { ...prev[current.id], selected: nextSelected } }));
+    scheduleAutoSave(current.id, nextSelected);
+  }
+
+  // Debounced background save for MCQ/TRUE_FALSE/MULTISELECT — coalesces rapid successive
+  // clicks (e.g. ticking several MULTISELECT checkboxes) into one request instead of firing
+  // on every click, while still feeling instantaneous to the candidate.
+  function scheduleAutoSave(questionId, selected) {
+    pendingAutoSaveRef.current = { questionId, selected };
+    clearTimeout(autoSaveTimeoutRef.current);
+    autoSaveTimeoutRef.current = setTimeout(flushAutoSave, 600);
+  }
+
+  async function flushAutoSave() {
+    clearTimeout(autoSaveTimeoutRef.current);
+    const pending = pendingAutoSaveRef.current;
+    if (!pending || !attemptId) return;
+    pendingAutoSaveRef.current = null;
+    setSavingAnswer(true);
+    try {
+      await api.post("/submissions/submit", { attemptId, questionId: pending.questionId, selectedOptions: pending.selected });
+      setSubmittedQuestions((prev) => ({ ...prev, [pending.questionId]: true }));
+      setJustSaved(true);
+      clearTimeout(justSavedTimeoutRef.current);
+      justSavedTimeoutRef.current = setTimeout(() => setJustSaved(false), 1500);
+    } catch {
+      // Best-effort — the selection stays in local state and gets retried on the next change,
+      // or flushed again right before the final Submit Test.
+    } finally {
+      setSavingAnswer(false);
+    }
+  }
+
+  function toggleMarkForReview() {
+    if (!current || !attemptId) return;
+    setMarkedForReview((prev) => {
+      const next = { ...prev, [current.id]: !prev[current.id] };
+      try {
+        localStorage.setItem(`markedForReview:${attemptId}`, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
     });
   }
 
@@ -507,7 +590,10 @@ export default function TestTaking() {
 
   async function finalizeAndExit(auto = false) {
     if (!attemptId || finalizedRef.current) return;
-    if (!auto && !confirm("Submit and end the test now? You won't be able to make further changes.")) return;
+    if (!auto && !confirm("Are you sure you want to submit your test? After submission, you will not be able to modify your answers.")) return;
+    // Flush any answer still waiting on the auto-save debounce so the very last selection
+    // isn't lost to a race between clicking Submit Test and the pending save timer.
+    if (pendingAutoSaveRef.current) await flushAutoSave();
     finalizedRef.current = true;
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -644,7 +730,7 @@ export default function TestTaking() {
             {timeLabel} <span style={{ opacity: 0.6 }}>▊</span>
           </div>
         </div>
-        <button className="btn btn-primary" onClick={() => finalizeAndExit(false)}>End test</button>
+        <button className="btn btn-primary" onClick={() => finalizeAndExit(false)}>Submit Test</button>
       </div>
 
       <video
@@ -707,7 +793,21 @@ export default function TestTaking() {
         <div style={{ width: 220, borderRight: "1px solid var(--line)", padding: 16, overflowY: "auto" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)", marginBottom: 10 }}>QUESTIONS</div>
           {questions.map((tq, idx) => {
-            const answered = !!submittedQuestions[tq.question.id];
+            const q = tq.question;
+            const a = answers[q.id];
+            // Quiz types feel answered as soon as an option is picked (even mid-debounce);
+            // coding stays gated on an actual server-confirmed Submit, matching its lock.
+            const answered = q.questionType === "CODING" ? !!submittedQuestions[q.id] : (a?.selected || []).length > 0;
+            const marked = !!markedForReview[q.id];
+            let statusLabel = "Unanswered";
+            let statusColor = "var(--ink-dim)";
+            if (marked) {
+              statusLabel = answered ? "⚑ Marked (answered)" : "⚑ Marked for review";
+              statusColor = "#8b5cf6";
+            } else if (answered) {
+              statusLabel = "✓ Answered";
+              statusColor = "var(--mint)";
+            }
             return (
               <button
                 key={tq.id}
@@ -725,11 +825,8 @@ export default function TestTaking() {
                 }}
               >
                 Q{idx + 1}. {tq.question.title || "(untitled)"}
-                <span
-                  style={{ display: "block", fontSize: 11, marginTop: 2, color: answered ? "var(--mint)" : "var(--ink-dim)" }}
-                  className="mono"
-                >
-                  {answered ? "✓ Answered" : "Unanswered"}
+                <span style={{ display: "block", fontSize: 11, marginTop: 2, color: statusColor }} className="mono">
+                  {statusLabel}
                 </span>
               </button>
             );
@@ -787,10 +884,22 @@ export default function TestTaking() {
                     {isMulti ? "Select all that apply" : "Select one answer"}
                   </span>
                 </div>
-                <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting || !(answer?.selected?.length)}>
-                  {submitting ? "Submitting…" : "Submit answer"}
-                </button>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <span className="mono" style={{ fontSize: 12, color: savingAnswer ? "var(--amber-dark)" : "var(--mint)", minWidth: 90, textAlign: "right" }}>
+                    {savingAnswer ? "Saving…" : justSaved ? "✓ Saved" : ""}
+                  </span>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12, padding: "5px 10px", color: markedForReview[current.id] ? "#8b5cf6" : undefined }}
+                    onClick={toggleMarkForReview}
+                  >
+                    {markedForReview[current.id] ? "⚑ Marked" : "⚑ Mark for review"}
+                  </button>
+                </div>
               </div>
+              <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", padding: "6px 16px 0" }}>
+                Your selection is saved automatically — change it any time before you submit the whole test.
+              </p>
               <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
                 {(current.options || []).map((opt, idx) => (
                   <label
@@ -825,6 +934,13 @@ export default function TestTaking() {
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   {currentLocked && <span className="mono" style={{ fontSize: 12, color: "var(--mint)", fontWeight: 600 }}>✓ Submitted — locked</span>}
+                  <button
+                    className="btn btn-ghost"
+                    style={{ color: markedForReview[current.id] ? "#8b5cf6" : undefined }}
+                    onClick={toggleMarkForReview}
+                  >
+                    {markedForReview[current.id] ? "⚑ Marked" : "⚑ Mark for review"}
+                  </button>
                   <button className="btn btn-ghost" onClick={handleRun} disabled={running || currentLocked}>{running ? "Running…" : "▶ Run sample"}</button>
                   <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting || currentLocked}>
                     {currentLocked ? "Submitted" : submitting ? "Submitting…" : "Submit answer"}
@@ -862,11 +978,9 @@ export default function TestTaking() {
             {!running && !submitting && submitResult && (
               <SubmitStatusBlock execution={submitResult} />
             )}
-            {!running && !submitting && !runResult && !submitResult && (
+            {!isQuiz && !running && !submitting && !runResult && !submitResult && (
               <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
-                {isQuiz
-                  ? "Choose an answer and submit — your answer is recorded, results are published after the test."
-                  : "Run against sample cases before submitting. Submission is judged against all (including hidden) test cases — results are published after the test."}
+                Run against sample cases before submitting. Submission is judged against all (including hidden) test cases — results are published after the test.
               </p>
             )}
           </div>
