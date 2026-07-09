@@ -206,3 +206,15 @@ model Submission {
   @@index([attemptId])
   @@index([questionId])
 }
+
+// Lightweight audit trail for sensitive admin actions (currently just reattempt grants).
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String // e.g. "REATTEMPT_GRANTED"
+  adminId   String
+  adminName String
+  details   Json
+  createdAt DateTime @default(now())
+
+  @@index([action])
+}

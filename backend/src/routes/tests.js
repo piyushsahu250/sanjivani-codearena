@@ -323,6 +323,54 @@ router.post("/attempts/:attemptId/violation", authenticate, requireRole("STUDENT
   }
 });
 
+// --- ADMIN: grant an individual student a reattempt on a test they've already completed.
+// Deletes their existing attempt (submissions cascade with it), so their next POST /:id/start
+// creates a fresh one — scoped to this one student only, nothing else about the test changes. ---
+router.post("/:testId/attempts/:studentId/reattempt", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const { testId, studentId } = req.params;
+    const [test, student, attempt] = await Promise.all([
+      prisma.test.findUnique({ where: { id: testId }, select: { id: true, title: true } }),
+      prisma.user.findUnique({ where: { id: studentId }, select: { id: true, name: true, rollNumber: true, instituteId: true } }),
+      prisma.testAttempt.findUnique({ where: { testId_studentId: { testId, studentId } } }),
+    ]);
+    if (!test) return res.status(404).json({ error: "Test not found" });
+    if (!student) return res.status(404).json({ error: "Student not found" });
+    if (req.requesterInstituteId && student.instituteId !== req.requesterInstituteId) {
+      return res.status(403).json({ error: "You can only manage students under your own institute" });
+    }
+    if (!attempt) return res.status(404).json({ error: "This student has not attempted this test" });
+    if (attempt.status === "IN_PROGRESS") {
+      return res.status(400).json({ error: "This student's attempt is still in progress — nothing to reset" });
+    }
+
+    const admin = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
+
+    await prisma.$transaction([
+      prisma.testAttempt.delete({ where: { id: attempt.id } }), // cascades that attempt's Submissions
+      prisma.auditLog.create({
+        data: {
+          action: "REATTEMPT_GRANTED",
+          adminId: req.user.id,
+          adminName: admin?.name || req.user.email,
+          details: {
+            studentId: student.id,
+            studentName: student.name,
+            studentRollNumber: student.rollNumber,
+            testId: test.id,
+            testTitle: test.title,
+          },
+        },
+      }),
+    ]);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to grant reattempt" });
+  }
+});
+
 // --- ADMIN/STAFF: leaderboard / results for a test ---
 router.get("/:id/results", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   const attempts = await prisma.testAttempt.findMany({

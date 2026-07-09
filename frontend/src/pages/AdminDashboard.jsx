@@ -85,12 +85,24 @@ export default function AdminDashboard() {
     setLookupError("");
     setLookupResult(null);
     try {
-      const { data } = await api.get(`/users/by-roll/${encodeURIComponent(rollQuery.trim())}`);
+      const { data } = await api.get(`/users/lookup/${encodeURIComponent(rollQuery.trim())}`);
       setLookupResult(data);
     } catch (err) {
       setLookupError(err.response?.data?.error || "Lookup failed");
     } finally {
       setLookingUp(false);
+    }
+  }
+
+  async function handleAllowReattempt(a) {
+    if (!confirm("Are you sure you want to allow this student to reattempt the test? This will reset the previous attempt.")) return;
+    try {
+      await api.post(`/tests/${a.test.id}/attempts/${lookupResult.id}/reattempt`);
+      alert("Reattempt has been enabled successfully for this student.");
+      const { data } = await api.get(`/users/lookup/${encodeURIComponent(rollQuery.trim())}`);
+      setLookupResult(data);
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to enable reattempt");
     }
   }
 
@@ -127,14 +139,15 @@ export default function AdminDashboard() {
         )}
 
         <div className="card" style={{ padding: 24, marginTop: 32 }}>
-          <h3 style={{ fontSize: 16, marginBottom: 4 }}>Check test completion by roll number</h3>
+          <h3 style={{ fontSize: 16, marginBottom: 4 }}>Check test completion by roll number, email, or student ID</h3>
           <p style={{ fontSize: 13, color: "var(--ink-dim)", marginBottom: 16 }}>
-            Look up a student by roll number to see every test they've started, finished, or not touched yet.
+            Look up a student to see every test they've started, finished, or not touched yet — and grant an
+            individual reattempt if needed.
           </p>
           <form onSubmit={handleRollLookup} style={{ display: "flex", gap: 10 }}>
             <input
               style={{ ...inputStyle, marginTop: 0 }}
-              placeholder="e.g. CS2023045"
+              placeholder="Roll number, email, or student ID"
               value={rollQuery}
               onChange={(e) => setRollQuery(e.target.value)}
             />
@@ -150,25 +163,34 @@ export default function AdminDashboard() {
               <div style={{ fontWeight: 600 }}>{lookupResult.name} <span className="mono" style={{ fontWeight: 400, color: "var(--ink-dim)", fontSize: 13 }}>· {lookupResult.rollNumber} · {lookupResult.email}</span></div>
               <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
                 {lookupResult.attempts.map((a, idx) => (
-                  <div key={idx} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                  <div key={idx} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, gap: 12 }}>
                     <div>
                       <div style={{ fontWeight: 600 }}>{a.test.title}</div>
                       <div className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
-                        started {new Date(a.startedAt).toLocaleString()}
+                        {a.status === "IN_PROGRESS"
+                          ? `started ${new Date(a.startedAt).toLocaleString()}`
+                          : `submitted ${new Date(a.submittedAt).toLocaleString()}`}
                         {a.tabSwitchCount > 0 && ` · ${a.tabSwitchCount} tab switch${a.tabSwitchCount > 1 ? "es" : ""}`}
                       </div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <span
-                        className="mono"
-                        style={{
-                          fontWeight: 700,
-                          color: a.status === "IN_PROGRESS" ? "var(--amber-dark)" : "var(--mint)",
-                        }}
-                      >
-                        {a.status === "IN_PROGRESS" ? "Not completed" : "Completed"}
-                      </span>
-                      <div className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>{a.totalScore} pts</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      {a.status !== "IN_PROGRESS" && (
+                        <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => handleAllowReattempt(a)}>
+                          Allow Reattempt
+                        </button>
+                      )}
+                      <div style={{ textAlign: "right" }}>
+                        <span
+                          className="mono"
+                          style={{
+                            fontWeight: 700,
+                            color: a.status === "IN_PROGRESS" ? "var(--amber-dark)" : "var(--mint)",
+                          }}
+                        >
+                          {a.status === "IN_PROGRESS" ? "Not completed" : "Completed"}
+                        </span>
+                        <div className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>{a.totalScore} pts</div>
+                      </div>
                     </div>
                   </div>
                 ))}

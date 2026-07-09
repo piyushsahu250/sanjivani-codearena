@@ -5,6 +5,7 @@ const multer = require("multer");
 const XLSX = require("xlsx");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
+const { attachRequesterInstitute } = require("../middleware/institute");
 const { sendMail } = require("../utils/mailer");
 
 const router = express.Router();
@@ -317,10 +318,15 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
 });
 
 // ADMIN: look up a student by roll number and see which tests they've completed
-router.get("/by-roll/:rollNumber", authenticate, requireRole("ADMIN"), async (req, res) => {
+router.get("/lookup/:query", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
   try {
+    const q = req.params.query;
     const user = await prisma.user.findFirst({
-      where: { rollNumber: req.params.rollNumber, role: "STUDENT" },
+      where: {
+        role: "STUDENT",
+        OR: [{ rollNumber: q }, { email: q }, { id: q }],
+        ...(req.requesterInstituteId ? { instituteId: req.requesterInstituteId } : {}),
+      },
       select: {
         id: true,
         name: true,
@@ -339,7 +345,7 @@ router.get("/by-roll/:rollNumber", authenticate, requireRole("ADMIN"), async (re
         },
       },
     });
-    if (!user) return res.status(404).json({ error: "No student found with that roll number" });
+    if (!user) return res.status(404).json({ error: "No student found with that roll number, email, or ID" });
     res.json(user);
   } catch (err) {
     console.error(err);
