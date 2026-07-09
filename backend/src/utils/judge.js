@@ -53,6 +53,45 @@ const RUNNERS = {
   },
 };
 
+// Turns a raw compiler/interpreter stderr dump into a short, readable summary — students
+// were seeing a full page of gcc/javac/Python-traceback noise instead of "line 12: ...".
+const LINE_PATTERNS = {
+  c: /:(\d+):\d+:\s*(?:fatal error|error):\s*(.+)/,
+  cpp: /:(\d+):\d+:\s*(?:fatal error|error):\s*(.+)/,
+  java: /:(\d+):\s*error:\s*(.+)/,
+};
+function summarizeError(language, rawMessage) {
+  const message = String(rawMessage || "").trim();
+  if (!message) return { line: null, message: "Unknown error" };
+
+  let line = null;
+  let summary = null;
+
+  if (LINE_PATTERNS[language]) {
+    const match = message.match(LINE_PATTERNS[language]);
+    if (match) {
+      line = Number(match[1]);
+      summary = match[2].split("\n")[0].trim();
+    }
+  } else if (language === "python") {
+    // Traceback ends with "File "sol.py", line N, in ..." then the exception on the last line
+    const lineMatch = [...message.matchAll(/File "[^"]+", line (\d+)/g)].pop();
+    if (lineMatch) line = Number(lineMatch[1]);
+    const lastLine = message.trim().split("\n").pop();
+    summary = lastLine?.trim();
+  } else if (language === "javascript") {
+    const lineMatch = message.match(/sol\.js:(\d+)/);
+    if (lineMatch) line = Number(lineMatch[1]);
+    const errorLine = message.split("\n").find((l) => /error/i.test(l));
+    summary = (errorLine || message.split("\n")[0]).trim();
+  }
+
+  if (!summary) summary = message.split("\n")[0].trim();
+  if (summary.length > 220) summary = `${summary.slice(0, 220)}…`;
+
+  return { line, message: summary };
+}
+
 function spawnWithTimeout(cmd, args, options, input, timeLimitMs) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { ...options, killSignal: "SIGKILL" });
@@ -139,7 +178,13 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }
       verdict: "RUNTIME_ERROR",
       error: prepared.error,
     }));
-    return { passedCases: 0, totalCases: testCases.length, verdict: "COMPILE_ERROR", details };
+    return {
+      passedCases: 0,
+      totalCases: testCases.length,
+      verdict: "COMPILE_ERROR",
+      details,
+      errorSummary: { type: "Compilation Error", ...summarizeError(language, prepared.error) },
+    };
   }
 
   let details;
@@ -182,7 +227,20 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }
     verdict = "PARTIAL";
   }
 
-  return { passedCases: passed, totalCases: testCases.length, verdict, details };
+  // Only surface a technical error summary when every case failed the same way — a mixed
+  // pass/fail result (verdict PARTIAL) stays silent here since exposing it would leak how
+  // many cases passed, which submissions.js is specifically trying not to reveal.
+  let errorSummary = null;
+  if (passed === 0) {
+    if (verdict === "TLE") {
+      errorSummary = { type: "Time Limit Exceeded", line: null, message: "Your program took too long to produce output." };
+    } else {
+      const errored = details.find((d) => d.verdict === "RUNTIME_ERROR");
+      if (errored) errorSummary = { type: "Runtime Error", ...summarizeError(language, errored.error) };
+    }
+  }
+
+  return { passedCases: passed, totalCases: testCases.length, verdict, details, errorSummary };
 }
 
 module.exports = { judgeSubmission };

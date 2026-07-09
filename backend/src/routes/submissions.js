@@ -25,6 +25,25 @@ router.get("/queue-status", authenticate, (req, res) => {
   res.json(getQueueStatus());
 });
 
+// Withholds the actual verdict/score from the submit response — students only see it after
+// the test ends (via GET /tests/:id/my-result, gated on Test.showResults), same principle as
+// hiding the answer key before a test. Only technical execution status (compiled/ran fine vs.
+// a genuine compile/runtime/timeout error) is surfaced during the test itself; whether the
+// answer was actually correct is not, even though the real verdict/score are still stored on
+// the Submission row for later grading.
+function sanitizeSubmitResponse(question, result) {
+  if (question.questionType !== "CODING") {
+    return { status: "SUBMITTED" };
+  }
+  if (result.verdict === "COMPILE_ERROR" || result.verdict === "TLE") {
+    return { status: result.verdict, error: result.errorSummary };
+  }
+  if (result.errorSummary) {
+    return { status: "RUNTIME_ERROR", error: result.errorSummary };
+  }
+  return { status: "SUBMITTED" };
+}
+
 // Exact-match grading for MCQ / TRUE_FALSE / MULTISELECT: the selected set of
 // option indices must equal the correct set exactly (no partial credit).
 function gradeQuizAnswer(question, selectedOptions) {
@@ -83,6 +102,17 @@ router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async 
     });
     if (!question) return res.status(404).json({ error: "Question not found" });
 
+    // Coding questions allow unlimited Run (sample self-check) but only one final Submit —
+    // enforced here, not just by disabling the button client-side, since a direct API call
+    // could otherwise bypass a frontend-only lock. MCQ/TRUE_FALSE/MULTISELECT keep allowing
+    // resubmission (changing your answer before the test ends is expected there).
+    if (question.questionType === "CODING") {
+      const alreadySubmitted = await prisma.submission.findFirst({ where: { attemptId, questionId } });
+      if (alreadySubmitted) {
+        return res.status(409).json({ error: "You have already submitted your final answer for this question." });
+      }
+    }
+
     let result;
     let submissionLanguage = language || "";
     let submissionCode = code || "";
@@ -135,7 +165,7 @@ router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async 
     const totalScore = Object.values(bestByQuestion).reduce((a, b) => a + b, 0);
     await prisma.testAttempt.update({ where: { id: attemptId }, data: { totalScore } });
 
-    res.json({ submission, result });
+    res.json({ submissionId: submission.id, execution: sanitizeSubmitResponse(question, result) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Submission failed" });

@@ -42,6 +42,9 @@ export default function TestTaking() {
   const [tabWarning, setTabWarning] = useState(null);
   const [showQuestionPanel, setShowQuestionPanel] = useState(true);
   const [showResultsPanel, setShowResultsPanel] = useState(true);
+  const [questionPanelWidth, setQuestionPanelWidth] = useState(420);
+  const [resultsPanelHeight, setResultsPanelHeight] = useState(220);
+  const resizingRef = useRef(null); // "question" | "results" | null
   const [autoSubmitted, setAutoSubmitted] = useState(false);
   const timerRef = useRef(null);
   const attemptIdRef = useRef(null);
@@ -243,6 +246,43 @@ export default function TestTaking() {
     };
   }, []);
 
+  // Drag-to-resize for the question-description panel (width) and the results panel
+  // (height). A single window-level listener pair handles both, gated by resizingRef so it's
+  // a no-op the rest of the time.
+  useEffect(() => {
+    function onMove(e) {
+      if (resizingRef.current === "question") {
+        setQuestionPanelWidth(Math.max(260, Math.min(760, e.clientX - 220)));
+      } else if (resizingRef.current === "results") {
+        setResultsPanelHeight(Math.max(100, Math.min(560, window.innerHeight - e.clientY)));
+      }
+    }
+    function onUp() {
+      resizingRef.current = null;
+      document.body.style.cursor = "";
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  function startResize(kind) {
+    return (e) => {
+      e.preventDefault();
+      resizingRef.current = kind;
+      document.body.style.cursor = kind === "question" ? "col-resize" : "row-resize";
+    };
+  }
+
+  function toggleMaximizeEditor() {
+    const maximized = !showQuestionPanel && !showResultsPanel;
+    setShowQuestionPanel(maximized);
+    setShowResultsPanel(maximized);
+  }
+
   async function beginTest() {
     setStarting(true);
     // Request fullscreen synchronously in response to the click, before any awaits.
@@ -371,6 +411,9 @@ export default function TestTaking() {
   }, [started]);
 
   const answer = current ? answers[current.id] : null;
+  // Coding questions lock after one Submit (enforced server-side too); MCQ/quiz types stay
+  // editable so the candidate can change their mind before the test ends.
+  const currentLocked = !isQuiz && !!current && !!submittedQuestions[current.id];
 
   const timeLabel = useMemo(() => {
     if (secondsLeft === null) return "--:--:--";
@@ -453,8 +496,8 @@ export default function TestTaking() {
         payload.code = answer.code;
       }
       const { data } = await api.post("/submissions/submit", payload);
-      setSubmitResult(data);
-      setSubmittedQuestions((prev) => ({ ...prev, [current.id]: data.result.verdict }));
+      setSubmitResult(data.execution);
+      setSubmittedQuestions((prev) => ({ ...prev, [current.id]: true }));
     } catch (err) {
       alert(err.response?.data?.error || "Submission failed");
     } finally {
@@ -594,6 +637,9 @@ export default function TestTaking() {
           <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setShowResultsPanel((v) => !v)}>
             {showResultsPanel ? "Hide results" : "Show results"}
           </button>
+          <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={toggleMaximizeEditor}>
+            {!showQuestionPanel && !showResultsPanel ? "⛶ Restore layout" : "⛶ Maximize editor"}
+          </button>
           <div className="mono" style={{ fontSize: 20, color: secondsLeft < 300 ? "var(--rust)" : "var(--amber)" }}>
             {timeLabel} <span style={{ opacity: 0.6 }}>▊</span>
           </div>
@@ -661,7 +707,7 @@ export default function TestTaking() {
         <div style={{ width: 220, borderRight: "1px solid var(--line)", padding: 16, overflowY: "auto" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)", marginBottom: 10 }}>QUESTIONS</div>
           {questions.map((tq, idx) => {
-            const verdict = submittedQuestions[tq.question.id];
+            const answered = !!submittedQuestions[tq.question.id];
             return (
               <button
                 key={tq.id}
@@ -679,11 +725,12 @@ export default function TestTaking() {
                 }}
               >
                 Q{idx + 1}. {tq.question.title || "(untitled)"}
-                {verdict && (
-                  <span style={{ display: "block", fontSize: 11, marginTop: 2, color: verdict === "ACCEPTED" ? "var(--mint)" : "var(--rust)" }} className="mono">
-                    {verdict}
-                  </span>
-                )}
+                <span
+                  style={{ display: "block", fontSize: 11, marginTop: 2, color: answered ? "var(--mint)" : "var(--ink-dim)" }}
+                  className="mono"
+                >
+                  {answered ? "✓ Answered" : "Unanswered"}
+                </span>
               </button>
             );
           })}
@@ -691,7 +738,8 @@ export default function TestTaking() {
 
         {/* Question description */}
         {showQuestionPanel && (
-        <div style={{ width: "38%", padding: 24, overflowY: "auto", borderRight: "1px solid var(--line)" }}>
+        <>
+        <div style={{ width: questionPanelWidth, padding: 24, overflowY: "auto", flexShrink: 0 }}>
           {current && (
             <>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -715,6 +763,12 @@ export default function TestTaking() {
             </>
           )}
         </div>
+        <div
+          onMouseDown={startResize("question")}
+          style={{ width: 6, cursor: "col-resize", background: "var(--line)", flexShrink: 0 }}
+          title="Drag to resize"
+        />
+        </>
         )}
 
         {/* Answer panel: code editor for Coding, options for quiz types */}
@@ -769,9 +823,12 @@ export default function TestTaking() {
                     {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
                   </select>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-ghost" onClick={handleRun} disabled={running}>{running ? "Running…" : "▶ Run sample"}</button>
-                  <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>{submitting ? "Submitting…" : "Submit answer"}</button>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {currentLocked && <span className="mono" style={{ fontSize: 12, color: "var(--mint)", fontWeight: 600 }}>✓ Submitted — locked</span>}
+                  <button className="btn btn-ghost" onClick={handleRun} disabled={running || currentLocked}>{running ? "Running…" : "▶ Run sample"}</button>
+                  <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting || currentLocked}>
+                    {currentLocked ? "Submitted" : submitting ? "Submitting…" : "Submit answer"}
+                  </button>
                 </div>
               </div>
 
@@ -782,14 +839,16 @@ export default function TestTaking() {
                   value={answer?.code || ""}
                   onChange={(v) => setCode(v || "")}
                   theme="vs-dark"
-                  options={{ fontSize: 14, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace" }}
+                  options={{ fontSize: 14, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace", readOnly: currentLocked }}
                 />
               </div>
             </>
           )}
 
           {showResultsPanel && (
-          <div style={{ maxHeight: "30%", overflowY: "auto", borderTop: "1px solid var(--line)", padding: 16, background: "#FBF9F4" }}>
+          <>
+          <div onMouseDown={startResize("results")} style={{ height: 6, cursor: "row-resize", background: "var(--line)", flexShrink: 0 }} title="Drag to resize" />
+          <div style={{ height: resultsPanelHeight, overflowY: "auto", padding: 16, background: "#FBF9F4", flexShrink: 0 }}>
             {(running || submitting) && (
               <p className="mono" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>
                 ⏳ {running ? "Compiling and running" : "Grading"} your {answer?.language || ""} code
@@ -801,16 +860,17 @@ export default function TestTaking() {
               <ResultBlock title="Sample run result" result={runResult} />
             )}
             {!running && !submitting && submitResult && (
-              <ResultBlock title="Submission result" result={submitResult.result} score={submitResult.submission.score} isQuiz={isQuiz} />
+              <SubmitStatusBlock execution={submitResult} />
             )}
             {!running && !submitting && !runResult && !submitResult && (
               <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
                 {isQuiz
-                  ? "Choose an answer and submit — quiz questions are graded instantly."
-                  : "Run against sample cases before submitting. Submission is graded against all (including hidden) test cases."}
+                  ? "Choose an answer and submit — your answer is recorded, results are published after the test."
+                  : "Run against sample cases before submitting. Submission is judged against all (including hidden) test cases — results are published after the test."}
               </p>
             )}
           </div>
+          </>
           )}
         </div>
       </div>
@@ -818,26 +878,61 @@ export default function TestTaking() {
   );
 }
 
-function ResultBlock({ title, result, score, isQuiz }) {
+// Only ever used for "Run sample" (self-check against sample cases, ungraded) — Submit uses
+// SubmitStatusBlock instead, which withholds correctness until results are published.
+function ResultBlock({ title, result }) {
   if (result.error) {
     return <p style={{ color: "var(--rust)" }} className="mono">{title}: {result.error}</p>;
+  }
+  if (result.errorSummary) {
+    return (
+      <div>
+        <div className="mono" style={{ fontWeight: 700, color: "var(--rust)" }}>
+          {title}: {result.errorSummary.type}{result.errorSummary.line ? ` (line ${result.errorSummary.line})` : ""}
+        </div>
+        {result.errorSummary.message && (
+          <div className="mono" style={{ fontSize: 12, marginTop: 6, whiteSpace: "pre-wrap" }}>{result.errorSummary.message}</div>
+        )}
+      </div>
+    );
   }
   const color = result.verdict === "ACCEPTED" ? "var(--mint)" : result.verdict === "PARTIAL" ? "var(--amber-dark)" : "var(--rust)";
   return (
     <div>
       <div className="mono" style={{ fontWeight: 700, color }}>
         {title}: {result.verdict === "ACCEPTED" ? "Correct" : result.verdict === "PARTIAL" ? "Partially correct" : "Incorrect"}
-        {isQuiz
-          ? (score !== undefined && ` · ${score} points`)
-          : ` — ${result.passedCases}/${result.totalCases} test cases passed${score !== undefined ? ` · ${score} points` : ""}`}
+        {` — ${result.passedCases}/${result.totalCases} test cases passed`}
       </div>
-      {!isQuiz && result.details?.map((d, i) => (
+      {result.details?.map((d, i) => (
         <div key={i} style={{ fontSize: 12, marginTop: 6 }} className="mono">
           <span style={{ color: d.verdict === "PASSED" ? "var(--mint)" : "var(--rust)" }}>[{d.verdict}]</span>{" "}
           input: {d.input} | expected: {d.expected} | got: {d.actual ?? d.error}
         </div>
       ))}
     </div>
+  );
+}
+
+// Submit's response is deliberately withheld — only technical execution status (compiled/ran
+// fine vs. a genuine compile/runtime/timeout error) is shown, never whether the answer was
+// correct or how many points it scored. Real results are only visible after the test ends.
+function SubmitStatusBlock({ execution }) {
+  if (execution.error) {
+    return (
+      <div>
+        <div className="mono" style={{ fontWeight: 700, color: "var(--rust)" }}>
+          {execution.error.type}{execution.error.line ? ` (line ${execution.error.line})` : ""}
+        </div>
+        {execution.error.message && (
+          <div className="mono" style={{ fontSize: 12, marginTop: 6, whiteSpace: "pre-wrap" }}>{execution.error.message}</div>
+        )}
+      </div>
+    );
+  }
+  return (
+    <p className="mono" style={{ fontSize: 13, color: "var(--mint)", fontWeight: 600 }}>
+      ✓ Your code ran and your answer has been recorded. Results will be available after the test.
+    </p>
   );
 }
 
