@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
+const { gradePendingCodingSubmissions } = require("../utils/gradeAttempt");
 
 const router = express.Router();
 
@@ -311,6 +312,13 @@ router.post("/attempts/:attemptId/violation", authenticate, requireRole("STUDENT
 
     const tabSwitchCount = attempt.tabSwitchCount + 1;
     const autoSubmitted = tabSwitchCount >= MAX_TAB_VIOLATIONS;
+
+    // Coding answers are auto-saved as PENDING drafts and only graded at submission time —
+    // a violation-triggered auto-submit is a submission just like any other, so it must grade
+    // them too, or those coding questions would sit ungraded (and worth 0) forever.
+    if (autoSubmitted) {
+      await gradePendingCodingSubmissions(attempt.id);
+    }
 
     const updated = await prisma.testAttempt.update({
       where: { id: attempt.id },

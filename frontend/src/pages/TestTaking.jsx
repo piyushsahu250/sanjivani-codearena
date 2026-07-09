@@ -33,9 +33,7 @@ export default function TestTaking() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [answers, setAnswers] = useState({}); // { [questionId]: { language, code } | { selected: number[] } }
   const [runResult, setRunResult] = useState(null);
-  const [submitResult, setSubmitResult] = useState(null);
   const [running, setRunning] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [queueStatus, setQueueStatus] = useState(null);
   const [submittedQuestions, setSubmittedQuestions] = useState({});
   const [secondsLeft, setSecondsLeft] = useState(null);
@@ -46,7 +44,10 @@ export default function TestTaking() {
   const [resultsPanelHeight, setResultsPanelHeight] = useState(220);
   const resizingRef = useRef(null); // "question" | "results" | null
   const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const [timeExpired, setTimeExpired] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
   const timerRef = useRef(null);
+  const deadlineRef = useRef(null); // absolute ms timestamp this candidate's answers lock at
   const attemptIdRef = useRef(null);
   const finalizedRef = useRef(false);
 
@@ -65,14 +66,16 @@ export default function TestTaking() {
   const noiseWarningTimeoutRef = useRef(null);
   const lastNoiseWarningAtRef = useRef(0);
 
-  // MCQ/TRUE_FALSE/MULTISELECT auto-save: selecting an option schedules a debounced background
-  // save (reusing the existing grade-and-store endpoint) instead of requiring an explicit
-  // per-question Submit click. Coding questions are unaffected — they keep their deliberate
-  // one-shot Submit-then-lock flow.
+  // MCQ/TRUE_FALSE/MULTISELECT and CODING answers both auto-save in the background — no
+  // per-question Submit, no lock. Coding just saves the draft (no judging); MCQ grades
+  // instantly since exact-match grading is free. Both share the same debounce/indicator
+  // machinery below, keyed by which pending-save ref is populated.
   const [savingAnswer, setSavingAnswer] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const autoSaveTimeoutRef = useRef(null);
-  const pendingAutoSaveRef = useRef(null);
+  const pendingAutoSaveRef = useRef(null); // MCQ: { questionId, selected }
+  const codeAutoSaveTimeoutRef = useRef(null);
+  const pendingCodeAutoSaveRef = useRef(null); // Coding: { questionId, language, code }
   const justSavedTimeoutRef = useRef(null);
 
   const [markedForReview, setMarkedForReview] = useState({});
@@ -256,6 +259,7 @@ export default function TestTaking() {
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
       clearTimeout(tabWarningTimeoutRef.current);
       clearTimeout(autoSaveTimeoutRef.current);
+      clearTimeout(codeAutoSaveTimeoutRef.current);
       clearTimeout(justSavedTimeoutRef.current);
     };
   }, []);
@@ -312,8 +316,18 @@ export default function TestTaking() {
       const testRes = await api.get(`/tests/${testId}`);
       setTest(testRes.data);
 
-      // Restore previously auto-saved/submitted answers — a page refresh mid-test shouldn't
-      // lose anything already persisted server-side.
+      // The candidate's deadline is their own start time + the configured duration, capped by
+      // the test's scheduled window close — not "time until the window closes" (which was the
+      // actual bug: a test open all day with a 3-minute duration was handing out ~24 hours).
+      // Anchored to the server-recorded startedAt (fixed at first start, never changes on
+      // refresh) so a reload can't reset or extend the clock.
+      const startedAtMs = new Date(startRes.data.startedAt).getTime();
+      const windowCloseMs = new Date(testRes.data.endTime).getTime();
+      const deadline = Math.min(startedAtMs + testRes.data.durationMin * 60 * 1000, windowCloseMs);
+      deadlineRef.current = deadline;
+
+      // Restore previously auto-saved answers — a page refresh mid-test shouldn't lose
+      // anything already persisted server-side.
       const existingSubs = startRes.data.submissions || [];
       if (existingSubs.length > 0) {
         const restoredAnswers = {};
@@ -339,8 +353,7 @@ export default function TestTaking() {
         // ignore
       }
 
-      const end = new Date(testRes.data.endTime).getTime();
-      setSecondsLeft(Math.max(0, Math.floor((end - Date.now()) / 1000)));
+      setSecondsLeft(Math.max(0, Math.floor((deadline - Date.now()) / 1000)));
       setStarted(true);
     } catch (err) {
       setLoadError(err.response?.data?.error || "Could not start this test");
@@ -354,18 +367,18 @@ export default function TestTaking() {
   const isQuiz = current && current.questionType !== "CODING";
   const isMulti = current?.questionType === "MULTISELECT";
 
-  // Overall test timer
+  // Overall test timer — recomputes remaining time from the fixed deadline every tick rather
+  // than decrementing a counter, so it self-corrects instead of drifting if the tab was
+  // throttled/backgrounded, and stays accurate across a page refresh.
   useEffect(() => {
     if (secondsLeft === null) return;
     timerRef.current = setInterval(() => {
-      setSecondsLeft((s) => {
-        if (s <= 1) {
-          clearInterval(timerRef.current);
-          finalizeAndExit(true);
-          return 0;
-        }
-        return s - 1;
-      });
+      const remaining = Math.max(0, Math.floor((deadlineRef.current - Date.now()) / 1000));
+      setSecondsLeft(remaining);
+      if (remaining <= 0) {
+        clearInterval(timerRef.current);
+        finalizeAndExit(true, "time");
+      }
     }, 1000);
     return () => clearInterval(timerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -382,8 +395,18 @@ export default function TestTaking() {
       return { ...prev, [current.id]: { selected: [] } };
     });
     setRunResult(null);
-    setSubmitResult(null);
   }, [current]);
+
+  // Flush any pending debounced save the moment the candidate navigates away from a question —
+  // "auto-save on navigation" per spec, and avoids losing the last few keystrokes/clicks to an
+  // in-flight debounce if they jump away right after editing.
+  useEffect(() => {
+    return () => {
+      if (pendingAutoSaveRef.current) flushAutoSave();
+      if (pendingCodeAutoSaveRef.current) flushCodeAutoSave();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIdx]);
 
   const lastViolationAtRef = useRef(0);
   const tabWarningTimeoutRef = useRef(null);
@@ -453,33 +476,33 @@ export default function TestTaking() {
   }, [started]);
 
   const answer = current ? answers[current.id] : null;
-  // Coding questions lock after one Submit (enforced server-side too); MCQ/quiz types stay
-  // editable so the candidate can change their mind before the test ends.
-  const currentLocked = !isQuiz && !!current && !!submittedQuestions[current.id];
 
+  // MM:SS for tests under an hour, HH:MM:SS once an hour or more is left.
   const timeLabel = useMemo(() => {
-    if (secondsLeft === null) return "--:--:--";
-    const h = String(Math.floor(secondsLeft / 3600)).padStart(2, "0");
-    const m = String(Math.floor((secondsLeft % 3600) / 60)).padStart(2, "0");
-    const s = String(secondsLeft % 60).padStart(2, "0");
-    return `${h}:${m}:${s}`;
+    if (secondsLeft === null) return "--:--";
+    const h = Math.floor(secondsLeft / 3600);
+    const m = Math.floor((secondsLeft % 3600) / 60);
+    const s = secondsLeft % 60;
+    const mm = String(m).padStart(2, "0");
+    const ss = String(s).padStart(2, "0");
+    return h > 0 ? `${String(h).padStart(2, "0")}:${mm}:${ss}` : `${mm}:${ss}`;
   }, [secondsLeft]);
 
   function setLanguage(language) {
     if (!current) return;
     // Switching language always loads that language's own default template — keeping the
     // previous language's code around makes no sense and reads as "the compiler is broken".
-    setAnswers((prev) => ({
-      ...prev,
-      [current.id]: { language, code: defaultStarter(language) },
-    }));
+    const code = defaultStarter(language);
+    setAnswers((prev) => ({ ...prev, [current.id]: { language, code } }));
     setRunResult(null);
-    setSubmitResult(null);
+    scheduleCodeAutoSave(current.id, language, code);
   }
 
   function setCode(code) {
     if (!current) return;
+    const language = answer?.language || "javascript";
     setAnswers((prev) => ({ ...prev, [current.id]: { ...prev[current.id], code } }));
+    scheduleCodeAutoSave(current.id, language, code);
   }
 
   function goToQuestion(delta) {
@@ -514,15 +537,44 @@ export default function TestTaking() {
     try {
       await api.post("/submissions/submit", { attemptId, questionId: pending.questionId, selectedOptions: pending.selected });
       setSubmittedQuestions((prev) => ({ ...prev, [pending.questionId]: true }));
-      setJustSaved(true);
-      clearTimeout(justSavedTimeoutRef.current);
-      justSavedTimeoutRef.current = setTimeout(() => setJustSaved(false), 1500);
+      flashSaved();
     } catch {
       // Best-effort — the selection stays in local state and gets retried on the next change,
       // or flushed again right before the final Submit Test.
     } finally {
       setSavingAnswer(false);
     }
+  }
+
+  // Debounced background save for coding drafts — longer debounce than MCQ since typing is
+  // far more frequent than clicking an option; no judge invocation here, just a DB write.
+  function scheduleCodeAutoSave(questionId, language, code) {
+    pendingCodeAutoSaveRef.current = { questionId, language, code };
+    clearTimeout(codeAutoSaveTimeoutRef.current);
+    codeAutoSaveTimeoutRef.current = setTimeout(flushCodeAutoSave, 1000);
+  }
+
+  async function flushCodeAutoSave() {
+    clearTimeout(codeAutoSaveTimeoutRef.current);
+    const pending = pendingCodeAutoSaveRef.current;
+    if (!pending || !attemptId) return;
+    pendingCodeAutoSaveRef.current = null;
+    setSavingAnswer(true);
+    try {
+      await api.post("/submissions/autosave", { attemptId, questionId: pending.questionId, language: pending.language, code: pending.code });
+      setSubmittedQuestions((prev) => ({ ...prev, [pending.questionId]: true }));
+      flashSaved();
+    } catch {
+      // Best-effort — same retry story as MCQ auto-save above.
+    } finally {
+      setSavingAnswer(false);
+    }
+  }
+
+  function flashSaved() {
+    setJustSaved(true);
+    clearTimeout(justSavedTimeoutRef.current);
+    justSavedTimeoutRef.current = setTimeout(() => setJustSaved(false), 1500);
   }
 
   function toggleMarkForReview() {
@@ -538,11 +590,11 @@ export default function TestTaking() {
     });
   }
 
-  // While a Run/Submit is pending, poll how busy the judge is so a slow response under heavy
+  // While Run is pending, poll how busy the judge is so a slow response under heavy
   // concurrent load (many students coding at once) reads as "N ahead of you" rather than a
   // spinner that looks frozen. Purely informational — has no effect on execution itself.
   useEffect(() => {
-    if (!running && !submitting) {
+    if (!running) {
       setQueueStatus(null);
       return;
     }
@@ -550,7 +602,7 @@ export default function TestTaking() {
     poll();
     const interval = setInterval(poll, 1500);
     return () => clearInterval(interval);
-  }, [running, submitting]);
+  }, [running]);
 
   async function handleRun() {
     if (!answer || isQuiz) return;
@@ -566,38 +618,28 @@ export default function TestTaking() {
     }
   }
 
-  async function handleSubmit() {
-    if (!answer) return;
-    setSubmitting(true);
-    setSubmitResult(null);
-    try {
-      const payload = { attemptId, questionId: current.id };
-      if (isQuiz) {
-        payload.selectedOptions = answer.selected || [];
-      } else {
-        payload.language = answer.language;
-        payload.code = answer.code;
-      }
-      const { data } = await api.post("/submissions/submit", payload);
-      setSubmitResult(data.execution);
-      setSubmittedQuestions((prev) => ({ ...prev, [current.id]: true }));
-    } catch (err) {
-      alert(err.response?.data?.error || "Submission failed");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function finalizeAndExit(auto = false) {
+  async function finalizeAndExit(auto = false, reason = null) {
     if (!attemptId || finalizedRef.current) return;
     if (!auto && !confirm("Are you sure you want to submit your test? After submission, you will not be able to modify your answers.")) return;
-    // Flush any answer still waiting on the auto-save debounce so the very last selection
-    // isn't lost to a race between clicking Submit Test and the pending save timer.
+    // Flush any answer still waiting on an auto-save debounce so the very last change isn't
+    // lost to a race between submitting and the pending save timer.
     if (pendingAutoSaveRef.current) await flushAutoSave();
+    if (pendingCodeAutoSaveRef.current) await flushCodeAutoSave();
     finalizedRef.current = true;
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-    await api.post(`/submissions/finalize/${attemptId}`);
+    setFinalizing(true);
+    try {
+      await api.post(`/submissions/finalize/${attemptId}`);
+    } catch {
+      // Best-effort — don't trap the candidate on the exam screen even if this call fails.
+    } finally {
+      setFinalizing(false);
+    }
+    if (reason === "time") {
+      setTimeExpired(true);
+      return;
+    }
     navigate("/dashboard");
   }
 
@@ -636,6 +678,19 @@ export default function TestTaking() {
     );
   }
 
+  if (timeExpired) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
+        <div className="card" style={{ padding: 32, maxWidth: 440, textAlign: "center" }}>
+          <p style={{ fontSize: 16, color: "var(--rust)" }}>Time is up. Your test has been submitted automatically.</p>
+          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate("/dashboard")}>
+            Back to dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (autoSubmitted) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
@@ -647,6 +702,16 @@ export default function TestTaking() {
           <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate("/dashboard")}>
             Back to dashboard
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (finalizing) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
+        <div className="card" style={{ padding: 32, maxWidth: 440, textAlign: "center" }}>
+          <p className="mono" style={{ fontSize: 15 }}>⏳ Grading your test — this can take a few seconds for coding questions. Please don't close this tab.</p>
         </div>
       </div>
     );
@@ -665,7 +730,9 @@ export default function TestTaking() {
           <p style={{ fontSize: 13, marginTop: 20 }}>
             This test runs in fullscreen with your camera and microphone on for the full duration, and your face
             must stay visible in frame. Switching tabs, exiting fullscreen, disabling your camera/mic, or moving out
-            of camera view is tracked and will auto-submit your test after {MAX_TAB_VIOLATIONS} violations.
+            of camera view is tracked and will auto-submit your test after {MAX_TAB_VIOLATIONS} violations. You get
+            one continuous {testMeta.durationMin}-minute timer for the whole test — answer any question in any
+            order, and change your answers freely until you submit or time runs out.
           </p>
 
           <div style={{ marginTop: 20, padding: 16, border: "1px solid var(--line)", borderRadius: 10 }}>
@@ -795,8 +862,6 @@ export default function TestTaking() {
           {questions.map((tq, idx) => {
             const q = tq.question;
             const a = answers[q.id];
-            // Quiz types feel answered as soon as an option is picked (even mid-debounce);
-            // coding stays gated on an actual server-confirmed Submit, matching its lock.
             const answered = q.questionType === "CODING" ? !!submittedQuestions[q.id] : (a?.selected || []).length > 0;
             const marked = !!markedForReview[q.id];
             let statusLabel = "Unanswered";
@@ -932,8 +997,10 @@ export default function TestTaking() {
                     {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
                   </select>
                 </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  {currentLocked && <span className="mono" style={{ fontSize: 12, color: "var(--mint)", fontWeight: 600 }}>✓ Submitted — locked</span>}
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <span className="mono" style={{ fontSize: 12, color: savingAnswer ? "var(--amber-dark)" : "var(--mint)", minWidth: 90, textAlign: "right" }}>
+                    {savingAnswer ? "Saving…" : justSaved ? "✓ Saved" : ""}
+                  </span>
                   <button
                     className="btn btn-ghost"
                     style={{ color: markedForReview[current.id] ? "#8b5cf6" : undefined }}
@@ -941,12 +1008,13 @@ export default function TestTaking() {
                   >
                     {markedForReview[current.id] ? "⚑ Marked" : "⚑ Mark for review"}
                   </button>
-                  <button className="btn btn-ghost" onClick={handleRun} disabled={running || currentLocked}>{running ? "Running…" : "▶ Run sample"}</button>
-                  <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting || currentLocked}>
-                    {currentLocked ? "Submitted" : submitting ? "Submitting…" : "Submit answer"}
-                  </button>
+                  <button className="btn btn-ghost" onClick={handleRun} disabled={running}>{running ? "Running…" : "▶ Run sample"}</button>
                 </div>
               </div>
+              <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", padding: "6px 16px 0" }}>
+                Your code is saved automatically — edit it freely until you submit the whole test. "Run sample"
+                checks against sample cases only; the final saved version is graded when the test is submitted.
+              </p>
 
               <div style={{ flex: 1, minHeight: 0 }}>
                 <Editor
@@ -955,7 +1023,7 @@ export default function TestTaking() {
                   value={answer?.code || ""}
                   onChange={(v) => setCode(v || "")}
                   theme="vs-dark"
-                  options={{ fontSize: 14, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace", readOnly: currentLocked }}
+                  options={{ fontSize: 14, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace" }}
                 />
               </div>
             </>
@@ -965,22 +1033,20 @@ export default function TestTaking() {
           <>
           <div onMouseDown={startResize("results")} style={{ height: 6, cursor: "row-resize", background: "var(--line)", flexShrink: 0 }} title="Drag to resize" />
           <div style={{ height: resultsPanelHeight, overflowY: "auto", padding: 16, background: "#FBF9F4", flexShrink: 0 }}>
-            {(running || submitting) && (
+            {running && (
               <p className="mono" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>
-                ⏳ {running ? "Compiling and running" : "Grading"} your {answer?.language || ""} code
+                ⏳ Compiling and running your {answer?.language || ""} code
                 {["c", "cpp", "java"].includes(answer?.language) ? " — compiled languages take a bit longer" : ""}…
                 {queueStatus?.waiting > 0 && ` (${queueStatus.waiting} student${queueStatus.waiting > 1 ? "s" : ""} ahead of you)`}
               </p>
             )}
-            {!running && !submitting && runResult && (
+            {!running && runResult && (
               <ResultBlock title="Sample run result" result={runResult} />
             )}
-            {!running && !submitting && submitResult && (
-              <SubmitStatusBlock execution={submitResult} />
-            )}
-            {!isQuiz && !running && !submitting && !runResult && !submitResult && (
+            {!isQuiz && !running && !runResult && (
               <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
-                Run against sample cases before submitting. Submission is judged against all (including hidden) test cases — results are published after the test.
+                Run against sample cases any time. Your saved code is judged against all (including hidden) test
+                cases once when you submit the whole test — results are published after the test.
               </p>
             )}
           </div>
@@ -992,8 +1058,6 @@ export default function TestTaking() {
   );
 }
 
-// Only ever used for "Run sample" (self-check against sample cases, ungraded) — Submit uses
-// SubmitStatusBlock instead, which withholds correctness until results are published.
 function ResultBlock({ title, result }) {
   if (result.error) {
     return <p style={{ color: "var(--rust)" }} className="mono">{title}: {result.error}</p>;
@@ -1024,29 +1088,6 @@ function ResultBlock({ title, result }) {
         </div>
       ))}
     </div>
-  );
-}
-
-// Submit's response is deliberately withheld — only technical execution status (compiled/ran
-// fine vs. a genuine compile/runtime/timeout error) is shown, never whether the answer was
-// correct or how many points it scored. Real results are only visible after the test ends.
-function SubmitStatusBlock({ execution }) {
-  if (execution.error) {
-    return (
-      <div>
-        <div className="mono" style={{ fontWeight: 700, color: "var(--rust)" }}>
-          {execution.error.type}{execution.error.line ? ` (line ${execution.error.line})` : ""}
-        </div>
-        {execution.error.message && (
-          <div className="mono" style={{ fontSize: 12, marginTop: 6, whiteSpace: "pre-wrap" }}>{execution.error.message}</div>
-        )}
-      </div>
-    );
-  }
-  return (
-    <p className="mono" style={{ fontSize: 13, color: "var(--mint)", fontWeight: 600 }}>
-      ✓ Your code ran and your answer has been recorded. Results will be available after the test.
-    </p>
   );
 }
 

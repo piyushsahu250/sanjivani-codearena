@@ -4,14 +4,15 @@ const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { judgeSubmission } = require("../utils/judge");
 const { runQueued, getQueueStatus } = require("../utils/queue");
+const { gradePendingCodingSubmissions } = require("../utils/gradeAttempt");
 
 const router = express.Router();
 
-// Per-student (not per-IP) throttling on code execution. Keying by IP would let a single
-// shared campus/lab network IP — which many students behind one router/NAT genuinely share
-// during an exam — collectively exhaust one shared budget, effectively rate-limiting the
-// whole classroom instead of each abusive individual. Runs after `authenticate`, so
-// req.user.id is always populated here.
+// Per-student (not per-IP) throttling on code EXECUTION specifically. Keying by IP would let a
+// single shared campus/lab network IP — which many students behind one router/NAT genuinely
+// share during an exam — collectively exhaust one shared budget. Only applied to routes that
+// actually invoke the judge (/run, /submit for quiz grading) — /autosave is a plain DB write
+// with no compute cost, so it isn't throttled here.
 const execLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
@@ -81,12 +82,14 @@ router.post("/run", authenticate, requireRole("STUDENT"), execLimiter, async (re
   }
 });
 
-// STUDENT: submit final answer for a question — judged/graded and scored.
-// Coding: language + code, judged against ALL test cases.
-// MCQ / TRUE_FALSE / MULTISELECT: selectedOptions (array of option indices).
-router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async (req, res) => {
+// STUDENT: auto-save a coding draft (language + code) with no judging — coding is no longer
+// graded per-question mid-test; the candidate can edit freely until the test ends, and the
+// final saved draft is judged once at finalize time (or on a violation-triggered auto-submit).
+// Stores/overwrites a single PENDING Submission row per attempt+question, same "latest answer
+// wins" principle as quiz auto-save, just without running the compiler on every keystroke.
+router.post("/autosave", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
-    const { attemptId, questionId, language, code, selectedOptions } = req.body;
+    const { attemptId, questionId, language, code } = req.body;
 
     const attempt = await prisma.testAttempt.findUnique({ where: { id: attemptId } });
     if (!attempt || attempt.studentId !== req.user.id) {
@@ -96,57 +99,70 @@ router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async 
       return res.status(403).json({ error: "This test attempt is already finalized" });
     }
 
-    const question = await prisma.question.findUnique({
-      where: { id: questionId },
-      include: { testCases: true },
-    });
+    const question = await prisma.question.findUnique({ where: { id: questionId } });
     if (!question) return res.status(404).json({ error: "Question not found" });
-
-    // Coding questions allow unlimited Run (sample self-check) but only one final Submit —
-    // enforced here, not just by disabling the button client-side, since a direct API call
-    // could otherwise bypass a frontend-only lock. MCQ/TRUE_FALSE/MULTISELECT keep allowing
-    // resubmission (changing your answer before the test ends is expected there).
-    if (question.questionType === "CODING") {
-      const alreadySubmitted = await prisma.submission.findFirst({ where: { attemptId, questionId } });
-      if (alreadySubmitted) {
-        return res.status(409).json({ error: "You have already submitted your final answer for this question." });
-      }
+    if (question.questionType !== "CODING") {
+      return res.status(400).json({ error: "Autosave is only for coding questions" });
     }
 
-    let result;
-    let submissionLanguage = language || "";
-    let submissionCode = code || "";
-
-    if (question.questionType === "CODING") {
-      result = await runQueued(() =>
-        judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs })
-      );
+    const existing = await prisma.submission.findFirst({ where: { attemptId, questionId } });
+    if (existing) {
+      await prisma.submission.update({
+        where: { id: existing.id },
+        data: { language: language || "", code: code || "", verdict: "PENDING", score: 0, passedCases: 0, totalCases: 0 },
+      });
     } else {
-      result = gradeQuizAnswer(question, selectedOptions);
-      submissionLanguage = question.questionType;
-      submissionCode = JSON.stringify(selectedOptions || []);
+      await prisma.submission.create({
+        data: { attemptId, questionId, studentId: req.user.id, language: language || "", code: code || "", verdict: "PENDING" },
+      });
     }
 
+    res.json({ status: "SAVED" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Autosave failed" });
+  }
+});
+
+// STUDENT: auto-save/record an MCQ / TRUE_FALSE / MULTISELECT answer — graded instantly since
+// exact-match grading is free (no compiler involved), but the response withholds correctness
+// until results are published. A resubmission replaces the prior one for this question, so the
+// most recently selected option is always what counts.
+router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async (req, res) => {
+  try {
+    const { attemptId, questionId, selectedOptions } = req.body;
+
+    const attempt = await prisma.testAttempt.findUnique({ where: { id: attemptId } });
+    if (!attempt || attempt.studentId !== req.user.id) {
+      return res.status(403).json({ error: "Invalid attempt" });
+    }
+    if (attempt.status !== "IN_PROGRESS") {
+      return res.status(403).json({ error: "This test attempt is already finalized" });
+    }
+
+    const question = await prisma.question.findUnique({ where: { id: questionId } });
+    if (!question) return res.status(404).json({ error: "Question not found" });
+    if (question.questionType === "CODING") {
+      return res.status(400).json({ error: "Coding questions are auto-saved via /autosave, not /submit" });
+    }
+
+    const result = gradeQuizAnswer(question, selectedOptions);
     const score =
       result.verdict === "ACCEPTED"
         ? question.points
         : Math.round((result.passedCases / result.totalCases) * question.points);
 
-    // MCQ/TRUE_FALSE/MULTISELECT: a re-submission replaces the prior one for this question —
-    // otherwise changing your answer just added another row, and scoring picked whichever of
-    // the two scored higher (see below), which meant an earlier, since-changed answer could
-    // still silently win over the option the student actually left selected.
-    if (question.questionType !== "CODING") {
-      await prisma.submission.deleteMany({ where: { attemptId, questionId } });
-    }
-
+    // A re-submission replaces the prior one for this question — otherwise changing your
+    // answer just added another row, and scoring picked whichever of the two scored higher,
+    // which meant an earlier, since-changed answer could still silently win.
+    await prisma.submission.deleteMany({ where: { attemptId, questionId } });
     const submission = await prisma.submission.create({
       data: {
         attemptId,
         questionId,
         studentId: req.user.id,
-        language: submissionLanguage,
-        code: submissionCode,
+        language: question.questionType,
+        code: JSON.stringify(selectedOptions || []),
         score,
         passedCases: result.passedCases,
         totalCases: result.totalCases,
@@ -154,7 +170,6 @@ router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async 
       },
     });
 
-    // Recompute attempt total score (sum of best submission per question)
     const allSubs = await prisma.submission.findMany({ where: { attemptId } });
     const bestByQuestion = {};
     for (const s of allSubs) {
@@ -172,17 +187,31 @@ router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async 
   }
 });
 
-// STUDENT: finalize the whole test attempt
+// STUDENT: finalize the whole test attempt — grades every still-PENDING coding draft (the
+// final saved version of each) before marking the attempt SUBMITTED. Idempotent: calling it
+// again on an already-finalized attempt just returns the current state.
 router.post("/finalize/:attemptId", authenticate, requireRole("STUDENT"), async (req, res) => {
-  const attempt = await prisma.testAttempt.findUnique({ where: { id: req.params.attemptId } });
-  if (!attempt || attempt.studentId !== req.user.id) {
-    return res.status(403).json({ error: "Invalid attempt" });
+  try {
+    const attempt = await prisma.testAttempt.findUnique({ where: { id: req.params.attemptId } });
+    if (!attempt || attempt.studentId !== req.user.id) {
+      return res.status(403).json({ error: "Invalid attempt" });
+    }
+
+    if (attempt.status !== "IN_PROGRESS") {
+      return res.json(attempt);
+    }
+
+    await gradePendingCodingSubmissions(attempt.id);
+
+    const updated = await prisma.testAttempt.update({
+      where: { id: req.params.attemptId },
+      data: { status: "SUBMITTED", submittedAt: new Date() },
+    });
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to submit test" });
   }
-  const updated = await prisma.testAttempt.update({
-    where: { id: req.params.attemptId },
-    data: { status: "SUBMITTED", submittedAt: new Date() },
-  });
-  res.json(updated);
 });
 
 module.exports = router;
