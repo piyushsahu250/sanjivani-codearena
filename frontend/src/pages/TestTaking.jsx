@@ -397,6 +397,10 @@ export default function TestTaking() {
     setAnswers((prev) => ({ ...prev, [current.id]: { ...prev[current.id], code } }));
   }
 
+  function goToQuestion(delta) {
+    setActiveIdx((idx) => Math.max(0, Math.min(questions.length - 1, idx + delta)));
+  }
+
   function toggleOption(idx) {
     if (!current) return;
     setAnswers((prev) => {
@@ -718,9 +722,17 @@ export default function TestTaking() {
           {isQuiz ? (
             <>
               <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
-                  {isMulti ? "Select all that apply" : "Select one answer"}
-                </span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => goToQuestion(-1)} disabled={activeIdx === 0}>
+                    ◀ Previous
+                  </button>
+                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => goToQuestion(1)} disabled={activeIdx === questions.length - 1}>
+                    Next ▶
+                  </button>
+                  <span className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
+                    {isMulti ? "Select all that apply" : "Select one answer"}
+                  </span>
+                </div>
                 <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting || !(answer?.selected?.length)}>
                   {submitting ? "Submitting…" : "Submit answer"}
                 </button>
@@ -746,9 +758,17 @@ export default function TestTaking() {
           ) : (
             <>
               <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <select value={answer?.language || "javascript"} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
-                  {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-                </select>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => goToQuestion(-1)} disabled={activeIdx === 0}>
+                    ◀ Previous
+                  </button>
+                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => goToQuestion(1)} disabled={activeIdx === questions.length - 1}>
+                    Next ▶
+                  </button>
+                  <select value={answer?.language || "javascript"} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
+                    {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+                  </select>
+                </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button className="btn btn-ghost" onClick={handleRun} disabled={running}>{running ? "Running…" : "▶ Run sample"}</button>
                   <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>{submitting ? "Submitting…" : "Submit answer"}</button>

@@ -102,6 +102,14 @@ router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async 
         ? question.points
         : Math.round((result.passedCases / result.totalCases) * question.points);
 
+    // MCQ/TRUE_FALSE/MULTISELECT: a re-submission replaces the prior one for this question —
+    // otherwise changing your answer just added another row, and scoring picked whichever of
+    // the two scored higher (see below), which meant an earlier, since-changed answer could
+    // still silently win over the option the student actually left selected.
+    if (question.questionType !== "CODING") {
+      await prisma.submission.deleteMany({ where: { attemptId, questionId } });
+    }
+
     const submission = await prisma.submission.create({
       data: {
         attemptId,
