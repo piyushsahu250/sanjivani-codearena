@@ -65,7 +65,9 @@ export default function ClassStudents() {
                   {data.students.map((s) => (
                     <tr key={s.id} style={{ borderBottom: "1px solid var(--line)", fontSize: 14 }}>
                       <td className="mono" style={{ padding: "10px 6px" }}>{s.rollNumber || "—"}</td>
-                      <td style={{ padding: "10px 6px" }}>{s.name}</td>
+                      <td style={{ padding: "10px 6px" }}>
+                        <Link to={`/admin/students/${s.id}`} style={{ color: "var(--ink)", fontWeight: 600 }}>{s.name}</Link>
+                      </td>
                       <td className="mono" style={{ padding: "10px 6px" }}>{s.email}</td>
                       <td className="mono" style={{ padding: "10px 6px" }}>{s.mobile || "—"}</td>
                       <td style={{ padding: "10px 6px", textAlign: "right" }}>

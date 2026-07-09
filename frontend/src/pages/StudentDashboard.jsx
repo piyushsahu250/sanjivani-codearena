@@ -42,8 +42,13 @@ export default function StudentDashboard() {
     <div>
       <Navbar />
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "48px 24px" }}>
-        <h1>Your coding tests</h1>
-        <ChalkUnderline />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <h1>Your coding tests</h1>
+            <ChalkUnderline />
+          </div>
+          <Link to="/dashboard/performance" className="btn btn-ghost">My Performance</Link>
+        </div>
         <p style={{ color: "var(--ink-dim)", marginTop: 16 }}>
           Assessments published by your department. Live tests can be attended
           within their scheduled window only.

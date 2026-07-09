@@ -25,6 +25,8 @@ import InstituteManagement from "./pages/InstituteManagement";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import ForceChangePassword from "./pages/ForceChangePassword";
+import StudentSearch from "./pages/StudentSearch";
+import StudentPerformance from "./pages/StudentPerformance";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
@@ -69,6 +71,7 @@ export default function App() {
             }
           />
           <Route path="/test/:id/result" element={<Protected roles={["STUDENT"]}><StudentTestResult /></Protected>} />
+          <Route path="/dashboard/performance" element={<Protected roles={["STUDENT"]}><StudentPerformance /></Protected>} />
 
           {/* Staff (and Admin, who can also manage tests/questions) */}
           <Route path="/staff" element={<Protected roles={["ADMIN", "STAFF"]}><StaffDashboard /></Protected>} />
@@ -79,6 +82,8 @@ export default function App() {
           <Route path="/staff/tests/:id/edit" element={<Protected roles={["ADMIN", "STAFF"]}><CreateTest /></Protected>} />
           <Route path="/staff/tests/:id/results" element={<Protected roles={["ADMIN", "STAFF"]}><TestResults /></Protected>} />
           <Route path="/staff/tests/:id/preview" element={<Protected roles={["ADMIN", "STAFF"]}><TestPreview /></Protected>} />
+          <Route path="/staff/students" element={<Protected roles={["ADMIN", "STAFF"]}><StudentSearch basePath="/staff" /></Protected>} />
+          <Route path="/staff/students/:id" element={<Protected roles={["ADMIN", "STAFF"]}><StudentPerformance basePath="/staff" /></Protected>} />
 
           {/* Admin only: account management */}
           <Route path="/admin" element={<Protected roles={["ADMIN"]}><AdminDashboard /></Protected>} />
@@ -86,6 +91,8 @@ export default function App() {
           <Route path="/admin/classes" element={<Protected roles={["ADMIN"]}><ClassManagement /></Protected>} />
           <Route path="/admin/classes/:id/students" element={<Protected roles={["ADMIN"]}><ClassStudents /></Protected>} />
           <Route path="/admin/institutes" element={<Protected roles={["ADMIN"]}><InstituteManagement /></Protected>} />
+          <Route path="/admin/students" element={<Protected roles={["ADMIN"]}><StudentSearch basePath="/admin" /></Protected>} />
+          <Route path="/admin/students/:id" element={<Protected roles={["ADMIN"]}><StudentPerformance basePath="/admin" /></Protected>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

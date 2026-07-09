@@ -7,6 +7,8 @@ const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
 const { sendMail } = require("../utils/mailer");
+const { computeStudentPerformance } = require("../utils/studentPerformance");
+const { generatePerformancePdf } = require("../utils/reportPdf");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -350,6 +352,153 @@ router.get("/lookup/:query", authenticate, requireRole("ADMIN"), attachRequester
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Lookup failed" });
+  }
+});
+
+// ADMIN/STAFF: search students by ID, roll number, name, or official email — institute-scoped
+// accounts only ever match students under their own institute. Powers the Student Performance
+// Dashboard's search box; results are capped and meant for picking one student, not browsing.
+router.get("/search", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (!q) return res.json([]);
+    const students = await prisma.user.findMany({
+      where: {
+        role: "STUDENT",
+        ...(req.requesterInstituteId ? { instituteId: req.requesterInstituteId } : {}),
+        OR: [
+          { id: q },
+          { rollNumber: { contains: q, mode: "insensitive" } },
+          { name: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      select: {
+        id: true, name: true, email: true, rollNumber: true,
+        institute: { select: { name: true } },
+        class: { select: { name: true, batchYear: true } },
+      },
+      orderBy: { name: "asc" },
+      take: 20,
+    });
+    res.json(students);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Search failed" });
+  }
+});
+
+// Shared access check for the performance dashboard + both report exports: ADMIN/STAFF can view
+// any student under their own institute (platform-level accounts see everyone); a STUDENT may
+// only view their own. Returns the student's own institute-scope-relevant fields on success, or
+// sends the appropriate error response and returns null.
+async function authorizeStudentPerformanceAccess(req, res) {
+  const targetId = req.params.id;
+  if (req.user.role === "STUDENT" && req.user.id !== targetId) {
+    res.status(403).json({ error: "You can only view your own performance dashboard" });
+    return null;
+  }
+  const target = await prisma.user.findUnique({ where: { id: targetId }, select: { id: true, role: true, instituteId: true } });
+  if (!target || target.role !== "STUDENT") {
+    res.status(404).json({ error: "Student not found" });
+    return null;
+  }
+  if (req.user.role !== "STUDENT") {
+    const requester = await prisma.user.findUnique({ where: { id: req.user.id }, select: { instituteId: true } });
+    if (requester?.instituteId && target.instituteId !== requester.instituteId) {
+      res.status(403).json({ error: "You can only view students under your own institute" });
+      return null;
+    }
+  }
+  return target;
+}
+
+// ADMIN/STAFF/STUDENT(self): full performance dashboard — summary stats, test history, and
+// chart-ready analytics. A student's own view masks scores for any test whose results aren't
+// published yet, same principle as the single-test result page.
+router.get("/:id/performance", authenticate, requireRole("ADMIN", "STAFF", "STUDENT"), async (req, res) => {
+  try {
+    const target = await authorizeStudentPerformanceAccess(req, res);
+    if (!target) return;
+    const data = await computeStudentPerformance(target.id, { maskUnpublished: req.user.role === "STUDENT" });
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load performance data" });
+  }
+});
+
+// Same access rule as above: downloadable Excel report.
+router.get("/:id/performance/report.xlsx", authenticate, requireRole("ADMIN", "STAFF", "STUDENT"), async (req, res) => {
+  try {
+    const target = await authorizeStudentPerformanceAccess(req, res);
+    if (!target) return;
+    const data = await computeStudentPerformance(target.id, { maskUnpublished: req.user.role === "STUDENT" });
+
+    const wb = XLSX.utils.book_new();
+    const summarySheet = XLSX.utils.aoa_to_sheet([
+      ["Student Performance Report"],
+      [],
+      ["Name", data.student.name],
+      ["Roll Number", data.student.rollNumber || "—"],
+      ["Official Email", data.student.email],
+      ["Mobile", data.student.mobile || "—"],
+      ["Institute", data.student.institute?.name || "—"],
+      ["Class", data.student.class?.name || "—"],
+      ["Batch Year", data.student.class?.batchYear || data.student.batchYear || "—"],
+      [],
+      ["Total Tests Assigned", data.summary.totalTestsAssigned],
+      ["Total Tests Attempted", data.summary.totalTestsAttempted],
+      ["Total Tests Completed", data.summary.totalTestsCompleted],
+      ["Total Tests Pending", data.summary.totalTestsPending],
+      ["Average Score (%)", data.summary.averageScorePercent],
+      ["Overall Percentage", data.summary.overallPercentage],
+      ["Highest Score (%)", data.summary.highest?.percentage ?? "—"],
+      ["Lowest Score (%)", data.summary.lowest?.percentage ?? "—"],
+      ["Total Coding Questions Solved", data.summary.totalCodingSolved],
+      ["Total MCQs Attempted", data.summary.totalMcqAttempted],
+      ["Total MCQs Answered Correctly", data.summary.totalMcqCorrect],
+      ["Total Time Spent (minutes)", data.summary.totalTimeSpentMin],
+      ["Last Test Attempt Date", data.summary.lastAttemptDate ? new Date(data.summary.lastAttemptDate).toLocaleString() : "—"],
+    ]);
+    XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
+
+    const historySheet = XLSX.utils.json_to_sheet(
+      data.testHistory.map((h) => ({
+        "Test Name": h.testName,
+        "Date": new Date(h.date).toLocaleDateString(),
+        "Score": h.resultsPending ? "Pending" : h.score,
+        "Max Score": h.maxScore,
+        "Percentage": h.resultsPending ? "Pending" : `${h.percentage}%`,
+        "Time Taken (min)": h.timeTakenMin ?? "—",
+        "Status": h.status,
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, historySheet, "Test History");
+
+    const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${(data.student.rollNumber || data.student.id)}-performance-report.xlsx"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to generate Excel report" });
+  }
+});
+
+// Same access rule as above: downloadable PDF report.
+router.get("/:id/performance/report.pdf", authenticate, requireRole("ADMIN", "STAFF", "STUDENT"), async (req, res) => {
+  try {
+    const target = await authorizeStudentPerformanceAccess(req, res);
+    if (!target) return;
+    const data = await computeStudentPerformance(target.id, { maskUnpublished: req.user.role === "STUDENT" });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${(data.student.rollNumber || data.student.id)}-performance-report.pdf"`);
+    generatePerformancePdf(data, res);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to generate PDF report" });
   }
 });
 
