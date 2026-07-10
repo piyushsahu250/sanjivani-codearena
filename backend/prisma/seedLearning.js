@@ -398,15 +398,21 @@ function isPlaceholderContent(content) {
   return content.includes("is coming soon") || content.includes("will be added soon");
 }
 
-async function upsertLessonContent(prisma, moduleId, title, { content, estimatedMinutes = 10, order }) {
+// isModuleTest is structural metadata the seed owns (not admin-editable prose), so unlike
+// `content` it's synced unconditionally on every run rather than gated by the placeholder
+// check — this is what retroactively flags already-seeded trailing lessons as the module's
+// gating test once this field is introduced.
+async function upsertLessonContent(prisma, moduleId, title, { content, estimatedMinutes = 10, order, isModuleTest = false }) {
   const existing = await prisma.lesson.findUnique({ where: { moduleId_title: { moduleId, title } } });
   if (!existing) {
-    return prisma.lesson.create({ data: { moduleId, title, order, content, estimatedMinutes } });
+    return prisma.lesson.create({ data: { moduleId, title, order, content, estimatedMinutes, isModuleTest } });
   }
+  const data = { isModuleTest };
   if (isPlaceholderContent(existing.content)) {
-    return prisma.lesson.update({ where: { id: existing.id }, data: { content, estimatedMinutes } });
+    data.content = content;
+    data.estimatedMinutes = estimatedMinutes;
   }
-  return existing;
+  return prisma.lesson.update({ where: { id: existing.id }, data });
 }
 
 async function seedLearningModule(prisma) {
@@ -445,6 +451,7 @@ async function seedLearningModule(prisma) {
 
   const quizLesson = await upsertLessonContent(prisma, module1.id, "Practice Quiz", {
     content: "<p>Test what you've learned in this module.</p>", estimatedMinutes: 10, order: MODULE1_LESSONS.length,
+    isModuleTest: true,
   });
   const existingQuiz = await prisma.practiceQuestion.count({ where: { lessonId: quizLesson.id } });
   if (existingQuiz === 0) {
@@ -474,6 +481,7 @@ async function seedLearningModule(prisma) {
   const module2PracticeLesson = await upsertLessonContent(prisma, module2.id, "Practice Questions & Coding Exercises", {
     content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
     estimatedMinutes: 20, order: MODULE2_LESSONS.length,
+    isModuleTest: true,
   });
   const existingModule2Practice = await prisma.practiceQuestion.count({ where: { lessonId: module2PracticeLesson.id } });
   if (existingModule2Practice === 0) {
@@ -513,6 +521,10 @@ async function seedLearningModule(prisma) {
     }
 
     if (spec.practiceLabel) {
+      // Not flagged isModuleTest yet — a gating test with zero questions would make this
+      // module (and everything after it) permanently unpassable. Left as a regular lesson
+      // (mark-complete like any other) until real practice questions are authored for it,
+      // at which point flip isModuleTest true in that same pass.
       await upsertLessonContent(prisma, mod.id, spec.practiceLabel, {
         content: "<p><em>Practice questions for this module will be added soon.</em></p>",
         estimatedMinutes: 15, order: spec.topics.length,

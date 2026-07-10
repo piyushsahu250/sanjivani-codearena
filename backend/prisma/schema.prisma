@@ -270,6 +270,10 @@ model Lesson {
   pdfUrl           String?  // external link to a hosted PDF — no in-house file storage
   externalLinks    Json?    // [{ label, url }]
   estimatedMinutes Int      @default(10)
+  // The gating practice test for its module — batch-submitted (not per-question), scored,
+  // and required to pass before the next module unlocks. At most one per module in practice
+  // (the last lesson), but not DB-enforced since nothing breaks if that changes.
+  isModuleTest     Boolean  @default(false)
   createdAt        DateTime @default(now())
 
   progress  LessonProgress[]

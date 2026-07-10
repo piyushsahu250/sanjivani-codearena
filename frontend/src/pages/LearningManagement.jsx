@@ -265,7 +265,7 @@ function LessonDetailPanel({ lessonId, lessonSummary, onRefresh }) {
     api.get(`/learning/lessons/${lessonId}`).then((res) => {
       setFull(res.data);
       const l = res.data.lesson;
-      setForm({ title: l.title, content: l.content || "", videoUrl: l.videoUrl || "", pdfUrl: l.pdfUrl || "", estimatedMinutes: l.estimatedMinutes });
+      setForm({ title: l.title, content: l.content || "", videoUrl: l.videoUrl || "", pdfUrl: l.pdfUrl || "", estimatedMinutes: l.estimatedMinutes, isModuleTest: l.isModuleTest });
     });
   }
   useEffect(load, [lessonId]);
@@ -301,6 +301,10 @@ function LessonDetailPanel({ lessonId, lessonSummary, onRefresh }) {
         <input style={inputStyle} value={form.pdfUrl} onChange={(e) => setForm({ ...form, pdfUrl: e.target.value })} />
         <label style={labelStyle}>Estimated minutes</label>
         <input style={inputStyle} type="number" min="1" value={form.estimatedMinutes} onChange={(e) => setForm({ ...form, estimatedMinutes: e.target.value })} />
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 13 }}>
+          <input type="checkbox" checked={!!form.isModuleTest} onChange={(e) => setForm({ ...form, isModuleTest: e.target.checked })} />
+          This is the module's gating practice test (batch-submitted, must pass to unlock the next module)
+        </label>
         <button className="btn btn-primary" style={{ width: "100%", marginTop: 14 }} disabled={saving}>{saving ? "Saving…" : "Save lesson"}</button>
       </form>
 
