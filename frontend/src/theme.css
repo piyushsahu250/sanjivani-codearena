@@ -143,6 +143,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 .lesson-content pre code { background: none; padding: 0; }
 
+.skeleton {
+  background: linear-gradient(90deg, var(--line) 25%, #EDE8DA 37%, var(--line) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+  border-radius: var(--radius);
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--slate-700); border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

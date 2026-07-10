@@ -88,6 +88,7 @@ model User {
 
   lessonProgress LessonProgress[]
   certificates    Certificate[]
+  practiceRunLogs PracticeRunLog[]
 }
 
 model Test {
@@ -317,7 +318,26 @@ model PracticeQuestion {
   order         Int      @default(0)
   createdAt     DateTime @default(now())
 
+  runLogs PracticeRunLog[]
+
   @@index([lessonId])
+}
+
+// One row per "Run" click on a coding practice question — the only persisted trace of daily
+// learning-module coding activity (POST /learning/practice/:id/run is otherwise stateless).
+// Powers the dashboard's coding-practice streak: any day with at least one row counts,
+// regardless of verdict, since a streak should reward showing up and practicing, not just
+// getting it right on the first try.
+model PracticeRunLog {
+  id         String   @id @default(uuid())
+  student    User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId  String
+  question   PracticeQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId String
+  verdict    String
+  createdAt  DateTime @default(now())
+
+  @@index([studentId, createdAt])
 }
 
 model Certificate {

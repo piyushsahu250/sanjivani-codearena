@@ -5,6 +5,7 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const { judgeSubmission } = require("../utils/judge");
 const { runQueued } = require("../utils/queue");
 const { generateCertificatePdf } = require("../utils/certificatePdf");
+const { getModuleLockMap } = require("../utils/learningLock");
 
 const router = express.Router();
 
@@ -19,36 +20,6 @@ function sanitizeQuestion(q) {
 }
 
 const PASS_THRESHOLD = 70; // % correct required on a module's practice test to unlock the next module
-
-// Sequential module locking: module N is locked unless every lesson in module N-1 is
-// COMPLETED (which, for that module's practice-test lesson, only happens once it's been
-// passed — see POST /lessons/:id/test-submit). Once one module is locked, everything after
-// it stays locked, regardless of that module's own lesson state.
-async function getModuleLockMap(prisma, studentId, courseId) {
-  const modules = await prisma.courseModule.findMany({
-    where: { courseId },
-    orderBy: { order: "asc" },
-    include: { lessons: { select: { id: true } } },
-  });
-  const allLessonIds = modules.flatMap((m) => m.lessons.map((l) => l.id));
-  const progress = allLessonIds.length
-    ? await prisma.lessonProgress.findMany({
-        where: { studentId, lessonId: { in: allLessonIds }, status: "COMPLETED" },
-        select: { lessonId: true },
-      })
-    : [];
-  const completedSet = new Set(progress.map((p) => p.lessonId));
-
-  const map = new Map();
-  let prevSatisfied = true; // nothing is required before the first module
-  for (const m of modules) {
-    const locked = !prevSatisfied;
-    const moduleComplete = m.lessons.length > 0 && m.lessons.every((l) => completedSet.has(l.id));
-    map.set(m.id, { locked, completed: !locked && moduleComplete });
-    prevSatisfied = !locked && moduleComplete;
-  }
-  return map;
-}
 
 // =========================== Student-facing (read) ===========================
 
@@ -314,6 +285,7 @@ router.post("/practice/:id/check", authenticate, requireRole("STUDENT"), async (
 
 // STUDENT: run a coding practice question against its test cases. Full pass/fail detail is
 // returned — this is a learning aid, not a proctored exam, so there's no reason to hide it.
+// Every run (any verdict) is logged to PracticeRunLog — the dashboard's coding-streak signal.
 router.post("/practice/:id/run", authenticate, requireRole("STUDENT"), runLimiter, async (req, res) => {
   try {
     const q = await prisma.practiceQuestion.findUnique({ where: { id: req.params.id } });
@@ -322,6 +294,9 @@ router.post("/practice/:id/run", authenticate, requireRole("STUDENT"), runLimite
     const { language, code } = req.body;
     const testCases = Array.isArray(q.testCases) ? q.testCases : [];
     const result = await runQueued(() => judgeSubmission({ language, code, testCases, timeLimitMs: 3000 }));
+
+    prisma.practiceRunLog.create({ data: { studentId: req.user.id, questionId: q.id, verdict: result.verdict } }).catch((e) => console.error("practiceRunLog failed", e));
+
     res.json(result);
   } catch (err) {
     console.error(err);
