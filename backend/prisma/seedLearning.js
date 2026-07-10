@@ -1,11 +1,14 @@
 // Seeds the Java Learning Module: the full 16-module course structure from the spec, with
-// complete hand-authored content for Module 1 (proof that the content model/renderer works
-// end-to-end) and placeholder lessons for Modules 2-16 (topic titles only — real content for
-// those gets filled in through the new admin Learning CMS, not hand-written here).
+// complete hand-authored content for Modules 1-2 and placeholder lessons for Modules 3-16
+// (topic titles only — real content for those gets filled in incrementally, either through the
+// admin Learning CMS or in a future seed pass).
 //
-// Idempotent: safe to run on every container start. Course/Module/Lesson are upserted by their
-// natural unique keys (slug / courseId+title / moduleId+title); practice questions are only
-// inserted the first time a lesson has none, so re-running never duplicates them.
+// Idempotent: safe to run on every container start. Course/Module are upserted by their natural
+// unique keys (slug / courseId+title). Lesson content goes through upsertLessonContent, which
+// only overwrites a lesson's content if it's missing or still the auto-generated placeholder —
+// so re-running this after hand-authoring, say, Module 3 will "graduate" its stub lessons to
+// real content without touching anything an admin already edited by hand. Practice questions
+// are only inserted the first time a lesson has none, so re-running never duplicates them.
 
 function section(label, html) {
   return html ? `<h4>${label}</h4>${html}` : "";
@@ -200,12 +203,176 @@ const MODULE1_QUIZ = [
   },
 ];
 
-// Modules 2-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE2_LESSONS = [
+  {
+    title: "Variables",
+    estimatedMinutes: 8,
+    content: lessonHTML({
+      explanation:
+        "A variable is a named storage location for a value. Java is <strong>statically typed</strong> — every variable must be declared with a type before use, and that type never changes.",
+      syntax: "int age;        // declaration\nage = 21;        // assignment\n\nint marks = 95;  // declaration + initialization in one line",
+      notes: [
+        "Three kinds: <strong>local</strong> (inside a method, must be initialized before use), <strong>instance</strong> (per-object field, defaults applied), <strong>static</strong> (shared across all instances of a class).",
+      ],
+      mistakes: ["Using a local variable before assigning it a value — this is a compile-time error in Java (\"variable might not have been initialized\"), not a silent bug."],
+      bestPractices: ["Use descriptive camelCase names (<code>totalScore</code>, not <code>ts</code>) and declare a variable as close as possible to where it's first used."],
+    }),
+  },
+  {
+    title: "Data Types",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Java has 8 built-in <strong>primitive types</strong> plus <strong>reference types</strong> (objects, arrays, Strings).",
+      syntax:
+        "byte b = 100;        // 1 byte,  -128 to 127\nshort s = 30000;     // 2 bytes, -32,768 to 32,767\nint i = 2_000_000;   // 4 bytes (default for whole numbers)\nlong l = 10_000_000_000L;  // 8 bytes — needs the L suffix\nfloat f = 3.14f;     // 4 bytes — needs the f suffix\ndouble d = 3.14159;  // 8 bytes (default for decimals)\nchar c = 'A';        // 2 bytes, single Unicode character\nboolean flag = true; // true or false",
+      notes: [
+        "<code>int</code> and <code>double</code> are the defaults you reach for unless you have a specific reason (memory constraints, exact requirements) to pick a smaller/larger type.",
+        "Reference types (String, arrays, custom classes) store a reference to an object on the heap, not the value itself — this is why Strings are compared with <code>.equals()</code>, not <code>==</code>.",
+      ],
+      mistakes: [
+        "Forgetting the <code>L</code> suffix on a long literal larger than int's range — <code>long x = 10000000000;</code> fails to compile because the literal itself is parsed as an int first.",
+        "Forgetting the <code>f</code> suffix on a float literal — Java treats decimal literals as <code>double</code> by default.",
+      ],
+    }),
+  },
+  {
+    title: "Operators",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Java groups operators into arithmetic, relational, logical, assignment, bitwise, and the ternary conditional operator.",
+      syntax:
+        "+ - * / %        // arithmetic\n== != < > <= >=  // relational — returns boolean\n&& || !          // logical AND / OR / NOT\n= += -= *= /=    // assignment\n& | ^ ~ << >> >>> // bitwise\ncondition ? a : b // ternary",
+      example: "int result = 5 + 3 * 2;   // 11, not 16 — * binds tighter than +\nint q = 7 / 2;             // 3 — integer division truncates\ndouble r = 7.0 / 2;        // 3.5 — at least one operand must be floating-point",
+      mistakes: [
+        "Using <code>=</code> (assignment) instead of <code>==</code> (comparison) inside an <code>if</code> — for booleans this is a compile error, but it's a classic bug in languages that allow it.",
+        "Expecting <code>/</code> between two ints to give a decimal — it truncates toward zero. Cast at least one operand to <code>double</code> if you need a fractional result.",
+      ],
+    }),
+  },
+  {
+    title: "User Input",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "The <code>Scanner</code> class (from <code>java.util</code>) reads input from <code>System.in</code> — the standard way to read user/stdin input in Java.",
+      syntax:
+        "import java.util.Scanner;\n\nScanner sc = new Scanner(System.in);\nint age = sc.nextInt();\nString name = sc.nextLine();\ndouble price = sc.nextDouble();",
+      example:
+        "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        System.out.print(\"Enter your age: \");\n        int age = sc.nextInt();\n        System.out.println(\"You are \" + age + \" years old.\");\n    }\n}",
+      mistakes: [
+        "Calling <code>nextInt()</code> then <code>nextLine()</code> back to back — <code>nextInt()</code> doesn't consume the trailing newline, so the following <code>nextLine()</code> reads an empty string instead of the next line. Add an extra <code>sc.nextLine()</code> to consume it, or use <code>nextLine()</code> + <code>Integer.parseInt()</code> consistently.",
+      ],
+    }),
+  },
+  {
+    title: "Type Casting",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation:
+        "<strong>Widening (implicit)</strong> casting happens automatically when converting a smaller type to a larger one (no data loss possible): <code>byte → short → int → long → float → double</code>. <strong>Narrowing (explicit)</strong> casting — converting a larger type to a smaller one — requires an explicit cast and can lose data.",
+      syntax: "int i = 100;\ndouble d = i;        // widening — automatic\n\ndouble price = 9.99;\nint whole = (int) price;  // narrowing — explicit cast required",
+      example: "double d = 9.7;\nint i = (int) d;   // i = 9 — TRUNCATES, does not round",
+      mistakes: ["Assuming <code>(int)</code> rounds to the nearest whole number — it truncates the decimal part. Use <code>Math.round()</code> if you actually want rounding."],
+    }),
+  },
+  {
+    title: "Comments",
+    estimatedMinutes: 5,
+    content: lessonHTML({
+      explanation: "Java supports three comment styles:",
+      syntax: "// single-line comment\n\n/* multi-line\n   comment */\n\n/**\n * Javadoc comment — generates HTML documentation via the javadoc tool.\n * @param x description of x\n */",
+      bestPractices: ["Comment the <em>why</em>, not the <em>what</em> — well-named variables and methods already say what the code does; a comment should explain a non-obvious reason or constraint."],
+    }),
+  },
+  {
+    title: "Keywords",
+    estimatedMinutes: 8,
+    content: lessonHTML({
+      explanation: "Keywords are reserved words with special meaning to the compiler — they cannot be used as variable, method, or class names.",
+      notes: [
+        "Common ones: <code>class</code>, <code>public</code>, <code>private</code>, <code>static</code>, <code>void</code>, <code>int</code>, <code>if</code>, <code>else</code>, <code>for</code>, <code>while</code>, <code>return</code>, <code>new</code>, <code>this</code>, <code>super</code>, <code>try</code>, <code>catch</code>, <code>finally</code>, <code>import</code>, <code>package</code>, <code>extends</code>, <code>implements</code>.",
+        "<code>true</code>, <code>false</code>, and <code>null</code> are technically <em>literals</em>, not keywords — but they're reserved the same way and can't be used as identifiers either.",
+        "<code>var</code> (Java 10+) is a reserved type name for local-variable type inference, not a full keyword — it can still be used as an identifier in some contexts, though it's best avoided.",
+      ],
+    }),
+  },
+  {
+    title: "Identifiers",
+    estimatedMinutes: 6,
+    content: lessonHTML({
+      explanation: "An identifier is the name given to a variable, method, class, or package.",
+      notes: [
+        "Rules: may contain letters, digits, underscore <code>_</code>, and dollar sign <code>$</code>; cannot start with a digit; cannot be a reserved keyword; is case-sensitive (<code>age</code> and <code>Age</code> are different identifiers).",
+        "Conventions (not enforced by the compiler, but expected everywhere): <code>camelCase</code> for variables/methods, <code>PascalCase</code> for classes/interfaces, <code>UPPER_SNAKE_CASE</code> for constants.",
+      ],
+      mistakes: ["Starting an identifier with a digit (<code>2ndValue</code>) — this is a compile error, not just a style issue."],
+    }),
+  },
+];
+
+const MODULE2_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "What is the size of an `int` in Java?",
+    options: ["2 bytes", "4 bytes", "8 bytes", "Depends on the platform"],
+    correctAnswer: 1,
+    explanation: "Java's primitive sizes are fixed by the language spec regardless of platform — int is always 4 bytes.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which type holds a single character?",
+    options: ["String", "char", "byte", "Character (only)"],
+    correctAnswer: 1,
+    explanation: "char is the primitive type for a single 16-bit Unicode character, e.g. 'A'.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does `System.out.println(7 / 2);` print?",
+    options: ["3", "3.5", "4", "Compile error"],
+    correctAnswer: 0,
+    explanation: "Integer division between two ints truncates toward zero: 7/2 = 3, not 3.5.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which conversion requires an explicit cast?",
+    options: ["int to double", "float to double", "double to int", "byte to int"],
+    correctAnswer: 2,
+    explanation: "double to int is narrowing (loses the fractional part), so Java requires an explicit (int) cast to make the possible data loss visible in the code.",
+  },
+  {
+    type: "DEBUG",
+    prompt: "Which of these is NOT a valid Java identifier?",
+    options: ["_value", "$value", "valueTwo", "2ndValue"],
+    correctAnswer: 3,
+    explanation: "Identifiers cannot start with a digit. Underscore and dollar sign are both legal starting characters.",
+  },
+];
+
+const MODULE2_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read one integer and print \"Even\" if it's even, or \"Odd\" if it's odd.",
+    language: "java",
+    starterCode:
+      "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int n = sc.nextInt();\n        // write your code here\n    }\n}",
+    testCases: [{ input: "4", expected: "Even" }, { input: "7", expected: "Odd" }, { input: "0", expected: "Even" }],
+    explanation: "n % 2 == 0 means n is even (the remainder of dividing by 2 is zero).",
+  },
+  {
+    type: "CODING",
+    prompt: "Read two integers on one line, separated by a space, and print their sum.",
+    language: "java",
+    starterCode:
+      "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int a = sc.nextInt();\n        int b = sc.nextInt();\n        // write your code here\n    }\n}",
+    testCases: [{ input: "3 5", expected: "8" }, { input: "10 20", expected: "30" }, { input: "-5 5", expected: "0" }],
+    explanation: "Scanner's nextInt() reads whitespace-separated tokens regardless of whether they're on the same line.",
+  },
+];
+
+// Modules 3-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Java Basics", topics: ["Variables", "Data Types", "Operators", "User Input", "Type Casting", "Comments", "Keywords", "Identifiers"], practiceLabel: "Practice Questions & Coding Exercises" },
   { title: "Control Statements", topics: ["if", "if-else", "Nested if", "switch", "for loop", "while loop", "do-while", "break", "continue"], practiceLabel: "Coding Problems" },
   { title: "Methods", topics: ["Methods", "Parameters", "Return Types", "Method Overloading", "Recursion", "Variable Scope"], practiceLabel: "Practice Problems" },
   { title: "Arrays", topics: ["1D Arrays", "2D Arrays", "Array Operations", "Searching", "Sorting"], practiceLabel: "Coding Exercises" },
@@ -221,6 +388,26 @@ const REMAINING_MODULES = [
   { title: "Data Structures & Algorithms in Java", topics: ["Arrays", "Linked Lists", "Stack", "Queue", "Trees", "Graphs", "Sorting", "Searching"], practiceLabel: "Coding Problems" },
   { title: "Interview Preparation", topics: ["Frequently Asked Java Interview Questions", "MCQs", "Coding Questions", "Company-based Questions", "Previous Placement Questions"], practiceLabel: null },
 ];
+
+// A lesson's content is only overwritten if it's missing or still carries the auto-generated
+// placeholder text — a real admin edit (or previously-seeded real content) is left untouched.
+// This lets later seed runs "graduate" a module from stub to real content (e.g. authoring
+// Module 3 in a future pass) without clobbering anything a human already changed.
+function isPlaceholderContent(content) {
+  if (!content) return true;
+  return content.includes("is coming soon") || content.includes("will be added soon");
+}
+
+async function upsertLessonContent(prisma, moduleId, title, { content, estimatedMinutes = 10, order }) {
+  const existing = await prisma.lesson.findUnique({ where: { moduleId_title: { moduleId, title } } });
+  if (!existing) {
+    return prisma.lesson.create({ data: { moduleId, title, order, content, estimatedMinutes } });
+  }
+  if (isPlaceholderContent(existing.content)) {
+    return prisma.lesson.update({ where: { id: existing.id }, data: { content, estimatedMinutes } });
+  }
+  return existing;
+}
 
 async function seedLearningModule(prisma) {
   const course = await prisma.course.upsert({
@@ -251,24 +438,13 @@ async function seedLearningModule(prisma) {
     create: { courseId: course.id, title: "Introduction to Java", order: 0 },
   });
 
-  let lastLessonId = null;
   for (let i = 0; i < MODULE1_LESSONS.length; i++) {
     const l = MODULE1_LESSONS[i];
-    const lesson = await prisma.lesson.upsert({
-      where: { moduleId_title: { moduleId: module1.id, title: l.title } },
-      update: {},
-      create: { moduleId: module1.id, title: l.title, order: i, content: l.content, estimatedMinutes: l.estimatedMinutes },
-    });
-    lastLessonId = lesson.id;
+    await upsertLessonContent(prisma, module1.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
   }
 
-  const quizLesson = await prisma.lesson.upsert({
-    where: { moduleId_title: { moduleId: module1.id, title: "Practice Quiz" } },
-    update: {},
-    create: {
-      moduleId: module1.id, title: "Practice Quiz", order: MODULE1_LESSONS.length,
-      content: "<p>Test what you've learned in this module.</p>", estimatedMinutes: 10,
-    },
+  const quizLesson = await upsertLessonContent(prisma, module1.id, "Practice Quiz", {
+    content: "<p>Test what you've learned in this module.</p>", estimatedMinutes: 10, order: MODULE1_LESSONS.length,
   });
   const existingQuiz = await prisma.practiceQuestion.count({ where: { lessonId: quizLesson.id } });
   if (existingQuiz === 0) {
@@ -283,40 +459,68 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 2-16: stub structure only, real content added later via admin CMS ---
-  for (let m = 0; m < REMAINING_MODULES.length; m++) {
-    const spec = REMAINING_MODULES[m];
-    const mod = await prisma.courseModule.upsert({
-      where: { courseId_title: { courseId: course.id, title: spec.title } },
-      update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 1 },
-    });
+  // --- Module 2: full hand-authored content ---
+  const module2 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Java Basics" } },
+    update: {},
+    create: { courseId: course.id, title: "Java Basics", order: 1 },
+  });
 
-    for (let t = 0; t < spec.topics.length; t++) {
-      await prisma.lesson.upsert({
-        where: { moduleId_title: { moduleId: mod.id, title: spec.topics[t] } },
-        update: {},
-        create: {
-          moduleId: mod.id, title: spec.topics[t], order: t,
-          content: `<p><em>Content for "${spec.topics[t]}" is coming soon. Add it from the admin Learning Management panel.</em></p>`,
-          estimatedMinutes: 10,
+  for (let i = 0; i < MODULE2_LESSONS.length; i++) {
+    const l = MODULE2_LESSONS[i];
+    await upsertLessonContent(prisma, module2.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module2PracticeLesson = await upsertLessonContent(prisma, module2.id, "Practice Questions & Coding Exercises", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE2_LESSONS.length,
+  });
+  const existingModule2Practice = await prisma.practiceQuestion.count({ where: { lessonId: module2PracticeLesson.id } });
+  if (existingModule2Practice === 0) {
+    let order = 0;
+    for (const q of MODULE2_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module2PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
         },
       });
     }
-
-    if (spec.practiceLabel) {
-      await prisma.lesson.upsert({
-        where: { moduleId_title: { moduleId: mod.id, title: spec.practiceLabel } },
-        update: {},
-        create: {
-          moduleId: mod.id, title: spec.practiceLabel, order: spec.topics.length,
-          content: "<p><em>Practice questions for this module will be added soon.</em></p>", estimatedMinutes: 15,
+    for (const q of MODULE2_CODING) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module2PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          starterCode: q.starterCode, testCases: q.testCases, explanation: q.explanation, order: order++,
         },
       });
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 1, "modules.");
+  // --- Modules 3-16: stub structure only, real content added later via admin CMS ---
+  for (let m = 0; m < REMAINING_MODULES.length; m++) {
+    const spec = REMAINING_MODULES[m];
+    const mod = await prisma.courseModule.upsert({
+      where: { courseId_title: { courseId: course.id, title: spec.title } },
+      update: {},
+      create: { courseId: course.id, title: spec.title, order: m + 2 },
+    });
+
+    for (let t = 0; t < spec.topics.length; t++) {
+      await upsertLessonContent(prisma, mod.id, spec.topics[t], {
+        content: `<p><em>Content for "${spec.topics[t]}" is coming soon. Add it from the admin Learning Management panel.</em></p>`,
+        estimatedMinutes: 10, order: t,
+      });
+    }
+
+    if (spec.practiceLabel) {
+      await upsertLessonContent(prisma, mod.id, spec.practiceLabel, {
+        content: "<p><em>Practice questions for this module will be added soon.</em></p>",
+        estimatedMinutes: 15, order: spec.topics.length,
+      });
+    }
+  }
+
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 2, "modules.");
 }
 
 module.exports = { seedLearningModule };
