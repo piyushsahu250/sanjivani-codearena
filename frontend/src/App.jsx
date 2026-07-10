@@ -10,6 +10,8 @@ import StudentTestResult from "./pages/StudentTestResult";
 // needed once a student actually opens a test — bundling it eagerly would add that weight
 // to every page load for every user (login, admin, staff included).
 const TestTaking = lazy(() => import("./pages/TestTaking"));
+// Lazy-loaded: pulls in Monaco (code editor), only needed for coding practice questions.
+const LessonView = lazy(() => import("./pages/LessonView"));
 import AdminDashboard from "./pages/AdminDashboard";
 import StaffDashboard from "./pages/StaffDashboard";
 import CreateQuestion from "./pages/CreateQuestion";
@@ -27,6 +29,10 @@ import ResetPassword from "./pages/ResetPassword";
 import ForceChangePassword from "./pages/ForceChangePassword";
 import StudentSearch from "./pages/StudentSearch";
 import StudentPerformance from "./pages/StudentPerformance";
+import LearningHub from "./pages/LearningHub";
+import CourseOverview from "./pages/CourseOverview";
+import CourseCertificate from "./pages/CourseCertificate";
+import LearningManagement from "./pages/LearningManagement";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
@@ -73,8 +79,24 @@ export default function App() {
           <Route path="/test/:id/result" element={<Protected roles={["STUDENT"]}><StudentTestResult /></Protected>} />
           <Route path="/dashboard/performance" element={<Protected roles={["STUDENT"]}><StudentPerformance /></Protected>} />
 
+          {/* Learning module — browsable by Student, Admin, and Staff (admin/staff preview content they manage) */}
+          <Route path="/learning" element={<Protected roles={["STUDENT", "ADMIN", "STAFF"]}><LearningHub /></Protected>} />
+          <Route path="/learning/:slug" element={<Protected roles={["STUDENT", "ADMIN", "STAFF"]}><CourseOverview /></Protected>} />
+          <Route
+            path="/learning/:slug/lesson/:lessonId"
+            element={
+              <Protected roles={["STUDENT", "ADMIN", "STAFF"]}>
+                <Suspense fallback={<div style={{ padding: 48 }} className="mono">Loading lesson…</div>}>
+                  <LessonView />
+                </Suspense>
+              </Protected>
+            }
+          />
+          <Route path="/learning/:slug/certificate" element={<Protected roles={["STUDENT"]}><CourseCertificate /></Protected>} />
+
           {/* Staff (and Admin, who can also manage tests/questions) */}
           <Route path="/staff" element={<Protected roles={["ADMIN", "STAFF"]}><StaffDashboard /></Protected>} />
+          <Route path="/staff/learning" element={<Protected roles={["ADMIN", "STAFF"]}><LearningManagement /></Protected>} />
           <Route path="/staff/questions" element={<Protected roles={["ADMIN", "STAFF"]}><QuestionBank /></Protected>} />
           <Route path="/staff/questions/new" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />
           <Route path="/staff/questions/:id/edit" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />

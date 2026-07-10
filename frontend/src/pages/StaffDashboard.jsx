@@ -87,6 +87,7 @@ export default function StaffDashboard() {
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <Link to="/staff/questions" className="btn btn-ghost">Question Bank</Link>
+            <Link to="/staff/learning" className="btn btn-ghost">Learning Management</Link>
             <Link to="/staff/students" className="btn btn-ghost">Student Performance</Link>
             <Link to="/staff/tests/new" className="btn btn-primary">+ New test</Link>
           </div>

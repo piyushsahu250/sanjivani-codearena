@@ -47,7 +47,10 @@ export default function StudentDashboard() {
             <h1>Your coding tests</h1>
             <ChalkUnderline />
           </div>
-          <Link to="/dashboard/performance" className="btn btn-ghost">My Performance</Link>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Link to="/learning" className="btn btn-ghost">📚 Learning</Link>
+            <Link to="/dashboard/performance" className="btn btn-ghost">My Performance</Link>
+          </div>
         </div>
         <p style={{ color: "var(--ink-dim)", marginTop: 16 }}>
           Assessments published by your department. Live tests can be attended

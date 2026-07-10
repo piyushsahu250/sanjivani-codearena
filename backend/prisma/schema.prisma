@@ -85,6 +85,9 @@ model User {
   createdTests Test[]         @relation("TestCreator")
   attempts     TestAttempt[]
   submissions  Submission[]
+
+  lessonProgress LessonProgress[]
+  certificates    Certificate[]
 }
 
 model Test {
@@ -217,4 +220,110 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([action])
+}
+
+// ===================================================================
+// Learning Module (LMS) — self-paced course content, separate from the
+// exam/TestAttempt world above. A Course (e.g. "java") holds ordered
+// CourseModules, each holding ordered Lessons, each optionally holding
+// ordered PracticeQuestions. Deliberately its own model family (not
+// reusing Test/Question) since practice here has different semantics:
+// untimed, unlimited retries, immediate feedback, no proctoring.
+// ===================================================================
+
+model Course {
+  id          String   @id @default(uuid())
+  slug        String   @unique // "java", "python", ...
+  name        String
+  description String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(false) // false = shown as "Coming soon", not browsable
+  createdAt   DateTime @default(now())
+
+  modules      CourseModule[]
+  certificates Certificate[]
+}
+
+model CourseModule {
+  id          String   @id @default(uuid())
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId    String
+  title       String
+  description String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  lessons Lesson[]
+
+  @@unique([courseId, title])
+  @@index([courseId])
+}
+
+model Lesson {
+  id               String   @id @default(uuid())
+  module           CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  moduleId         String
+  title            String
+  order            Int      @default(0)
+  content          String?  // admin-authored HTML: explanation, examples, syntax, notes, best practices
+  videoUrl         String?  // external link (e.g. YouTube) — no in-house video hosting
+  pdfUrl           String?  // external link to a hosted PDF — no in-house file storage
+  externalLinks    Json?    // [{ label, url }]
+  estimatedMinutes Int      @default(10)
+  createdAt        DateTime @default(now())
+
+  progress  LessonProgress[]
+  questions PracticeQuestion[]
+
+  @@unique([moduleId, title])
+  @@index([moduleId])
+}
+
+model LessonProgress {
+  id          String    @id @default(uuid())
+  student     User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   String
+  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  lessonId    String
+  status      String    @default("NOT_STARTED") // NOT_STARTED, IN_PROGRESS, COMPLETED
+  bookmarked  Boolean   @default(false)
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([studentId, lessonId])
+  @@index([studentId])
+}
+
+// type: MCQ, FILL_BLANK, CODING, DEBUG, OUTPUT_PREDICTION — DEBUG/OUTPUT_PREDICTION are
+// graded the same way as MCQ (pick the right option from `options`), the distinct type is
+// only used to vary the UI label/icon. FILL_BLANK is graded by trimmed case-insensitive
+// string match against `correctAnswer`. CODING reuses the exam judge against `testCases`.
+model PracticeQuestion {
+  id            String   @id @default(uuid())
+  lesson        Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  lessonId      String
+  type          String
+  prompt        String
+  options       Json?
+  correctAnswer Json?
+  explanation   String?
+  starterCode   String?
+  testCases     Json?
+  language      String?
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([lessonId])
+}
+
+model Certificate {
+  id              String   @id @default(uuid())
+  certificateCode String   @unique
+  student         User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId       String
+  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId        String
+  issuedAt        DateTime @default(now())
+
+  @@unique([studentId, courseId])
 }

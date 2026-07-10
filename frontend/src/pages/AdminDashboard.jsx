@@ -119,6 +119,7 @@ export default function AdminDashboard() {
             <Link to="/admin/institutes" className="btn btn-ghost">Institute Management</Link>
             <Link to="/admin/classes" className="btn btn-ghost">Class Management</Link>
             <Link to="/admin/students" className="btn btn-ghost">Student Performance</Link>
+            <Link to="/staff/learning" className="btn btn-ghost">Learning Management</Link>
             <Link to="/admin/bulk-upload" className="btn btn-primary">⬆ Bulk student upload</Link>
             <Link to="/staff" className="btn btn-ghost">Manage tests &amp; questions →</Link>
           </div>
