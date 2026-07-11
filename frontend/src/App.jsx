@@ -14,6 +14,7 @@ const TestTaking = lazy(() => import("./pages/TestTaking"));
 // Lazy-loaded: pulls in Monaco (code editor), only needed for coding practice questions.
 const LessonView = lazy(() => import("./pages/LessonView"));
 const InterviewSession = lazy(() => import("./pages/InterviewSession"));
+const ModuleCodingAssessment = lazy(() => import("./pages/ModuleCodingAssessment"));
 import AdminDashboard from "./pages/AdminDashboard";
 import StaffDashboard from "./pages/StaffDashboard";
 import CreateQuestion from "./pages/CreateQuestion";
@@ -127,6 +128,16 @@ export default function App() {
             }
           />
           <Route path="/learning/:slug/certificate" element={<Protected roles={["STUDENT"]}><CourseCertificate /></Protected>} />
+          <Route
+            path="/learning/:slug/module/:moduleId/coding-assessment"
+            element={
+              <Protected roles={["STUDENT"]}>
+                <Suspense fallback={<div style={{ padding: 48 }} className="mono">Loading…</div>}>
+                  <ModuleCodingAssessment />
+                </Suspense>
+              </Protected>
+            }
+          />
 
           {/* Staff (and Admin, who can also manage tests/questions) */}
           <Route path="/staff" element={<Protected roles={["ADMIN", "STAFF"]}><StaffDashboard /></Protected>} />

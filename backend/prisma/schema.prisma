@@ -89,6 +89,7 @@ model User {
   lessonProgress LessonProgress[]
   certificates    Certificate[]
   practiceRunLogs PracticeRunLog[]
+  moduleCodingAttempts ModuleCodingAttempt[]
   xpEvents        XpEvent[]
   badges          StudentBadge[]
   streak          StudentStreak?
@@ -156,9 +157,17 @@ model Question {
   testCases TestCase[]
   testLinks TestQuestion[]
 
+  // Set only when this question belongs to a Learning Module's proctored coding-test pool
+  // (reusing this same Question/TestCase model — hidden test cases, judge grading — rather
+  // than a separate coding_questions table, exactly like the exam side already does).
+  moduleCodingTest   ModuleCodingTest? @relation(fields: [moduleCodingTestId], references: [id], onDelete: Cascade)
+  moduleCodingTestId String?
+  moduleAttemptLinks ModuleCodingAttemptQuestion[]
+
   @@index([subject])
   @@index([topic])
   @@index([questionType])
+  @@index([moduleCodingTestId])
 }
 
 model TestCase {
@@ -264,6 +273,7 @@ model CourseModule {
   createdAt   DateTime @default(now())
 
   lessons Lesson[]
+  codingTest ModuleCodingTest?
 
   @@unique([courseId, title])
   @@index([courseId])
@@ -360,6 +370,128 @@ model Certificate {
   issuedAt        DateTime @default(now())
 
   @@unique([studentId, courseId])
+}
+
+// ===================================================================
+// Mandatory Proctored Coding Test — gates progression between Learning
+// Module modules. The spec names 8 tables (module_coding_tests,
+// coding_questions, coding_submissions, coding_results, module_unlocks,
+// proctoring_logs, webcam_snapshots, assessment_attempts), consolidated
+// here into 6:
+//   - coding_questions -> reuses Question/TestCase (adds a nullable
+//     moduleCodingTestId), exactly like the exam side's hidden/public
+//     test cases and judge grading — no separate question model needed.
+//   - coding_results -> folded into ModuleCodingAttempt (score/passed
+//     fields) rather than a separate 1:1 results table.
+//   - module_unlocks -> NOT a table. Unlock state is computed on read by
+//     getModuleLockMap (extended to also require a PASSED attempt when a
+//     module has an active coding test configured), the same pattern
+//     already used for lesson-completion-based locking — no cron, no
+//     stale cache, no persisted state to keep in sync.
+//   - webcam_snapshots -> NOT implemented. This platform has no object
+//     storage (see Resume.photoUrl / Lesson.videoUrl comments); capturing
+//     and storing periodic images isn't feasible here. Face-presence
+//     detection (missing/multiple faces) is still implemented and logged
+//     as a ProctoringViolation *event*, reusing the same blazeface
+//     approach as the exam proctoring — it just never persists an image.
+// A module with no ModuleCodingTest (or an inactive one) is ungated by
+// this feature entirely — existing modules keep working exactly as
+// before (lesson-completion locking only), so this is opt-in per module.
+// ===================================================================
+
+model ModuleCodingTest {
+  id                 String   @id @default(uuid())
+  module             CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  moduleId           String   @unique
+  title              String   @default("Module Coding Assessment")
+  instructions       String?
+  allowedLanguages   Json     @default("[\"java\",\"python\",\"javascript\",\"c\",\"cpp\"]") // string[]
+  questionCount      Int      @default(3) // how many questions are drawn from the pool per attempt
+  randomizeQuestions Boolean  @default(true) // false = always the pool's first N by `order`, in order
+  passingPercent     Int      @default(70)
+  timeLimitMin       Int      @default(45)
+  maxAttempts        Int?     // null = unlimited
+  cooldownMinutes    Int      @default(0) // required wait after a failed attempt before retrying
+  maxViolations      Int      @default(3) // proctoring violations before auto-submit
+  requireFullscreen  Boolean  @default(true)
+  requireWebcam      Boolean  @default(false) // best-effort face presence check, see note above
+  allowResume        Boolean  @default(true) // resume an IN_PROGRESS attempt after a browser crash/refresh
+  isActive           Boolean  @default(true) // false = gate is skipped entirely, module ungated
+  createdAt          DateTime @default(now())
+
+  questions Question[]
+  attempts  ModuleCodingAttempt[]
+}
+
+model ModuleCodingAttempt {
+  id                 String   @id @default(uuid())
+  moduleCodingTest   ModuleCodingTest @relation(fields: [moduleCodingTestId], references: [id], onDelete: Cascade)
+  moduleCodingTestId String
+  student            User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId          String
+  attemptNumber      Int
+  status             String   @default("IN_PROGRESS") // IN_PROGRESS, SUBMITTED, AUTO_SUBMITTED
+  score              Int      @default(0) // 0-100 percent across the attempt's questions
+  passed             Boolean  @default(false)
+  violationCount     Int      @default(0)
+  autoSubmitReason   String?  // e.g. "MAX_VIOLATIONS", "TIME_EXPIRED"
+  startedAt          DateTime @default(now())
+  submittedAt        DateTime?
+
+  questions   ModuleCodingAttemptQuestion[]
+  submissions ModuleCodingSubmission[]
+  violations  ProctoringViolation[]
+
+  @@index([moduleCodingTestId, studentId])
+  @@index([studentId])
+}
+
+// Snapshot of which questions (and in what order) were drawn for this specific attempt — so a
+// resumed attempt sees the same set it started with, regardless of later pool changes/randomization.
+model ModuleCodingAttemptQuestion {
+  id         String   @id @default(uuid())
+  attempt    ModuleCodingAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  attemptId  String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId String
+  order      Int      @default(0)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+}
+
+// Mirrors Submission (exam side) but scoped to a ModuleCodingAttempt instead of a TestAttempt —
+// kept as a sibling model rather than widening Submission's required attemptId FK, so this
+// feature can't regress the exam submission flow at all.
+model ModuleCodingSubmission {
+  id          String   @id @default(uuid())
+  attempt     ModuleCodingAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  attemptId   String
+  questionId  String
+  studentId   String
+  language    String
+  code        String
+  score       Int      @default(0)
+  passedCases Int      @default(0)
+  totalCases  Int      @default(0)
+  verdict     String   @default("PENDING") // ACCEPTED, PARTIAL, WRONG_ANSWER, TLE, RUNTIME_ERROR, COMPILE_ERROR, PENDING
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([attemptId])
+  @@index([questionId])
+}
+
+// Event-level proctoring log (unlike the exam side's single tabSwitchCount integer) — an admin
+// can review exactly what happened and when, not just how many times.
+model ProctoringViolation {
+  id        String   @id @default(uuid())
+  attempt   ModuleCodingAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  attemptId String
+  type      String // TAB_SWITCH, FULLSCREEN_EXIT, COPY, PASTE, CUT, RIGHT_CLICK, DEVTOOLS, REFRESH_ATTEMPT, MULTI_MONITOR, FACE_MISSING, MULTIPLE_FACES, CAMERA_DROPPED
+  createdAt DateTime @default(now())
+
+  @@index([attemptId, createdAt])
 }
 
 // ===================================================================

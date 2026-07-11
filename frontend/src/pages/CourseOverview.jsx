@@ -84,29 +84,50 @@ export default function CourseOverview() {
 
                 {locked ? (
                   <p style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 10 }}>
-                    Complete the previous module's practice test to unlock this module.
+                    Complete the previous module's practice test{modules[mi - 1]?.codingTest?.required ? " and coding assessment" : ""} to unlock this module.
                   </p>
                 ) : (
-                  <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
-                    {m.lessons.map((l) => (
-                      <Link
-                        key={l.id}
-                        to={`/learning/${slug}/lesson/${l.id}`}
+                  <>
+                    <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
+                      {m.lessons.map((l) => (
+                        <Link
+                          key={l.id}
+                          to={`/learning/${slug}/lesson/${l.id}`}
+                          style={{
+                            display: "flex", justifyContent: "space-between", alignItems: "center",
+                            padding: "8px 12px", borderRadius: 8, textDecoration: "none", color: "var(--ink)",
+                            border: l.isModuleTest ? "1px solid var(--amber-dark)" : "1px solid var(--line)", fontSize: 13,
+                          }}
+                        >
+                          <span>
+                            {isStudent && <span className="mono" style={{ color: STATUS_COLOR[l.status], marginRight: 8 }}>{STATUS_ICON[l.status]}</span>}
+                            {l.isModuleTest && "📝 "}{l.title}
+                            {isStudent && l.bookmarked && <span style={{ marginLeft: 6 }}>★</span>}
+                          </span>
+                          <span className="mono" style={{ fontSize: 11, color: "var(--ink-dim)" }}>{l.estimatedMinutes} min</span>
+                        </Link>
+                      ))}
+                    </div>
+
+                    {isStudent && m.codingTest?.required && (
+                      <div
                         style={{
-                          display: "flex", justifyContent: "space-between", alignItems: "center",
-                          padding: "8px 12px", borderRadius: 8, textDecoration: "none", color: "var(--ink)",
-                          border: l.isModuleTest ? "1px solid var(--amber-dark)" : "1px solid var(--line)", fontSize: 13,
+                          marginTop: 12, padding: "10px 14px", borderRadius: 8, display: "flex",
+                          justifyContent: "space-between", alignItems: "center", fontSize: 13,
+                          border: `1px solid ${m.codingTest.passed ? "var(--mint)" : m.lessonsComplete ? "var(--amber-dark)" : "var(--line)"}`,
                         }}
                       >
                         <span>
-                          {isStudent && <span className="mono" style={{ color: STATUS_COLOR[l.status], marginRight: 8 }}>{STATUS_ICON[l.status]}</span>}
-                          {l.isModuleTest && "📝 "}{l.title}
-                          {isStudent && l.bookmarked && <span style={{ marginLeft: 6 }}>★</span>}
+                          {m.codingTest.passed ? "✅ Coding Assessment Passed" : m.lessonsComplete ? "🟡 Coding Assessment Pending" : "🔒 Coding Assessment (complete lessons first)"}
                         </span>
-                        <span className="mono" style={{ fontSize: 11, color: "var(--ink-dim)" }}>{l.estimatedMinutes} min</span>
-                      </Link>
-                    ))}
-                  </div>
+                        {m.lessonsComplete && (
+                          <Link to={`/learning/${slug}/module/${m.id}/coding-assessment`} className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}>
+                            {m.codingTest.passed ? "View" : "Start →"}
+                          </Link>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             );

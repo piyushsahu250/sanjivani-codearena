@@ -13,6 +13,7 @@ const XP_RULE_DEFS = [
   { activity: "CODING_MEDIUM", label: "Solve a Medium Problem", xp: 20 },
   { activity: "CODING_HARD", label: "Solve a Hard Problem", xp: 40 },
   { activity: "TEST_COMPLETE", label: "Complete a Coding Test", xp: 30 },
+  { activity: "MODULE_CODING_PASS", label: "Pass a Module's Proctored Coding Assessment", xp: 40 },
   { activity: "DAILY_STREAK", label: "Maintain Daily Streak", xp: 10 },
 ];
 

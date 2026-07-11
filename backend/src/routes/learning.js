@@ -87,7 +87,7 @@ router.get("/courses/:slug", authenticate, async (req, res) => {
 
   let totalLessons = 0, completedLessons = 0;
   const modules = course.modules.map((m) => {
-    const lock = lockMap.get(m.id) || { locked: false, completed: false };
+    const lock = lockMap.get(m.id) || { locked: false, completed: false, lessonsComplete: false, codingTest: { required: false, passed: true } };
     const lessons = m.lessons.map((l) => {
       const p = progressByLesson.get(l.id);
       totalLessons++;
@@ -103,6 +103,7 @@ router.get("/courses/:slug", authenticate, async (req, res) => {
       id: m.id, title: m.title, description: m.description, order: m.order, lessons,
       completedCount: moduleCompleted, totalCount: lessons.length,
       locked: lock.locked, completed: lock.completed,
+      lessonsComplete: lock.lessonsComplete, codingTest: lock.codingTest,
     };
   });
 
