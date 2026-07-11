@@ -1,4 +1,4 @@
-# Sanjivani CodeArena — University Coding Test Platform
+# CodeArena — University Coding Test Platform
 
 A full-stack platform for running coding assessments: staff build a question
 bank, assemble timed tests, students attend them in a live code editor
@@ -133,7 +133,7 @@ A `docker-compose.yml` is included so you can run Postgres locally instead of
 using SQLite:
 ```bash
 docker compose up -d
-# then in backend/.env, DATABASE_URL="postgresql://sanjivani:sanjivani_dev_pw@localhost:5432/sanjivani_codearena"
+# then in backend/.env, DATABASE_URL="postgresql://codearena:codearena_dev_pw@localhost:5432/codearena"
 cd backend && npx prisma migrate dev --name init && npm run seed && npm run dev
 ```
 

@@ -52,7 +52,7 @@ async function buildAutofillData(studentId) {
 
   const certifications = certificates.map((c) => ({
     name: `${c.course.name} Course Completion`,
-    org: "Sanjivani CodeArena",
+    org: "CodeArena",
     issueDate: new Date(c.issuedAt).toISOString().slice(0, 10),
     expiryDate: "",
     credentialId: c.certificateCode,
@@ -62,7 +62,7 @@ async function buildAutofillData(studentId) {
   const achievements = badges.map((b) => ({ category: "Badge", text: `${b.badge.icon || ""} ${b.badge.name}`.trim() }));
   const distinctSolved = new Set(acceptedRuns.map((r) => r.questionId)).size;
   if (distinctSolved > 0) {
-    achievements.push({ category: "Coding", text: `Solved ${distinctSolved} coding practice problem${distinctSolved === 1 ? "" : "s"} on Sanjivani CodeArena` });
+    achievements.push({ category: "Coding", text: `Solved ${distinctSolved} coding practice problem${distinctSolved === 1 ? "" : "s"} on CodeArena` });
   }
 
   return {

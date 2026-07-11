@@ -8,7 +8,7 @@
  * password-reset flow is fully testable before the email service is wired up.
  */
 
-const FROM = process.env.MAIL_FROM || "Sanjivani CodeArena <onboarding@resend.dev>";
+const FROM = process.env.MAIL_FROM || "CodeArena <onboarding@resend.dev>";
 
 async function sendMail({ to, subject, html }) {
   const apiKey = process.env.RESEND_API_KEY;

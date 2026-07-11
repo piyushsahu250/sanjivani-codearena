@@ -63,7 +63,7 @@ router.post("/forgot-password", async (req, res) => {
       const resetLink = `${FRONTEND_URL}/reset-password?token=${token}`;
       await sendMail({
         to: user.email,
-        subject: "Reset your Sanjivani CodeArena password",
+        subject: "Reset your CodeArena password",
         html: `<p>Hi ${user.name},</p><p>Click the link below to reset your password. This link expires in 1 hour.</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
       });
     }

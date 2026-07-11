@@ -24,7 +24,7 @@ const SELECT_FIELDS = {
   class: { select: { id: true, name: true, batchYear: true } },
 };
 
-// Deterministic auto-generated password from an institute name, e.g. "Sanjivani University" -> "SanjivaniUniversity@123"
+// Deterministic auto-generated password from an institute name, e.g. "ABC Institute of Technology" -> "ABCInstituteofTechnology@123"
 function passwordForInstitute(instituteName) {
   return `${String(instituteName).replace(/\s+/g, "")}@123`;
 }
@@ -148,7 +148,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
 
     sendMail({
       to: user.email,
-      subject: "Your Sanjivani CodeArena account",
+      subject: "Your CodeArena account",
       html: `<p>Hi ${user.name},</p><p>Your account has been created.</p><p><strong>Login email:</strong> ${user.email}<br/><strong>Temporary password:</strong> ${generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`,
     }).catch(() => {});
 
@@ -161,7 +161,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
 
 // ADMIN: download a sample .xlsx template for bulk student upload
 router.get("/bulk-template", authenticate, requireRole("ADMIN"), (req, res) => {
-  const sampleRow = ["John Doe", "MCA2024001", "john.doe@sanjivani.edu.in", "Sanjivani University", "MCA", "9876543210", "Computer Applications", "MCA", "2024-26", "A"];
+  const sampleRow = ["John Doe", "MCA2024001", "john.doe@codearena.edu.in", "CodeArena University", "MCA", "9876543210", "Computer Applications", "MCA", "2024-26", "A"];
   const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, sampleRow]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, "Students");
@@ -298,7 +298,7 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
       for (const u of created) {
         sendMail({
           to: u.email,
-          subject: "Your Sanjivani CodeArena account",
+          subject: "Your CodeArena account",
           html: `<p>Hi ${u.name},</p><p>Your student account has been created.</p><p><strong>Login email:</strong> ${u.email}<br/><strong>Temporary password:</strong> ${u.generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`,
         }).catch(() => {});
       }

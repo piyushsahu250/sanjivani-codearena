@@ -1,4 +1,4 @@
-// Sanjivani University Coding Test Platform — Database Schema
+// CodeArena — Database Schema
 generator client {
   provider = "prisma-client-js"
 }

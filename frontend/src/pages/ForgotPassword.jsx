@@ -32,7 +32,7 @@ export default function ForgotPassword() {
         </p>
 
         <label style={labelStyle}>Email</label>
-        <input style={inputStyle} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@sanjivani.edu.in" />
+        <input style={inputStyle} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@codearena.edu.in" />
 
         {error && <p style={{ color: "var(--rust)", fontSize: 13, marginTop: 8 }}>{error}</p>}
         {message && <p style={{ color: "var(--mint)", fontSize: 13, marginTop: 8 }}>{message}</p>}

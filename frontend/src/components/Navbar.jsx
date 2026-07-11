@@ -20,7 +20,7 @@ export default function Navbar() {
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           <span className="mono" style={{ color: "var(--amber)", fontWeight: 700 }}>&gt;_</span>
           <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18 }}>
-            Sanjivani CodeArena
+            CodeArena
           </span>
         </div>
       </Link>

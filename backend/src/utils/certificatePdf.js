@@ -12,7 +12,7 @@ function generateCertificatePdf({ studentName, courseName, certificateCode, issu
   doc.lineWidth(1).strokeColor("#C7852A").rect(34, 34, width - 68, height - 68).stroke();
 
   doc.fillColor("#1C1B18");
-  doc.font("Helvetica-Bold").fontSize(14).text("SANJIVANI CODEARENA", 0, 70, { align: "center" });
+  doc.font("Helvetica-Bold").fontSize(14).text("CODEARENA", 0, 70, { align: "center" });
   doc.font("Helvetica").fontSize(12).fillColor("#6B6A5F").text("Learning Module", 0, 90, { align: "center" });
 
   doc.font("Helvetica-Bold").fontSize(30).fillColor("#1C1B18").text("Certificate of Completion", 0, 140, { align: "center" });

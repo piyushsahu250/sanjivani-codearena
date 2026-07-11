@@ -19,7 +19,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
-app.get("/api/health", (req, res) => res.json({ status: "ok", service: "Sanjivani Coding Platform API" }));
+app.get("/api/health", (req, res) => res.json({ status: "ok", service: "CodeArena API" }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/tests", testRoutes);
@@ -35,4 +35,4 @@ app.use("/api/gamification", gamificationRoutes);
 app.use("/api/resume", resumeRoutes);
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`Sanjivani Coding Platform API running on port ${PORT}`));
+app.listen(PORT, () => console.log(`CodeArena API running on port ${PORT}`));

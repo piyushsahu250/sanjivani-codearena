@@ -47,12 +47,12 @@ export default function Login() {
       >
         <img
           src="/logo.jpg"
-          alt="Sanjivani University"
+          alt="CodeArena"
           style={{ height: 64, marginBottom: 16, objectFit: "contain", background: "#fff", borderRadius: 8, padding: 4 }}
           onError={(e) => { e.currentTarget.style.display = "none"; }}
         />
         <span className="mono" style={{ color: "var(--amber)", fontSize: 13, letterSpacing: "0.08em" }}>
-          SANJIVANI UNIVERSITY
+          &gt;_ CODE. LEARN. ASSESS.
         </span>
         <h1 style={{ fontSize: 44, color: "var(--chalk)", marginTop: 10 }}>
           CodeArena
@@ -78,7 +78,7 @@ export default function Login() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@sanjivani.edu.in"
+            placeholder="you@codearena.edu.in"
           />
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>

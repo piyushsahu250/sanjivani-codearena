@@ -4,9 +4,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: sanjivani
-      POSTGRES_PASSWORD: sanjivani_dev_pw
-      POSTGRES_DB: sanjivani_codearena
+      POSTGRES_USER: codearena
+      POSTGRES_PASSWORD: codearena_dev_pw
+      POSTGRES_DB: codearena
     ports:
       - "5432:5432"
     volumes:
