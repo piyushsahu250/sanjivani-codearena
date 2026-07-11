@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
@@ -30,7 +30,7 @@ const SKILL_FIELDS = [
 ];
 const PROJECT_FIELDS = [
   { key: "title", label: "Project Title" },
-  { key: "description", label: "Description", type: "textarea", wide: true },
+  { key: "description", label: "Description", type: "textarea", wide: true, improvable: "project" },
   { key: "technologies", label: "Technologies Used" }, { key: "role", label: "Role" }, { key: "duration", label: "Duration" },
   { key: "githubUrl", label: "GitHub Repository Link" }, { key: "liveUrl", label: "Live Demo Link (optional)" },
 ];
@@ -38,7 +38,7 @@ const EXPERIENCE_FIELDS = [
   { key: "company", label: "Company Name" }, { key: "title", label: "Job Title" },
   { key: "employmentType", label: "Employment Type", type: "select", options: ["Internship", "Full-Time", "Freelance", "Research Project"] },
   { key: "startDate", label: "Start Date" }, { key: "endDate", label: "End Date" },
-  { key: "responsibilities", label: "Responsibilities", type: "textarea", wide: true },
+  { key: "responsibilities", label: "Responsibilities", type: "textarea", wide: true, improvable: "experience" },
   { key: "technologies", label: "Technologies Used" },
 ];
 const CERT_FIELDS = [
@@ -48,7 +48,7 @@ const CERT_FIELDS = [
 ];
 const ACHIEVEMENT_FIELDS = [
   { key: "category", label: "Category", type: "select", options: ["Award", "Hackathon", "Contest Ranking", "Scholarship", "Academic", "Open Source"] },
-  { key: "text", label: "Description", type: "textarea", wide: true },
+  { key: "text", label: "Description", type: "textarea", wide: true, improvable: "achievement" },
 ];
 const LANGUAGE_FIELDS = [
   { key: "name", label: "Language" },
@@ -59,10 +59,14 @@ export default function ResumeBuilder() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [ats, setAts] = useState(null);
+  const [scoreDelta, setScoreDelta] = useState(null);
   const [checkingAts, setCheckingAts] = useState(false);
   const [autofilling, setAutofilling] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [zoom, setZoom] = useState(85);
+  const [uploadProgress, setUploadProgress] = useState(null);
+  const fileInputRef = useRef(null);
 
   function load() {
     api.get("/resume/me").then((res) => setData(res.data)).catch(() => setError("Failed to load resume"));
@@ -72,6 +76,8 @@ export default function ResumeBuilder() {
   async function save(patch) {
     const { data: res } = await api.patch("/resume/me", patch);
     setData((d) => ({ ...d, resume: res.resume, completion: res.completion }));
+    setAts(res.atsScore);
+    setScoreDelta(res.scoreDelta);
   }
 
   async function runAutofill() {
@@ -118,6 +124,59 @@ export default function ResumeBuilder() {
     }
   }
 
+  async function downloadDocx() {
+    setDownloadingDocx(true);
+    try {
+      const { data: blob } = await api.get("/resume/me/docx", { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([blob], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${data.resume.fullName || "resume"}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Failed to download DOCX");
+    } finally {
+      setDownloadingDocx(false);
+    }
+  }
+
+  async function handleFileSelected(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert("File is too large. Maximum size is 10 MB.");
+      e.target.value = "";
+      return;
+    }
+    const ext = file.name.toLowerCase().split(".").pop();
+    if (!["pdf", "docx"].includes(ext)) {
+      alert("Please upload a .pdf or .docx file.");
+      e.target.value = "";
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    setUploadProgress(0);
+    try {
+      const { data: res } = await api.post("/resume/me/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (evt) => setUploadProgress(evt.total ? Math.round((evt.loaded / evt.total) * 100) : null),
+      });
+      setData((d) => ({ ...d, resume: res.resume, completion: res.completion }));
+      setAts(res.atsScore);
+      setScoreDelta(null);
+      alert(`Resume parsed successfully — populated ${res.parsedFieldsCount} field group(s) below. Review and edit anything the parser missed or got wrong.`);
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to upload and parse this resume");
+    } finally {
+      setUploadProgress(null);
+      e.target.value = "";
+    }
+  }
+
   if (error) return <div><Navbar /><div style={{ maxWidth: 1200, margin: "0 auto", padding: 48 }}><p style={{ color: "var(--rust)" }}>{error}</p></div></div>;
   if (!data) return <div><Navbar /><div style={{ maxWidth: 1200, margin: "0 auto", padding: 48 }} className="mono">Loading…</div></div>;
 
@@ -134,11 +193,19 @@ export default function ResumeBuilder() {
             <ChalkUnderline />
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input ref={fileInputRef} type="file" accept=".pdf,.docx" style={{ display: "none" }} onChange={handleFileSelected} />
+            <button className="btn btn-ghost" onClick={() => fileInputRef.current?.click()} disabled={uploadProgress !== null}>
+              {uploadProgress !== null ? `Uploading… ${uploadProgress}%` : "📤 Upload Existing Resume"}
+            </button>
             <button className="btn btn-ghost" onClick={runAutofill} disabled={autofilling}>{autofilling ? "Filling…" : "✨ Auto-fill from Platform"}</button>
             <button className="btn btn-ghost" onClick={() => window.print()}>🖨 Print</button>
+            <button className="btn btn-ghost" onClick={downloadDocx} disabled={downloadingDocx}>{downloadingDocx ? "Preparing…" : "⬇ Download DOCX"}</button>
             <button className="btn btn-primary" onClick={downloadPdf} disabled={downloading}>{downloading ? "Preparing…" : "⬇ Download PDF"}</button>
           </div>
         </div>
+        <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 6 }}>
+          Supported upload formats: .pdf, .docx (max 10 MB). Uploading replaces the fields below with what's extracted — review and edit afterward.
+        </p>
 
         {/* Completion */}
         <div className="card" style={{ padding: 16, marginTop: 20 }}>
@@ -198,15 +265,58 @@ export default function ResumeBuilder() {
                     <span className="mono" style={{ fontSize: 28, fontWeight: 700, color: ats.score >= 75 ? "var(--mint)" : ats.score >= 60 ? "var(--amber-dark)" : "var(--rust)" }}>{ats.score}/100</span>
                     <span style={{ fontSize: 13, color: "var(--ink-dim)" }}>{ats.status}</span>
                   </div>
+
+                  {scoreDelta && (
+                    <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: scoreDelta.overall >= 0 ? "#E7F3EB" : "#F7E4E0" }}>
+                      <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: scoreDelta.overall >= 0 ? "var(--mint)" : "var(--rust)" }}>
+                        {scoreDelta.previous} → {scoreDelta.current} ({scoreDelta.overall >= 0 ? "+" : ""}{scoreDelta.overall})
+                      </div>
+                      {scoreDelta.byCategory.length > 0 && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600 }}>What changed</div>
+                          {scoreDelta.byCategory.map((c, i) => (
+                            <div key={i} style={{ fontSize: 11, color: c.delta >= 0 ? "var(--mint)" : "var(--rust)" }}>
+                              {c.label} {c.delta >= 0 ? "+" : ""}{c.delta}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Section breakdown</div>
+                    {ats.breakdown.map((b) => (
+                      <div key={b.key} style={{ marginBottom: 4 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+                          <span>{b.label}</span>
+                          <span className="mono">{b.score}/{b.max}</span>
+                        </div>
+                        <div style={{ height: 5, borderRadius: 3, background: "var(--line)", overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${(b.score / b.max) * 100}%`, background: b.score === b.max ? "var(--mint)" : "var(--amber-dark)" }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginTop: 12 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Suggestions</div>
-                    <ul style={{ paddingLeft: 18, margin: 0 }}>
-                      {ats.suggestions.map((s, i) => <li key={i} style={{ fontSize: 12, marginBottom: 3 }}>{s}</li>)}
-                    </ul>
+                    <div style={{ display: "grid", gap: 6 }}>
+                      {ats.suggestions.map((s, i) => (
+                        <div key={i} style={{ fontSize: 12 }}>
+                          <div style={{ color: "var(--rust)" }}>❌ {s.issue}</div>
+                          <div style={{ color: "var(--ink-dim)", marginTop: 1 }}>→ {s.recommendation}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
             </div>
+
+            <TargetRoleCard resume={resume} onRoleChange={(targetRole) => setData((d) => ({ ...d, resume: { ...d.resume, targetRole } }))} />
+
+            <VersionHistoryCard onRestore={(res) => { setData((d) => ({ ...d, resume: res.resume, completion: res.completion })); setAts(res.atsScore); setScoreDelta(null); }} />
 
             {/* Personal details */}
             <PersonalDetailsForm resume={resume} onSave={save} />
@@ -306,6 +416,7 @@ function PersonalDetailsForm({ resume, onSave }) {
       <div style={{ marginTop: 10 }}>
         <label style={labelStyle}>Career Objective / Professional Summary</label>
         <textarea style={{ ...inputStyle, minHeight: 70 }} value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} />
+        <ImproveButton text={form.summary} section="summary" onApply={(improved) => setForm((f) => ({ ...f, summary: improved }))} />
       </div>
       <button className="btn btn-primary" style={{ marginTop: 12, fontSize: 12 }} onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Personal Details"}</button>
     </div>
@@ -390,7 +501,12 @@ function ItemForm({ fields, draft, setDraft, onSave, onCancel }) {
           <div key={f.key} style={{ gridColumn: f.wide ? "1 / -1" : undefined }}>
             <label style={labelStyle}>{f.label}</label>
             {f.type === "textarea" ? (
-              <textarea style={{ ...inputStyle, minHeight: 60 }} value={draft[f.key] || ""} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })} />
+              <>
+                <textarea style={{ ...inputStyle, minHeight: 60 }} value={draft[f.key] || ""} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })} />
+                {f.improvable && (
+                  <ImproveButton text={draft[f.key]} section={f.improvable} onApply={(improved) => setDraft({ ...draft, [f.key]: improved })} />
+                )}
+              </>
             ) : f.type === "select" ? (
               <select style={inputStyle} value={draft[f.key] || ""} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}>
                 {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -495,6 +611,185 @@ function PreviewSection({ title, accent, children }) {
     <div style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: accent, textTransform: "uppercase", letterSpacing: "0.03em", borderBottom: "1px solid #ccc", paddingBottom: 3, marginBottom: 6 }}>{title}</div>
       {children}
+    </div>
+  );
+}
+
+// Rule-based rewrite suggestion (weak-verb replacement, grammar cleanup, quantify-impact
+// prompts) — not a real LLM call, but labeled "Improve with AI" per how this is meant to read to
+// students, consistent with how the rest of this platform handles "AI" features.
+function ImproveButton({ text, section, onApply }) {
+  const [loading, setLoading] = useState(false);
+  const [suggestion, setSuggestion] = useState(null);
+
+  async function run() {
+    if (!text || !text.trim()) return alert("Add some text first.");
+    setLoading(true);
+    setSuggestion(null);
+    try {
+      const { data } = await api.post("/resume/me/improve", { text, section });
+      setSuggestion(data);
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to generate improvement");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function accept() {
+    onApply(suggestion.improved);
+    setSuggestion(null);
+  }
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button type="button" className="btn btn-ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={run} disabled={loading}>
+        {loading ? "Improving…" : "✨ Improve with AI"}
+      </button>
+      {suggestion && (
+        <div className="card" style={{ padding: 10, marginTop: 6, background: "#FBFAF6", fontSize: 12 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Suggested rewrite</div>
+          <div style={{ marginBottom: 6, whiteSpace: "pre-wrap" }}>{suggestion.improved}</div>
+          <ul style={{ paddingLeft: 16, margin: "0 0 8px", color: "var(--ink-dim)" }}>
+            {suggestion.changes.map((c, i) => <li key={i}>{c}</li>)}
+          </ul>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button type="button" className="btn btn-primary" style={{ fontSize: 11, padding: "3px 10px" }} onClick={accept}>Accept</button>
+            <button type="button" className="btn btn-ghost" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => setSuggestion(null)}>Reject</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Job-Specific Optimization: pick a target role, see keyword/skill gaps against a fixed
+// per-role dictionary (not a real embedding-similarity model — same rule-based approach as the
+// rest of the ATS engine).
+function TargetRoleCard({ resume, onRoleChange }) {
+  const [roles, setRoles] = useState([]);
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => { api.get("/resume/job-roles").then((res) => setRoles(res.data)); }, []);
+
+  useEffect(() => {
+    if (!resume.targetRole) { setAnalysis(null); return; }
+    setLoading(true);
+    api.get("/resume/me/role-analysis").then((res) => setAnalysis(res.data)).catch(() => setAnalysis(null)).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resume.targetRole]);
+
+  async function selectRole(role) {
+    setLoading(true);
+    try {
+      const { data } = await api.patch("/resume/me/target-role", { role: role || null });
+      onRoleChange(data.resume.targetRole);
+      setAnalysis(data.roleAnalysis);
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to set target role");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Job-Specific Optimization</div>
+      <select style={inputStyle} value={resume.targetRole || ""} onChange={(e) => selectRole(e.target.value)}>
+        <option value="">Select a target role…</option>
+        {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+      </select>
+      {loading && <p className="mono" style={{ fontSize: 11, marginTop: 8 }}>Loading…</p>}
+      {analysis && !loading && (
+        <div style={{ marginTop: 10 }}>
+          <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{analysis.matchPercent}% keyword match for {analysis.role}</div>
+          {analysis.missingKeywords.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 600 }}>Missing keywords</div>
+              <div style={{ fontSize: 12, color: "var(--ink-dim)" }}>{analysis.missingKeywords.join(", ")}</div>
+            </div>
+          )}
+          {analysis.recommendedSkills.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 600 }}>Recommended skills to add</div>
+              <div style={{ fontSize: 12, color: "var(--ink-dim)" }}>{analysis.recommendedSkills.join(", ")}</div>
+            </div>
+          )}
+          {analysis.summaryTip && <p style={{ fontSize: 12, marginTop: 6 }}>{analysis.summaryTip}</p>}
+          {analysis.relevantProjects.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 600 }}>Most relevant projects</div>
+              <div style={{ fontSize: 12, color: "var(--ink-dim)" }}>{analysis.relevantProjects.join(", ")}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Version history — auto-saved on every resume save (capped at the 20 most recent server-side).
+// "Compare" fetches two full snapshots client-side and diffs just the ATS score; the snapshots
+// themselves are visible via Restore if a student wants to inspect one in full.
+function VersionHistoryCard({ onRestore }) {
+  const [versions, setVersions] = useState([]);
+  const [compareIds, setCompareIds] = useState([]);
+  const [compareResult, setCompareResult] = useState(null);
+
+  function load() { api.get("/resume/me/versions").then((res) => setVersions(res.data)); }
+  useEffect(load, []);
+
+  async function restore(id) {
+    if (!confirm("Restore this version? Your current state is saved first, so this can be undone.")) return;
+    try {
+      const { data } = await api.post(`/resume/me/versions/${id}/restore`);
+      onRestore(data);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to restore this version");
+    }
+  }
+
+  function toggleCompare(id) {
+    setCompareResult(null);
+    setCompareIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev.length < 2 ? [...prev, id] : [prev[1], id]));
+  }
+
+  async function runCompare() {
+    if (compareIds.length !== 2) return;
+    const [a, b] = await Promise.all(compareIds.map((id) => api.get(`/resume/me/versions/${id}`)));
+    const [older, newer] = [a.data, b.data].sort((x, y) => new Date(x.createdAt) - new Date(y.createdAt));
+    setCompareResult({ older, newer });
+  }
+
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Version History</div>
+        {compareIds.length === 2 && <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={runCompare}>Compare selected</button>}
+      </div>
+      <div style={{ display: "grid", gap: 6, marginTop: 10, maxHeight: 220, overflowY: "auto" }}>
+        {versions.map((v) => (
+          <div key={v.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={compareIds.includes(v.id)} onChange={() => toggleCompare(v.id)} />
+              <span className="mono">{new Date(v.createdAt).toLocaleString()}</span> — {v.atsScore}/100
+            </label>
+            <button className="btn btn-ghost" style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => restore(v.id)}>Restore</button>
+          </div>
+        ))}
+        {versions.length === 0 && <p style={{ fontSize: 12, color: "var(--ink-dim)" }}>No saved versions yet — one is captured automatically each time you save.</p>}
+      </div>
+      {compareResult && (
+        <div style={{ marginTop: 10, fontSize: 12, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+          <div>Older ({new Date(compareResult.older.createdAt).toLocaleString()}): <strong>{compareResult.older.atsScore}/100</strong></div>
+          <div>Newer ({new Date(compareResult.newer.createdAt).toLocaleString()}): <strong>{compareResult.newer.atsScore}/100</strong></div>
+          <div style={{ marginTop: 4, fontWeight: 700, color: compareResult.newer.atsScore >= compareResult.older.atsScore ? "var(--mint)" : "var(--rust)" }}>
+            {compareResult.newer.atsScore - compareResult.older.atsScore >= 0 ? "+" : ""}{compareResult.newer.atsScore - compareResult.older.atsScore} point difference
+          </div>
+        </div>
+      )}
     </div>
   );
 }

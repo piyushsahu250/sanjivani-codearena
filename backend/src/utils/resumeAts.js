@@ -1,7 +1,6 @@
-// Rule-based (not AI) resume completeness + ATS scoring. The spec's "Future Enhancements"
-// section explicitly lists AI-generated summaries/rewrites as future work, which confirms this
-// pass is meant to be a deterministic heuristic checker, not an LLM call — same spirit as the
-// judge's exact-match grading elsewhere on this platform: transparent, reproducible, free.
+// Rule-based (not AI) resume completeness + ATS scoring — deterministic and reproducible, same
+// spirit as the judge's exact-match grading elsewhere on this platform. "No real AI/LLM anywhere
+// on this platform" is a deliberate, standing decision, not a missing feature.
 
 function arr(x) {
   return Array.isArray(x) ? x : [];
@@ -19,9 +18,6 @@ const SECTION_DEFS = [
   { key: "languages", label: "Languages", check: (r) => arr(r.languages).length > 0 },
 ];
 
-// Completion counts every section (not just mandatory ones) toward the progress bar, but also
-// separately flags which currently-empty sections are on the admin-configured mandatory list —
-// the frontend can badge those more urgently than optional gaps.
 function computeCompletion(resume, mandatorySections = []) {
   const results = SECTION_DEFS.map((s) => ({ key: s.key, label: s.label, complete: s.check(resume) }));
   const percent = Math.round((results.filter((r) => r.complete).length / results.length) * 100);
@@ -38,6 +34,8 @@ const KEYWORDS = [
   "linux", "html", "css",
 ];
 
+const WEAK_PHRASES = ["worked on", "helped with", "was responsible for", "did", "handled", "involved in"];
+
 function collectSearchableText(resume) {
   const parts = [resume.summary || ""];
   for (const s of arr(resume.skills)) parts.push(s.name || "");
@@ -46,6 +44,36 @@ function collectSearchableText(resume) {
   return parts.join(" ").toLowerCase();
 }
 
+// Readability: a lightweight proxy, not a linguistic analysis — average sentence length (too
+// long or too short both read poorly) and a crude passive-voice heuristic (was/were/is/are +
+// a past-participle-looking word). Good enough to nudge toward "short, active-voice bullet
+// points," which is the actual ATS/readability advice being approximated here.
+function computeReadability(resume) {
+  const blocks = [
+    resume.summary || "",
+    ...arr(resume.projects).map((p) => p.description || ""),
+    ...arr(resume.experience).map((e) => e.responsibilities || ""),
+  ].filter(Boolean);
+  if (blocks.length === 0) return { score: 0, avgSentenceLength: 0, passivePercent: 0 };
+
+  const allText = blocks.join(" ");
+  const sentences = allText.split(/[.!?\n]+/).map((s) => s.trim()).filter(Boolean);
+  const wordCounts = sentences.map((s) => s.split(/\s+/).filter(Boolean).length);
+  const avgLen = wordCounts.length ? wordCounts.reduce((a, b) => a + b, 0) / wordCounts.length : 0;
+  const passiveMatches = (allText.match(/\b(was|were|is|are|been|being)\s+\w+ed\b/gi) || []).length;
+  const passiveRatio = sentences.length ? passiveMatches / sentences.length : 0;
+
+  let score = 5;
+  if (avgLen > 30 || avgLen < 4) score -= 2;
+  else if (avgLen > 25 || avgLen < 6) score -= 1;
+  if (passiveRatio > 0.4) score -= 2;
+  else if (passiveRatio > 0.2) score -= 1;
+
+  return { score: Math.max(0, score), avgSentenceLength: Math.round(avgLen), passivePercent: Math.round(passiveRatio * 100) };
+}
+
+// Section maxes sum to exactly 100: Contact 10, Summary 10, Education 10, Skills 15, Projects
+// 15, Experience 10, Certifications 5, Keywords 15, Formatting 5, Readability 5.
 function computeAtsScore(resume) {
   const text = collectSearchableText(resume);
   const matchedKeywords = KEYWORDS.filter((k) => text.includes(k));
@@ -58,13 +86,13 @@ function computeAtsScore(resume) {
   })();
 
   const summaryLen = (resume.summary || "").trim().length;
-  const summaryScore = summaryLen >= 40 ? 10 : summaryLen >= 15 ? 5 : 0;
-
-  const skillsCount = arr(resume.skills).length;
-  const skillsScore = Math.round((Math.min(skillsCount, 8) / 8) * 10);
+  const summaryScore = summaryLen >= 150 ? 10 : summaryLen >= 60 ? 7 : summaryLen >= 20 ? 4 : 0;
 
   const educationOk = arr(resume.education).some((e) => e.degree && e.institution);
   const educationScore = educationOk ? 10 : arr(resume.education).length > 0 ? 5 : 0;
+
+  const skillsCount = arr(resume.skills).length;
+  const skillsScore = Math.round((Math.min(skillsCount, 10) / 10) * 15);
 
   const projects = arr(resume.projects);
   const projectsScore = Math.min(projects.length, 3) * 4 + (projects.some((p) => p.githubUrl || p.liveUrl) ? 3 : 0);
@@ -73,34 +101,51 @@ function computeAtsScore(resume) {
   const experienceScore = Math.min(experienceCount, 2) * 5;
 
   const certCount = arr(resume.certifications).length;
-  const certScore = Math.round((Math.min(certCount, 3) / 3) * 10);
+  const certScore = Math.round((Math.min(certCount, 3) / 3) * 5);
 
-  const keywordScore = Math.round((Math.min(matchedKeywords.length, 10) / 10) * 15);
+  const keywordScore = Math.round((Math.min(matchedKeywords.length, 12) / 12) * 15);
 
   const { percent: completionPercent } = computeCompletion(resume, []);
-  const formattingScore = Math.round((completionPercent / 100) * 10);
+  const formattingScore = Math.round((completionPercent / 100) * 5);
 
-  const breakdown = {
-    contact: contactScore, summary: summaryScore, skills: skillsScore, education: educationScore,
-    projects: Math.min(projectsScore, 15), experience: experienceScore, certifications: certScore,
-    keywords: keywordScore, formatting: formattingScore,
-  };
-  const score = Math.min(100, Object.values(breakdown).reduce((a, b) => a + b, 0));
+  const readability = computeReadability(resume);
 
+  const breakdown = [
+    { key: "contact", label: "Contact Information", score: contactScore, max: 10 },
+    { key: "summary", label: "Professional Summary", score: summaryScore, max: 10 },
+    { key: "education", label: "Education", score: educationScore, max: 10 },
+    { key: "skills", label: "Technical Skills", score: skillsScore, max: 15 },
+    { key: "projects", label: "Projects", score: Math.min(projectsScore, 15), max: 15 },
+    { key: "experience", label: "Experience", score: experienceScore, max: 10 },
+    { key: "certifications", label: "Certifications", score: certScore, max: 5 },
+    { key: "keywords", label: "Keywords", score: keywordScore, max: 15 },
+    { key: "formatting", label: "Formatting", score: formattingScore, max: 5 },
+    { key: "readability", label: "Readability", score: readability.score, max: 5 },
+  ];
+  const score = Math.min(100, breakdown.reduce((a, b) => a + b.score, 0));
   const status = score >= 90 ? "Excellent" : score >= 75 ? "Good" : score >= 60 ? "Fair" : "Needs Improvement";
 
+  // Structured, section-specific suggestions — {issue, recommendation} rather than one flat
+  // list, so the frontend can render them the way the spec's own examples are formatted
+  // ("❌ problem" / "Recommendation: fix").
   const suggestions = [];
-  if (breakdown.contact < 10) suggestions.push("Add your LinkedIn and GitHub/portfolio links for stronger contact information.");
-  if (breakdown.summary < 10) suggestions.push("Improve the professional summary — aim for 2-3 sentences highlighting your strengths and goals.");
-  if (breakdown.skills < 7) suggestions.push("Add more technical skills relevant to software engineering roles.");
-  if (breakdown.education < 10) suggestions.push("Complete your education details (degree, institution, and graduation year).");
-  if (breakdown.projects < 10) suggestions.push("Add more projects with GitHub/portfolio links to showcase your work.");
-  if (experienceCount === 0) suggestions.push("Add internship, freelance, or research project experience if available — even short-term roles count.");
-  if (certCount === 0) suggestions.push("Add certifications to strengthen your credentials.");
-  if (matchedKeywords.length < 8) suggestions.push("Include more industry-relevant keywords (e.g. Data Structures, REST APIs, Git, Cloud, Testing).");
-  if (breakdown.formatting < 10) suggestions.push("Complete all resume sections for better formatting and organization.");
-  suggestions.push("Quantify your achievements and experience with numbers where possible (e.g. \"improved load time by 30%\").");
-  suggestions.push("Use strong action verbs (built, designed, implemented, optimized) in project and experience descriptions.");
+  if (!resume.email || !resume.mobile) suggestions.push({ issue: "Missing email or phone number.", recommendation: "Add both an email address and a phone number — most ATS systems reject resumes without complete contact info." });
+  if (!resume.linkedin) suggestions.push({ issue: "Missing LinkedIn profile.", recommendation: "Add your LinkedIn URL — recruiters check it before responding." });
+  if (!resume.github && !resume.portfolio) suggestions.push({ issue: "Missing GitHub or portfolio link.", recommendation: "Add your GitHub profile to showcase coding projects, or a portfolio site if you have one." });
+  if (summaryLen === 0) suggestions.push({ issue: "Professional Summary is missing.", recommendation: "Add 3–4 lines highlighting your technical expertise and career goals." });
+  else if (summaryLen < 60) suggestions.push({ issue: "Professional Summary is too short.", recommendation: "Expand to 3–4 lines highlighting technical expertise and career goals." });
+  if (!educationOk) suggestions.push({ issue: "Education details are incomplete.", recommendation: "Fill in degree, institution, and graduation year for each entry." });
+  if (skillsCount < 6) suggestions.push({ issue: "Too few skills listed.", recommendation: "List at least 6–10 relevant technical skills, grouped by category." });
+  if (projects.length === 0) suggestions.push({ issue: "No projects found.", recommendation: "Add at least 2–3 technical projects with a brief description and tech stack." });
+  else if (projects.length === 1) suggestions.push({ issue: "Only one project found.", recommendation: "Add at least 2–3 technical projects to better demonstrate your range." });
+  if (projects.length > 0 && !projects.some((p) => p.githubUrl || p.liveUrl)) suggestions.push({ issue: "Projects have no GitHub or live links.", recommendation: "Link to a GitHub repo or live demo for at least one project." });
+  if (experienceCount === 0) suggestions.push({ issue: "No experience listed.", recommendation: "Add internship, freelance, or research experience if available — even short-term roles count." });
+  if (certCount === 0) suggestions.push({ issue: "No certifications listed.", recommendation: "Add relevant certifications to strengthen your credentials." });
+  if (matchedKeywords.length < 8) suggestions.push({ issue: "Resume is missing common industry keywords.", recommendation: "Include more role-relevant terms (e.g. Data Structures, REST APIs, Git, Cloud, Testing) naturally in your descriptions." });
+  const weakPhraseHit = WEAK_PHRASES.find((p) => text.includes(p));
+  if (weakPhraseHit) suggestions.push({ issue: `Weak phrasing found ("${weakPhraseHit}").`, recommendation: 'Replace with a strong action verb and a specific outcome — e.g. "Developed a Java-based inventory system that streamlined manual tracking."' });
+  if (readability.passivePercent > 30) suggestions.push({ issue: "Descriptions read as passive voice.", recommendation: "Rewrite in active voice, starting each bullet with an action verb (Built, Designed, Implemented, Optimized)." });
+  if (!/\d/.test(text)) suggestions.push({ issue: "Missing measurable achievements.", recommendation: 'Quantify impact where you genuinely can — e.g. "reduced load time by 30%" or "supported 500+ users" — only using real numbers, never invented ones.' });
 
   return { score, status, breakdown, matchedKeywords, suggestions: suggestions.slice(0, 10) };
 }

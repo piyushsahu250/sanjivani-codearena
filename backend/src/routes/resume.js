@@ -1,12 +1,18 @@
 const express = require("express");
+const multer = require("multer");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
 const { computeCompletion, computeAtsScore } = require("../utils/resumeAts");
 const { generateResumePdf } = require("../utils/resumePdf");
+const { generateResumeDocx } = require("../utils/resumeDocx");
 const { buildAutofillData } = require("../utils/resumeAutofill");
+const { parseResumeFile } = require("../utils/resumeParser");
+const { improveText } = require("../utils/resumeImprove");
+const { ROLE_KEYWORDS, analyzeForRole } = require("../utils/resumeJobRoles");
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const ALLOWED_FIELDS = [
   "template", "fullName", "photoUrl", "email", "mobile", "linkedin", "github", "portfolio", "address", "summary",
@@ -22,8 +28,26 @@ async function getFieldConfig() {
   return config;
 }
 
+function resumeFilename(resume, ext) {
+  return `${(resume.fullName || "resume").replace(/[^a-z0-9]+/gi, "-")}-resume.${ext}`;
+}
 function pdfFilename(resume) {
-  return `${(resume.fullName || "resume").replace(/[^a-z0-9]+/gi, "-")}-resume.pdf`;
+  return resumeFilename(resume, "pdf");
+}
+
+// Snapshots the resume's current field values as a new ResumeVersion, then prunes anything
+// beyond the 20 most recent for this resume — "automatically save every major edit" without
+// unbounded growth from an active editing session.
+async function saveVersion(resumeId, resumeSnapshot) {
+  const atsScore = computeAtsScore(resumeSnapshot).score;
+  await prisma.resumeVersion.create({ data: { resumeId, snapshot: resumeSnapshot, atsScore } });
+  const versions = await prisma.resumeVersion.findMany({
+    where: { resumeId }, orderBy: { createdAt: "desc" }, select: { id: true }, skip: 20,
+  });
+  if (versions.length) {
+    await prisma.resumeVersion.deleteMany({ where: { id: { in: versions.map((v) => v.id) } } });
+  }
+  return atsScore;
 }
 
 // =========================== Student-facing ===========================
@@ -54,16 +78,233 @@ router.patch("/me", authenticate, requireRole("STUDENT"), async (req, res) => {
     const data = {};
     for (const f of ALLOWED_FIELDS) if (req.body[f] !== undefined) data[f] = req.body[f];
 
+    const existing = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    const latestVersion = existing
+      ? await prisma.resumeVersion.findFirst({ where: { resumeId: existing.id }, orderBy: { createdAt: "desc" } })
+      : null;
+    const previousScore = latestVersion ? latestVersion.atsScore : existing ? computeAtsScore(existing).score : null;
+    const previousBreakdown = latestVersion ? computeAtsScore(latestVersion.snapshot).breakdown : existing ? computeAtsScore(existing).breakdown : null;
+
     const resume = await prisma.resume.upsert({
       where: { studentId: req.user.id },
       update: data,
       create: { studentId: req.user.id, ...data },
     });
+
+    const atsScore = computeAtsScore(resume);
+    await saveVersion(resume.id, resume);
     const config = await getFieldConfig();
-    res.json({ resume, completion: computeCompletion(resume, config.mandatorySections) });
+
+    // "Previous score -> current score, what improved" — only present once there's a prior
+    // score to compare against (first save on a brand-new resume has nothing to diff).
+    let scoreDelta = null;
+    if (previousScore !== null) {
+      const byCategory = atsScore.breakdown
+        .map((b) => {
+          const prev = previousBreakdown?.find((p) => p.key === b.key);
+          return { label: b.label, delta: b.score - (prev ? prev.score : 0) };
+        })
+        .filter((d) => d.delta !== 0);
+      scoreDelta = { previous: previousScore, current: atsScore.score, overall: atsScore.score - previousScore, byCategory };
+    }
+
+    res.json({ resume, completion: computeCompletion(resume, config.mandatorySections), atsScore, scoreDelta });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to save resume" });
+  }
+});
+
+// STUDENT: upload an existing resume (.pdf or .docx, max 10MB) and have it parsed + populated
+// into this editable resume record. Overwrites the current draft's fields with whatever was
+// successfully extracted (falling back to any existing value the parser didn't find one for) —
+// the whole point of "Upload Existing Resume" is replacing/seeding the draft, not merging. The
+// pre-upload state is snapshotted to version history first, so nothing is silently lost — it can
+// be restored if the upload wasn't actually an improvement. The uploaded file itself is never
+// stored — only the extracted structured data is saved, consistent with this platform having no
+// object storage anywhere else (Resume.photoUrl, Lesson.videoUrl are external URLs only).
+router.post(
+  "/me/upload",
+  authenticate,
+  requireRole("STUDENT"),
+  (req, res, next) => {
+    upload.single("file")(req, res, (err) => {
+      if (err) {
+        if (err.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error: "File is too large. Maximum size is 10 MB." });
+        return res.status(400).json({ error: "Failed to upload file." });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const ext = String(req.file.originalname || "").toLowerCase().split(".").pop();
+      if (!["pdf", "docx"].includes(ext)) {
+        return res.status(400).json({ error: "Unsupported file type. Please upload a .pdf or .docx file." });
+      }
+
+      let parsed;
+      try {
+        parsed = await parseResumeFile(req.file.buffer, req.file.mimetype, req.file.originalname);
+      } catch (parseErr) {
+        return res.status(422).json({ error: parseErr.message || "Failed to parse this resume." });
+      }
+
+      const existing = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+      if (existing) await saveVersion(existing.id, existing);
+
+      const data = {
+        fullName: parsed.fullName || existing?.fullName || "",
+        email: parsed.email || existing?.email || "",
+        mobile: parsed.mobile || existing?.mobile || "",
+        linkedin: parsed.linkedin || existing?.linkedin || "",
+        github: parsed.github || existing?.github || "",
+        portfolio: parsed.portfolio || existing?.portfolio || "",
+        address: parsed.address || existing?.address || "",
+        summary: parsed.summary || existing?.summary || "",
+        education: parsed.education.length ? parsed.education : existing?.education || [],
+        skills: parsed.skills.length ? parsed.skills : existing?.skills || [],
+        projects: parsed.projects.length ? parsed.projects : existing?.projects || [],
+        experience: parsed.experience.length ? parsed.experience : existing?.experience || [],
+        certifications: parsed.certifications.length ? parsed.certifications : existing?.certifications || [],
+        achievements: parsed.achievements.length ? parsed.achievements : existing?.achievements || [],
+        languages: parsed.languages.length ? parsed.languages : existing?.languages || [],
+      };
+
+      const resume = await prisma.resume.upsert({
+        where: { studentId: req.user.id },
+        update: data,
+        create: { studentId: req.user.id, ...data },
+      });
+
+      const atsScore = computeAtsScore(resume);
+      await saveVersion(resume.id, resume);
+      const config = await getFieldConfig();
+
+      const extractedCount = Object.entries(parsed).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : !!v)).length;
+      res.json({
+        resume, completion: computeCompletion(resume, config.mandatorySections), atsScore,
+        parsedFieldsCount: extractedCount,
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to process uploaded resume" });
+    }
+  }
+);
+
+// STUDENT: rule-based rewrite suggestion for one block of text (summary / project description /
+// experience responsibilities / achievement). Returns a suggestion only — never auto-saves, so
+// the student explicitly accepts or rejects it in the editor.
+router.post("/me/improve", authenticate, requireRole("STUDENT"), (req, res) => {
+  try {
+    const { text, section } = req.body;
+    if (!text || !String(text).trim()) return res.status(400).json({ error: "text is required" });
+    res.json(improveText(text, section || "general"));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to generate improvement" });
+  }
+});
+
+router.get("/job-roles", authenticate, requireRole("STUDENT"), (req, res) => {
+  res.json(Object.keys(ROLE_KEYWORDS));
+});
+
+// STUDENT: set (or clear) the target job role, returning the keyword-gap analysis for it.
+router.patch("/me/target-role", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const role = req.body.role || null;
+    if (role && !ROLE_KEYWORDS[role]) return res.status(400).json({ error: "Unknown role" });
+    const resume = await prisma.resume.upsert({
+      where: { studentId: req.user.id },
+      update: { targetRole: role },
+      create: { studentId: req.user.id, targetRole: role },
+    });
+    res.json({ resume, roleAnalysis: role ? analyzeForRole(resume, role) : null });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to set target role" });
+  }
+});
+
+router.get("/me/role-analysis", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!resume) return res.status(404).json({ error: "No resume found — save your resume first" });
+    const role = req.query.role || resume.targetRole;
+    if (!role) return res.status(400).json({ error: "No target role selected" });
+    const analysis = analyzeForRole(resume, role);
+    if (!analysis) return res.status(400).json({ error: "Unknown role" });
+    res.json(analysis);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to compute role analysis" });
+  }
+});
+
+// STUDENT: version history — list, fetch one (for viewing/comparing), and restore.
+router.get("/me/versions", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!resume) return res.json([]);
+    const versions = await prisma.resumeVersion.findMany({
+      where: { resumeId: resume.id }, orderBy: { createdAt: "desc" },
+      select: { id: true, atsScore: true, createdAt: true },
+    });
+    res.json(versions);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load version history" });
+  }
+});
+
+router.get("/me/versions/:id", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!resume) return res.status(404).json({ error: "No resume found" });
+    const version = await prisma.resumeVersion.findUnique({ where: { id: req.params.id } });
+    if (!version || version.resumeId !== resume.id) return res.status(404).json({ error: "Version not found" });
+    res.json(version);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load version" });
+  }
+});
+
+router.post("/me/versions/:id/restore", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!resume) return res.status(404).json({ error: "No resume found" });
+    const version = await prisma.resumeVersion.findUnique({ where: { id: req.params.id } });
+    if (!version || version.resumeId !== resume.id) return res.status(404).json({ error: "Version not found" });
+
+    await saveVersion(resume.id, resume); // current state becomes restorable too
+
+    const snap = version.snapshot;
+    const data = {};
+    for (const f of ALLOWED_FIELDS) if (snap[f] !== undefined) data[f] = snap[f];
+    const restored = await prisma.resume.update({ where: { studentId: req.user.id }, data });
+    const config = await getFieldConfig();
+    res.json({ resume: restored, completion: computeCompletion(restored, config.mandatorySections), atsScore: computeAtsScore(restored) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to restore version" });
+  }
+});
+
+router.get("/me/docx", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!resume) return res.status(404).json({ error: "No resume found — save your resume first" });
+    const buffer = await generateResumeDocx(resume);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename="${resumeFilename(resume, "docx")}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to generate DOCX" });
   }
 });
 
