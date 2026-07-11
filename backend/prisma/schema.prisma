@@ -94,6 +94,10 @@ model User {
   streak          StudentStreak?
   resume          Resume?
   resumeFeedback  ResumeFeedback[]
+
+  interviewSessions    InterviewSession[]
+  interviewReports     InterviewReport[]
+  interviewCertificate InterviewCertificate?
 }
 
 model Test {
@@ -485,4 +489,136 @@ model ResumeFeedback {
   createdAt DateTime @default(now())
 
   @@index([studentId, createdAt])
+}
+
+// ===================================================================
+// Interview Prep Module. The spec describes 10 tables (interview_sessions,
+// interview_questions, interview_answers, interview_reports,
+// resume_analysis, coding_interviews, hr_interviews, technical_interviews,
+// aptitude_interviews, mock_interviews) — consolidated here into 5 real
+// models instead: HR/Technical/Coding/Aptitude are categories on ONE
+// question bank and ONE session model (not 4 near-duplicate table sets),
+// Mock is just a session whose questions span multiple categories, and
+// Resume-based reuses the existing Resume model directly rather than a
+// separate resume_analysis table (Resume already IS the analyzed,
+// structured data). This is a deliberate normalization, not a missing
+// feature — every category in the spec is still fully representable.
+// ===================================================================
+
+enum InterviewCategory {
+  HR
+  TECHNICAL
+  CODING
+  APTITUDE
+}
+
+enum AptitudeCategory {
+  QUANTITATIVE
+  LOGICAL
+  VERBAL
+  DATA_INTERPRETATION
+}
+
+// Unified question bank. Which fields apply depends on `category`:
+// HR/TECHNICAL use expectedKeywords+modelAnswer (free-text, heuristically
+// graded); APTITUDE uses options+correctAnswer (exact-match, like a quiz);
+// CODING uses starterCode+testCases+language (graded by the real judge).
+// Resume-based interview questions are generated on the fly at session
+// start and inserted here with `generatedForStudentId` set, so they still
+// flow through the same InterviewAnswer/evaluation pipeline as bank
+// questions — they just aren't reusable across students.
+model InterviewQuestion {
+  id                    String   @id @default(uuid())
+  category              InterviewCategory
+  subject               String? // Technical: "Java","Python","SQL","DBMS","OS","CN","OOP","DSA",...; Coding: topic e.g. "Arrays"
+  aptitudeCategory       AptitudeCategory?
+  difficulty            Difficulty @default(EASY)
+  prompt                String
+  expectedKeywords      Json?   // HR/Technical: string[] of concepts to look for in a free-text answer
+  modelAnswer           String? // HR/Technical: shown after the student answers
+  options               Json?   // Aptitude: string[]
+  correctAnswer         Json?   // Aptitude: correct option index
+  explanation           String? // Aptitude: shown after
+  starterCode           String? // Coding
+  testCases             Json?   // Coding: [{input, expected}]
+  language               String? // Coding: default language
+  generatedForStudentId String? // set only for ephemeral resume-based questions
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+
+  answers InterviewAnswer[]
+
+  @@index([category])
+  @@index([subject])
+  @@index([generatedForStudentId])
+}
+
+// One row per attempt. `category` HR/TECHNICAL/CODING/APTITUDE is a focused single-type
+// session; a Mock session sets isMock=true and its questions span multiple categories
+// (config.mix records the composition). Resume-based sessions set isResumeBased=true and
+// their questions are the ephemeral generatedForStudentId rows created for this student.
+model InterviewSession {
+  id            String   @id @default(uuid())
+  student       User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId     String
+  category      InterviewCategory?  // null for a pure mock session spanning categories
+  isMock        Boolean  @default(false)
+  isResumeBased Boolean  @default(false)
+  status        String   @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
+  config        Json?    // {difficulty, subject, language, aptitudeCategory, negativeMarking, durationMin, topic, mix}
+  startedAt     DateTime @default(now())
+  submittedAt   DateTime?
+
+  answers InterviewAnswer[]
+  report  InterviewReport?
+
+  @@index([studentId, category])
+  @@index([studentId, status])
+}
+
+model InterviewAnswer {
+  id           String   @id @default(uuid())
+  session      InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId    String
+  question     InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId   String
+  answerText   String?  // HR/Technical free-text (or Web-Speech-API transcript), or Aptitude selected option index as a string
+  code         String?  // Coding
+  language     String?  // Coding
+  skipped      Boolean  @default(false)
+  timeTakenSec Int?
+  score        Int      @default(0) // 0-100, this question only
+  breakdown    Json?    // category-specific sub-scores, see utils/interviewEvaluation.js
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([sessionId, questionId])
+  @@index([sessionId])
+}
+
+// Finalized per-session feedback snapshot — persisted (not recomputed on every read) so a
+// student's history stays stable even if scoring heuristics change later.
+model InterviewReport {
+  id              String   @id @default(uuid())
+  session         InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId       String   @unique
+  student         User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId       String
+  overallScore    Int
+  scoreBreakdown  Json    // e.g. {communication, confidence, vocabulary, professionalism, completeness} or {correctness, codeQuality}
+  strongAreas     Json    // string[]
+  weakAreas       Json    // string[]
+  recommendations Json    // string[]
+  createdAt       DateTime @default(now())
+
+  @@index([studentId, createdAt])
+}
+
+model InterviewCertificate {
+  id              String   @id @default(uuid())
+  certificateCode String   @unique
+  student         User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId       String   @unique
+  averageScore    Int
+  issuedAt        DateTime @default(now())
 }

@@ -1,0 +1,76 @@
+/* Scoped dark/light theme + glassmorphism for the Interview Prep module only — the rest of the
+   app has a single fixed "paper/chalk" theme, and building a true global dark-mode system would
+   be a much larger, separate cross-cutting change. This toggle + these styles apply only inside
+   .interview-prep. */
+
+.interview-prep {
+  --ip-bg: linear-gradient(135deg, #FBF9F4 0%, #F0EEE3 100%);
+  --ip-text: #1C1B18;
+  --ip-text-dim: #6B6A5F;
+  --ip-glass-bg: rgba(255, 255, 255, 0.55);
+  --ip-glass-border: rgba(28, 27, 24, 0.08);
+  --ip-accent: #4F9D6E;
+  min-height: 100vh;
+  background: var(--ip-bg);
+  color: var(--ip-text);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.interview-prep.dark {
+  --ip-bg: linear-gradient(135deg, #0B2A1E 0%, #123528 100%);
+  --ip-text: #F4EFE3;
+  --ip-text-dim: #C9C2AE;
+  --ip-glass-bg: rgba(255, 255, 255, 0.06);
+  --ip-glass-border: rgba(255, 255, 255, 0.12);
+  --ip-accent: #7FD9A8;
+}
+
+.interview-prep h1, .interview-prep h2, .interview-prep h3, .interview-prep h4 {
+  color: var(--ip-text);
+}
+
+.ip-glass {
+  background: var(--ip-glass-bg);
+  border: 1px solid var(--ip-glass-border);
+  border-radius: 16px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  padding: 20px;
+  color: var(--ip-text);
+}
+
+.ip-card {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.ip-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+}
+
+.ip-select {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ip-glass-border);
+  background: var(--ip-glass-bg);
+  color: var(--ip-text);
+  font-size: 13px;
+}
+
+.interview-prep .card {
+  background: var(--ip-glass-bg);
+  border: 1px solid var(--ip-glass-border);
+  color: var(--ip-text);
+}
+
+.interview-prep input, .interview-prep textarea, .interview-prep select {
+  color: var(--ip-text);
+}
+
+@keyframes ip-progress-fill {
+  from { width: 0; }
+}
+.ip-progress-bar {
+  animation: ip-progress-fill 0.6s ease;
+}

@@ -14,6 +14,7 @@ const learningRoutes = require("./routes/learning");
 const dashboardRoutes = require("./routes/dashboard");
 const gamificationRoutes = require("./routes/gamification");
 const resumeRoutes = require("./routes/resume");
+const interviewRoutes = require("./routes/interview");
 
 const app = express();
 app.use(cors());
@@ -33,6 +34,7 @@ app.use("/api/learning", learningRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/gamification", gamificationRoutes);
 app.use("/api/resume", resumeRoutes);
+app.use("/api/interview", interviewRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`CodeArena API running on port ${PORT}`));

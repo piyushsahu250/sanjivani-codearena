@@ -13,6 +13,7 @@ import StudentTestResult from "./pages/StudentTestResult";
 const TestTaking = lazy(() => import("./pages/TestTaking"));
 // Lazy-loaded: pulls in Monaco (code editor), only needed for coding practice questions.
 const LessonView = lazy(() => import("./pages/LessonView"));
+const InterviewSession = lazy(() => import("./pages/InterviewSession"));
 import AdminDashboard from "./pages/AdminDashboard";
 import StaffDashboard from "./pages/StaffDashboard";
 import CreateQuestion from "./pages/CreateQuestion";
@@ -38,6 +39,14 @@ import Achievements from "./pages/Achievements";
 import GamificationManagement from "./pages/GamificationManagement";
 import ResumeBuilder from "./pages/ResumeBuilder";
 import ResumeAdmin from "./pages/ResumeAdmin";
+import InterviewHub from "./pages/InterviewHub";
+import InterviewReport from "./pages/InterviewReport";
+import InterviewHistory from "./pages/InterviewHistory";
+import InterviewLeaderboard from "./pages/InterviewLeaderboard";
+import InterviewProgress from "./pages/InterviewProgress";
+import InterviewCertificate from "./pages/InterviewCertificate";
+import InterviewVerify from "./pages/InterviewVerify";
+import InterviewAdmin from "./pages/InterviewAdmin";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
@@ -68,6 +77,7 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/change-password" element={<ForceChangePassword />} />
+          <Route path="/interview/verify/:code" element={<InterviewVerify />} />
           <Route path="/account" element={<Protected><AccountSettings /></Protected>} />
 
           {/* Student */}
@@ -86,6 +96,22 @@ export default function App() {
           <Route path="/dashboard/performance" element={<Protected roles={["STUDENT"]}><StudentPerformance /></Protected>} />
           <Route path="/achievements" element={<Protected roles={["STUDENT"]}><Achievements /></Protected>} />
           <Route path="/resume" element={<Protected roles={["STUDENT"]}><ResumeBuilder /></Protected>} />
+          <Route path="/interview" element={<Protected roles={["STUDENT"]}><InterviewHub /></Protected>} />
+          <Route
+            path="/interview/session/:id"
+            element={
+              <Protected roles={["STUDENT"]}>
+                <Suspense fallback={<div style={{ padding: 48 }} className="mono">Loading…</div>}>
+                  <InterviewSession />
+                </Suspense>
+              </Protected>
+            }
+          />
+          <Route path="/interview/report/:id" element={<Protected roles={["STUDENT"]}><InterviewReport /></Protected>} />
+          <Route path="/interview/history" element={<Protected roles={["STUDENT"]}><InterviewHistory /></Protected>} />
+          <Route path="/interview/leaderboard" element={<Protected roles={["STUDENT"]}><InterviewLeaderboard /></Protected>} />
+          <Route path="/interview/progress" element={<Protected roles={["STUDENT"]}><InterviewProgress /></Protected>} />
+          <Route path="/interview/certificate" element={<Protected roles={["STUDENT"]}><InterviewCertificate /></Protected>} />
 
           {/* Learning module — browsable by Student, Admin, and Staff (admin/staff preview content they manage) */}
           <Route path="/learning" element={<Protected roles={["STUDENT", "ADMIN", "STAFF"]}><LearningHub /></Protected>} />
@@ -107,6 +133,7 @@ export default function App() {
           <Route path="/staff/learning" element={<Protected roles={["ADMIN", "STAFF"]}><LearningManagement /></Protected>} />
           <Route path="/staff/gamification" element={<Protected roles={["ADMIN", "STAFF"]}><GamificationManagement /></Protected>} />
           <Route path="/staff/resumes" element={<Protected roles={["ADMIN", "STAFF"]}><ResumeAdmin /></Protected>} />
+          <Route path="/staff/interviews" element={<Protected roles={["ADMIN", "STAFF"]}><InterviewAdmin /></Protected>} />
           <Route path="/staff/questions" element={<Protected roles={["ADMIN", "STAFF"]}><QuestionBank /></Protected>} />
           <Route path="/staff/questions/new" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />
           <Route path="/staff/questions/:id/edit" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />

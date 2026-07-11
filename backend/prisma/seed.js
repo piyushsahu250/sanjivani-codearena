@@ -2,6 +2,7 @@ const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
 const { seedLearningModule } = require("./seedLearning");
 const { seedGamification } = require("./seedGamification");
+const { seedInterviewModule } = require("./seedInterview");
 
 const prisma = new PrismaClient();
 
@@ -27,6 +28,7 @@ async function main() {
 
   await seedLearningModule(prisma);
   await seedGamification(prisma);
+  await seedInterviewModule(prisma);
 }
 
 main()

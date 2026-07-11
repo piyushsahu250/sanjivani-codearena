@@ -1,0 +1,51 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import api from "../api";
+import Navbar from "../components/Navbar";
+import ChalkUnderline from "../components/ChalkUnderline";
+import "./interviewPrep.css";
+
+export default function InterviewHistory() {
+  const [data, setData] = useState(null);
+  const [page, setPage] = useState(1);
+  const dark = localStorage.getItem("interviewPrepDark") === "1";
+
+  useEffect(() => {
+    api.get("/interview/sessions", { params: { page } }).then((res) => setData(res.data));
+  }, [page]);
+
+  return (
+    <div className={`interview-prep ${dark ? "dark" : ""}`}>
+      <Navbar />
+      <div style={{ maxWidth: 800, margin: "0 auto", padding: "48px 24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div><h1>Interview History</h1><ChalkUnderline /></div>
+          <Link to="/interview" className="btn btn-ghost">← Interview Prep</Link>
+        </div>
+
+        {!data && <p className="mono" style={{ marginTop: 24 }}>Loading…</p>}
+        {data && data.sessions.length === 0 && <div className="ip-glass" style={{ padding: 24, marginTop: 24, textAlign: "center" }}>No completed interviews yet.</div>}
+
+        <div style={{ display: "grid", gap: 10, marginTop: 20 }}>
+          {data?.sessions.map((s) => (
+            <Link key={s.id} to={`/interview/report/${s.id}`} className="ip-glass" style={{ padding: 16, display: "flex", justifyContent: "space-between", alignItems: "center", textDecoration: "none", color: "inherit" }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{s.isMock ? "Mock Interview" : s.isResumeBased ? "Resume-based Interview" : `${s.category} Interview`}</div>
+                <div className="mono" style={{ fontSize: 12, opacity: 0.7 }}>{new Date(s.submittedAt).toLocaleString()}</div>
+              </div>
+              <div className="mono" style={{ fontWeight: 700, color: "var(--ip-accent)" }}>{s.report?.overallScore ?? "—"}%</div>
+            </Link>
+          ))}
+        </div>
+
+        {data && data.totalPages > 1 && (
+          <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "center" }}>
+            <button className="btn btn-ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>← Prev</button>
+            <span className="mono" style={{ alignSelf: "center", fontSize: 13 }}>Page {data.page} / {data.totalPages}</span>
+            <button className="btn btn-ghost" disabled={page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>Next →</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
