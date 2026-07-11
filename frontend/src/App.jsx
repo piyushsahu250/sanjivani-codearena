@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { GamificationProvider } from "./context/GamificationContext";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import StudentDashboard from "./pages/StudentDashboard";
@@ -33,6 +34,8 @@ import LearningHub from "./pages/LearningHub";
 import CourseOverview from "./pages/CourseOverview";
 import CourseCertificate from "./pages/CourseCertificate";
 import LearningManagement from "./pages/LearningManagement";
+import Achievements from "./pages/Achievements";
+import GamificationManagement from "./pages/GamificationManagement";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
@@ -54,6 +57,7 @@ function Home() {
 export default function App() {
   return (
     <AuthProvider>
+      <GamificationProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />
@@ -78,6 +82,7 @@ export default function App() {
           />
           <Route path="/test/:id/result" element={<Protected roles={["STUDENT"]}><StudentTestResult /></Protected>} />
           <Route path="/dashboard/performance" element={<Protected roles={["STUDENT"]}><StudentPerformance /></Protected>} />
+          <Route path="/achievements" element={<Protected roles={["STUDENT"]}><Achievements /></Protected>} />
 
           {/* Learning module — browsable by Student, Admin, and Staff (admin/staff preview content they manage) */}
           <Route path="/learning" element={<Protected roles={["STUDENT", "ADMIN", "STAFF"]}><LearningHub /></Protected>} />
@@ -97,6 +102,7 @@ export default function App() {
           {/* Staff (and Admin, who can also manage tests/questions) */}
           <Route path="/staff" element={<Protected roles={["ADMIN", "STAFF"]}><StaffDashboard /></Protected>} />
           <Route path="/staff/learning" element={<Protected roles={["ADMIN", "STAFF"]}><LearningManagement /></Protected>} />
+          <Route path="/staff/gamification" element={<Protected roles={["ADMIN", "STAFF"]}><GamificationManagement /></Protected>} />
           <Route path="/staff/questions" element={<Protected roles={["ADMIN", "STAFF"]}><QuestionBank /></Protected>} />
           <Route path="/staff/questions/new" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />
           <Route path="/staff/questions/:id/edit" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />
@@ -119,6 +125,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      </GamificationProvider>
     </AuthProvider>
   );
 }

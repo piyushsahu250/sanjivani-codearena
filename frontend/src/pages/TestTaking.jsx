@@ -4,6 +4,7 @@ import Editor from "@monaco-editor/react";
 import * as tf from "@tensorflow/tfjs";
 import * as blazeface from "@tensorflow-models/blazeface";
 import api from "../api";
+import { useGamification } from "../context/GamificationContext";
 
 const FACE_CHECK_INTERVAL_MS = 2000;
 const FACE_CONFIDENCE_THRESHOLD = 0.7;
@@ -21,6 +22,7 @@ const MAX_TAB_VIOLATIONS = 3;
 export default function TestTaking() {
   const { id: testId } = useParams();
   const navigate = useNavigate();
+  const { notify } = useGamification();
 
   const [testMeta, setTestMeta] = useState(null);
   const [metaError, setMetaError] = useState(null);
@@ -630,7 +632,8 @@ export default function TestTaking() {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     setFinalizing(true);
     try {
-      await api.post(`/submissions/finalize/${attemptId}`);
+      const { data } = await api.post(`/submissions/finalize/${attemptId}`);
+      notify(data.gamification);
     } catch {
       // Best-effort — don't trap the candidate on the exam screen even if this call fails.
     } finally {

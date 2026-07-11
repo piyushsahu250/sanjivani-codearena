@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import api from "../api";
+import { useGamification } from "../context/GamificationContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 
@@ -18,6 +19,7 @@ const TYPE_LABEL = { MCQ: "Multiple Choice", FILL_BLANK: "Fill in the Blank", CO
 export default function LessonView() {
   const { slug, lessonId } = useParams();
   const navigate = useNavigate();
+  const { notify } = useGamification();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [completing, setCompleting] = useState(false);
@@ -38,6 +40,7 @@ export default function LessonView() {
       const nextStatus = data.progress?.status === "COMPLETED" ? "IN_PROGRESS" : "COMPLETED";
       const { data: progress } = await api.post(`/learning/lessons/${lessonId}/progress`, { status: nextStatus });
       setData((d) => ({ ...d, progress: { status: progress.status, bookmarked: progress.bookmarked } }));
+      notify(progress.gamification);
     } catch {
       alert("Failed to update progress");
     } finally {
@@ -64,7 +67,8 @@ export default function LessonView() {
     setAdvancing(true);
     try {
       if (data.progress?.status !== "COMPLETED") {
-        await api.post(`/learning/lessons/${lessonId}/progress`, { status: "COMPLETED" });
+        const { data: progress } = await api.post(`/learning/lessons/${lessonId}/progress`, { status: "COMPLETED" });
+        notify(progress.gamification);
       }
       navigate(`/learning/${slug}/lesson/${nextLessonId}`);
     } catch {
@@ -200,6 +204,7 @@ export default function LessonView() {
 // highlighted correct/incorrect, with the right answer + explanation shown for anything missed.
 // Passing unlocks the next module; failing just lets the student retry, no cap or cooldown.
 function ModuleTestBlock({ lessonId, questions, alreadyPassed, onPassed }) {
+  const { notify } = useGamification();
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -216,6 +221,7 @@ function ModuleTestBlock({ lessonId, questions, alreadyPassed, onPassed }) {
       const { data } = await api.post(`/learning/lessons/${lessonId}/test-submit`, { answers });
       setResult(data);
       if (data.passed) onPassed();
+      notify(data.gamification);
     } catch (err) {
       alert(err.response?.data?.error || "Failed to submit test");
     } finally {
@@ -318,6 +324,7 @@ function ModuleTestBlock({ lessonId, questions, alreadyPassed, onPassed }) {
 }
 
 function PracticeQuestionCard({ question }) {
+  const { notify } = useGamification();
   const [selected, setSelected] = useState(null);
   const [textAnswer, setTextAnswer] = useState("");
   const [result, setResult] = useState(null);
@@ -347,6 +354,7 @@ function PracticeQuestionCard({ question }) {
     try {
       const { data } = await api.post(`/learning/practice/${question.id}/run`, { language, code });
       setRunResult(data);
+      notify(data.gamification);
     } catch (err) {
       alert(err.response?.data?.error || "Execution failed");
     } finally {

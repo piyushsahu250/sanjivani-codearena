@@ -3,6 +3,7 @@ const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
 const { gradePendingCodingSubmissions } = require("../utils/gradeAttempt");
+const { processGamification } = require("../utils/gamification");
 
 const router = express.Router();
 
@@ -327,6 +328,17 @@ router.post("/attempts/:attemptId/violation", authenticate, requireRole("STUDENT
         ...(autoSubmitted ? { status: "AUTO_SUBMITTED", submittedAt: new Date() } : {}),
       },
     });
+
+    // Still counts as a completed test for XP/streak purposes (same treatment AUTO_SUBMITTED
+    // gets everywhere else on the platform) — not surfaced in this response, though, since a
+    // celebratory XP/badge toast would be a strange thing to show in the middle of a
+    // violation-triggered forced submission.
+    if (autoSubmitted) {
+      processGamification(req.user.id, { xpActivities: ["TEST_COMPLETE"], xpMeta: { attemptId: attempt.id }, streakEligible: true }).catch((e) =>
+        console.error("gamification failed", e)
+      );
+    }
+
     res.json({ tabSwitchCount: updated.tabSwitchCount, autoSubmitted });
   } catch (err) {
     console.error(err);

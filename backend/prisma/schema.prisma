@@ -89,6 +89,9 @@ model User {
   lessonProgress LessonProgress[]
   certificates    Certificate[]
   practiceRunLogs PracticeRunLog[]
+  xpEvents        XpEvent[]
+  badges          StudentBadge[]
+  streak          StudentStreak?
 }
 
 model Test {
@@ -315,6 +318,7 @@ model PracticeQuestion {
   starterCode   String?
   testCases     Json?
   language      String?
+  difficulty    Difficulty @default(EASY) // CODING only — drives the tiered solve-XP amount
   order         Int      @default(0)
   createdAt     DateTime @default(now())
 
@@ -350,4 +354,74 @@ model Certificate {
   issuedAt        DateTime @default(now())
 
   @@unique([studentId, courseId])
+}
+
+// ===================================================================
+// Gamification — XP, levels, badges, streaks, leaderboards. Gamification
+// starts counting from when this system was deployed; it does not
+// retroactively backfill XP/badges for activity that already happened.
+// ===================================================================
+
+// Admin-configurable XP amount per activity — application code looks up
+// the amount here rather than hardcoding it, so "Configure XP values" in
+// the admin panel actually takes effect.
+model XpRule {
+  activity String @id // e.g. "MODULE_COMPLETE", "MODULE_QUIZ_PASS", "CODING_EASY", "TEST_COMPLETE", "DAILY_STREAK"
+  label    String
+  xp       Int
+}
+
+// One row per XP award — an append-only ledger. Total XP is SUM(xp); this
+// doubles as the "Achievement History" list (activity + date + XP awarded).
+model XpEvent {
+  id        String   @id @default(uuid())
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String
+  activity  String
+  label     String
+  xp        Int
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([studentId, createdAt])
+}
+
+// Badge catalog — admin-manageable (create custom badges, enable/disable). `code` drives the
+// auto-award criteria in utils/gamification.js; category groups them for the Achievements page.
+model Badge {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  icon        String?
+  category    String // LEARNING, CODING, ASSESSMENT, CONSISTENCY, SPECIAL
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  earnedBy StudentBadge[]
+}
+
+model StudentBadge {
+  id        String   @id @default(uuid())
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  badgeId   String
+  earnedAt  DateTime @default(now())
+
+  @@unique([studentId, badgeId])
+  @@index([studentId])
+}
+
+// One row per student. currentStreak/longestStreak are updated lazily — only when a
+// streak-eligible activity happens (solving a coding problem or completing a lesson) — not on
+// a schedule. Read paths must treat currentStreak as stale (effectively 0) once lastActiveDate
+// is more than a day behind "today", since nothing proactively resets it on missed days.
+model StudentStreak {
+  studentId      String   @id
+  student        User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  currentStreak  Int      @default(0)
+  longestStreak  Int      @default(0)
+  lastActiveDate DateTime?
+  updatedAt      DateTime @updatedAt
 }

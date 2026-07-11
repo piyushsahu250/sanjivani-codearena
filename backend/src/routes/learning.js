@@ -6,6 +6,19 @@ const { judgeSubmission } = require("../utils/judge");
 const { runQueued } = require("../utils/queue");
 const { generateCertificatePdf } = require("../utils/certificatePdf");
 const { getModuleLockMap } = require("../utils/learningLock");
+const { processGamification } = require("../utils/gamification");
+
+// True once every lesson in a module (including its practice test) is COMPLETED for this
+// student — used to fire the one-time MODULE_COMPLETE XP award at the exact moment the last
+// lesson in a module gets completed, from whichever route that happens on.
+async function isModuleNowComplete(studentId, moduleId) {
+  const lessons = await prisma.lesson.findMany({ where: { moduleId }, select: { id: true } });
+  if (lessons.length === 0) return false;
+  const completedCount = await prisma.lessonProgress.count({
+    where: { studentId, status: "COMPLETED", lessonId: { in: lessons.map((l) => l.id) } },
+  });
+  return completedCount === lessons.length;
+}
 
 const router = express.Router();
 
@@ -180,6 +193,11 @@ router.post("/lessons/:id/progress", authenticate, requireRole("STUDENT"), async
       return res.status(400).json({ error: "Submit the practice test to complete this lesson" });
     }
 
+    const priorProgress = await prisma.lessonProgress.findUnique({
+      where: { studentId_lessonId: { studentId: req.user.id, lessonId: lesson.id } },
+    });
+    const isNewCompletion = status === "COMPLETED" && priorProgress?.status !== "COMPLETED";
+
     const data = {};
     if (status) {
       data.status = status;
@@ -192,7 +210,22 @@ router.post("/lessons/:id/progress", authenticate, requireRole("STUDENT"), async
       update: data,
       create: { studentId: req.user.id, lessonId: lesson.id, status: status || "IN_PROGRESS", bookmarked: !!bookmarked },
     });
-    res.json(progress);
+
+    let gamification = null;
+    if (isNewCompletion) {
+      try {
+        const moduleComplete = await isModuleNowComplete(req.user.id, lesson.moduleId);
+        gamification = await processGamification(req.user.id, {
+          xpActivities: moduleComplete ? ["MODULE_COMPLETE"] : [],
+          xpMeta: { moduleId: lesson.moduleId },
+          streakEligible: true,
+        });
+      } catch (e) {
+        console.error("gamification failed", e);
+      }
+    }
+
+    res.json({ ...progress, gamification });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to update progress" });
@@ -254,7 +287,24 @@ router.post("/lessons/:id/test-submit", authenticate, requireRole("STUDENT"), as
       create: { studentId: req.user.id, lessonId: lesson.id, status: nextStatus, completedAt: nextStatus === "COMPLETED" ? new Date() : null },
     });
 
-    res.json({ passed, score, correctCount, totalCount: questions.length, passThreshold: PASS_THRESHOLD, results });
+    let gamification = null;
+    if (passed) {
+      try {
+        const moduleComplete = !alreadyPassed && (await isModuleNowComplete(req.user.id, lesson.moduleId));
+        gamification = await processGamification(req.user.id, {
+          xpActivities: [
+            ...(!alreadyPassed ? ["MODULE_QUIZ_PASS"] : []),
+            ...(moduleComplete ? ["MODULE_COMPLETE"] : []),
+          ],
+          xpMeta: { lessonId: lesson.id, moduleId: lesson.moduleId },
+          streakEligible: true,
+        });
+      } catch (e) {
+        console.error("gamification failed", e);
+      }
+    }
+
+    res.json({ passed, score, correctCount, totalCount: questions.length, passThreshold: PASS_THRESHOLD, results, gamification });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to submit practice test" });
@@ -285,7 +335,9 @@ router.post("/practice/:id/check", authenticate, requireRole("STUDENT"), async (
 
 // STUDENT: run a coding practice question against its test cases. Full pass/fail detail is
 // returned — this is a learning aid, not a proctored exam, so there's no reason to hide it.
-// Every run (any verdict) is logged to PracticeRunLog — the dashboard's coding-streak signal.
+// Every run (any verdict) is logged to PracticeRunLog — the streak/badge signal. Solving a
+// problem for the first time awards tiered XP (by question difficulty); re-solving an
+// already-solved one still counts toward today's streak, just not for XP again.
 router.post("/practice/:id/run", authenticate, requireRole("STUDENT"), runLimiter, async (req, res) => {
   try {
     const q = await prisma.practiceQuestion.findUnique({ where: { id: req.params.id } });
@@ -295,9 +347,26 @@ router.post("/practice/:id/run", authenticate, requireRole("STUDENT"), runLimite
     const testCases = Array.isArray(q.testCases) ? q.testCases : [];
     const result = await runQueued(() => judgeSubmission({ language, code, testCases, timeLimitMs: 3000 }));
 
-    prisma.practiceRunLog.create({ data: { studentId: req.user.id, questionId: q.id, verdict: result.verdict } }).catch((e) => console.error("practiceRunLog failed", e));
+    let gamification = null;
+    try {
+      const alreadySolved = result.verdict === "ACCEPTED"
+        ? (await prisma.practiceRunLog.count({ where: { studentId: req.user.id, questionId: q.id, verdict: "ACCEPTED" } })) > 0
+        : false;
+      await prisma.practiceRunLog.create({ data: { studentId: req.user.id, questionId: q.id, verdict: result.verdict } });
 
-    res.json(result);
+      if (result.verdict === "ACCEPTED") {
+        const xpActivity = q.difficulty === "HARD" ? "CODING_HARD" : q.difficulty === "MEDIUM" ? "CODING_MEDIUM" : "CODING_EASY";
+        gamification = await processGamification(req.user.id, {
+          xpActivities: alreadySolved ? [] : [xpActivity],
+          xpMeta: { questionId: q.id },
+          streakEligible: true,
+        });
+      }
+    } catch (e) {
+      console.error("gamification failed", e);
+    }
+
+    res.json({ ...result, gamification });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Execution failed" });

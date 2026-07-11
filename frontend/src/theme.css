@@ -154,6 +154,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   100% { background-position: 0 50%; }
 }
 
+.gami-toast {
+  border-left: 4px solid var(--amber);
+  animation: gami-slide-in 0.3s ease, gami-fade-out 0.4s ease 4.6s forwards;
+}
+@keyframes gami-slide-in {
+  from { transform: translateX(30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes gami-fade-out {
+  to { opacity: 0; transform: translateY(-6px); }
+}
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--slate-700); border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

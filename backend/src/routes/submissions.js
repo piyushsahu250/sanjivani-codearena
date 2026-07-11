@@ -5,6 +5,7 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const { judgeSubmission } = require("../utils/judge");
 const { runQueued, getQueueStatus } = require("../utils/queue");
 const { gradePendingCodingSubmissions } = require("../utils/gradeAttempt");
+const { processGamification } = require("../utils/gamification");
 
 const router = express.Router();
 
@@ -207,7 +208,17 @@ router.post("/finalize/:attemptId", authenticate, requireRole("STUDENT"), async 
       where: { id: req.params.attemptId },
       data: { status: "SUBMITTED", submittedAt: new Date() },
     });
-    res.json(updated);
+
+    let gamification = null;
+    try {
+      gamification = await processGamification(req.user.id, {
+        xpActivities: ["TEST_COMPLETE"], xpMeta: { attemptId: attempt.id }, streakEligible: true,
+      });
+    } catch (e) {
+      console.error("gamification failed", e);
+    }
+
+    res.json({ ...updated, gamification });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to submit test" });

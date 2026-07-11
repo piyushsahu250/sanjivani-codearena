@@ -24,12 +24,14 @@ export default function StudentDashboard() {
   const [dash, setDash] = useState(null);
   const [tests, setTests] = useState(null);
   const [learning, setLearning] = useState(null);
+  const [gami, setGami] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     api.get("/dashboard/student").then((res) => setDash(res.data)).catch(() => setError("Failed to load dashboard summary"));
     api.get("/tests").then((res) => setTests(res.data)).catch(() => setTests([]));
     api.get("/learning/courses/java").then((res) => setLearning(res.data)).catch(() => setLearning(null));
+    api.get("/gamification/me").then((res) => setGami(res.data)).catch(() => setGami(null));
   }, []);
 
   const now = new Date();
@@ -69,6 +71,32 @@ export default function StudentDashboard() {
         </div>
 
         {error && <p style={{ color: "var(--rust)", marginTop: 16 }}>{error}</p>}
+
+        {/* Level & XP banner */}
+        {gami && (
+          <div className="card" style={{ padding: 20, marginTop: 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--ink-dim)" }}>Level {gami.level.level} — {gami.level.name}</div>
+              <div className="mono" style={{ fontSize: 26, fontWeight: 700, color: "var(--mint)" }}>{gami.level.totalXp} XP</div>
+              {gami.level.nextLevelName && (
+                <div style={{ height: 6, borderRadius: 3, background: "var(--line)", marginTop: 6, width: 180, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${gami.level.progressPercent}%`, background: "var(--mint)" }} />
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 11, color: "var(--ink-dim)" }}>Recent Badge</div>
+                <div style={{ fontSize: 14 }}>{gami.badges.earned[0] ? `${gami.badges.earned[0].icon} ${gami.badges.earned[0].name}` : "None yet"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "var(--ink-dim)" }}>Leaderboard Rank</div>
+                <div style={{ fontSize: 14 }}>{gami.leaderboardRank.rank ? `#${gami.leaderboardRank.rank} / ${gami.leaderboardRank.totalStudents}` : "—"}</div>
+              </div>
+              <Link to="/achievements" className="btn btn-primary" style={{ alignSelf: "center" }}>🏆 View Achievements</Link>
+            </div>
+          </div>
+        )}
 
         {/* Summary cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 24 }}>
@@ -278,6 +306,7 @@ function QuickActions({ learningResumeId }) {
       <Link to={learningResumeId ? `/learning/java/lesson/${learningResumeId}` : "/learning"} className="btn btn-primary">▶ Continue Learning</Link>
       <Link to="/learning" className="btn btn-ghost">💻 Practice Coding</Link>
       <Link to="/dashboard/performance" className="btn btn-ghost">📈 My Performance</Link>
+      <Link to="/achievements" className="btn btn-ghost">🏆 Achievements</Link>
       <Link to="/account" className="btn btn-ghost">👤 Profile</Link>
     </div>
   );

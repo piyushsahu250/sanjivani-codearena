@@ -3,75 +3,23 @@ const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { computeStudentPerformance } = require("../utils/studentPerformance");
 const { getModuleLockMap } = require("../utils/learningLock");
+const { computeClassRank } = require("../utils/classRank");
 
 const router = express.Router();
 
-// Ranks a student against classmates by overall test percentage (score summed across every
-// completed attempt, divided by the max possible across those same tests). Students with no
-// completed attempts rank last (sentinel -1), tied among themselves. Returns nulls if the
-// student has no class (nothing meaningful to rank against).
-async function computeClassRank(studentId, classId) {
-  if (!classId) return { rank: null, totalStudents: null };
-  const classmates = await prisma.user.findMany({ where: { classId, role: "STUDENT" }, select: { id: true } });
-  const ids = classmates.map((c) => c.id);
-  if (ids.length === 0) return { rank: null, totalStudents: null };
+// Reads the persisted streak (updated by utils/gamification.js on any streak-eligible
+// activity — solving a coding problem or completing a lesson). currentStreak is only updated
+// lazily on the next activity, so it must be treated as stale (effectively 0) once
+// lastActiveDate is more than a day behind today.
+async function getCodingStreak(studentId) {
+  const streak = await prisma.studentStreak.findUnique({ where: { studentId } });
+  if (!streak || !streak.lastActiveDate) return { current: 0, longest: streak?.longestStreak || 0 };
 
-  const attempts = await prisma.testAttempt.findMany({
-    where: { studentId: { in: ids }, status: { not: "IN_PROGRESS" } },
-    select: { studentId: true, testId: true, totalScore: true },
-  });
-  const testIds = [...new Set(attempts.map((a) => a.testId))];
-  const tests = testIds.length
-    ? await prisma.test.findMany({
-        where: { id: { in: testIds } },
-        select: { id: true, questions: { select: { question: { select: { points: true } } } } },
-      })
-    : [];
-  const maxByTest = new Map(tests.map((t) => [t.id, t.questions.reduce((s, q) => s + q.question.points, 0)]));
-
-  const scoreSum = new Map(), maxSum = new Map();
-  for (const a of attempts) {
-    const max = maxByTest.get(a.testId) || 0;
-    scoreSum.set(a.studentId, (scoreSum.get(a.studentId) || 0) + a.totalScore);
-    maxSum.set(a.studentId, (maxSum.get(a.studentId) || 0) + max);
-  }
-
-  const ranked = ids
-    .map((id) => {
-      const s = scoreSum.get(id) || 0, m = maxSum.get(id) || 0;
-      return { id, pct: m > 0 ? (s / m) * 100 : -1 };
-    })
-    .sort((a, b) => b.pct - a.pct);
-
-  const position = ranked.findIndex((r) => r.id === studentId) + 1;
-  return { rank: position || null, totalStudents: ids.length };
-}
-
-// Consecutive-day streak of learning-module coding practice (any Run, any verdict — showing up
-// to practice counts, not just getting it right). "Today" or "yesterday" must have activity for
-// the streak to still be considered live; otherwise it's reset to 0.
-async function computeCodingStreak(studentId) {
-  const logs = await prisma.practiceRunLog.findMany({
-    where: { studentId },
-    select: { createdAt: true },
-    orderBy: { createdAt: "desc" },
-    take: 400,
-  });
-  const days = new Set(logs.map((l) => l.createdAt.toISOString().slice(0, 10)));
-  if (days.size === 0) return 0;
-
-  const cursor = new Date();
-  cursor.setHours(0, 0, 0, 0);
-  if (!days.has(cursor.toISOString().slice(0, 10))) {
-    cursor.setDate(cursor.getDate() - 1);
-    if (!days.has(cursor.toISOString().slice(0, 10))) return 0;
-  }
-  let streak = 0;
-  while (days.has(cursor.toISOString().slice(0, 10))) {
-    streak++;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  return streak;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  const last = new Date(streak.lastActiveDate); last.setHours(0, 0, 0, 0);
+  const stillLive = last.getTime() === today.getTime() || last.getTime() === yesterday.getTime();
+  return { current: stillLive ? streak.currentStreak : 0, longest: streak.longestStreak };
 }
 
 async function getRecentActivity(studentId) {
@@ -182,10 +130,10 @@ router.get("/student", authenticate, requireRole("STUDENT"), async (req, res) =>
     const student = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!student) return res.status(404).json({ error: "Student not found" });
 
-    const [perf, rank, codingStreak, certificatesEarned, recentActivity, notifications, javaCourse] = await Promise.all([
+    const [perf, rank, streak, certificatesEarned, recentActivity, notifications, javaCourse] = await Promise.all([
       computeStudentPerformance(student.id, { maskUnpublished: true }),
       computeClassRank(student.id, student.classId),
-      computeCodingStreak(student.id),
+      getCodingStreak(student.id),
       prisma.certificate.count({ where: { studentId: student.id } }),
       getRecentActivity(student.id),
       getNotifications(student),
@@ -212,7 +160,8 @@ router.get("/student", authenticate, requireRole("STUDENT"), async (req, res) =>
         codingSolved: perf.summary.totalCodingSolved,
         mcqCorrect: perf.summary.totalMcqCorrect,
         learningProgressPercent,
-        codingStreak,
+        codingStreak: streak.current,
+        longestStreak: streak.longest,
         certificatesEarned,
       },
       performanceSummary: {
