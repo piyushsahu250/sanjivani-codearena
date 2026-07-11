@@ -9,6 +9,7 @@ const { attachRequesterInstitute } = require("../middleware/institute");
 const { sendMail } = require("../utils/mailer");
 const { computeStudentPerformance } = require("../utils/studentPerformance");
 const { generatePerformancePdf } = require("../utils/reportPdf");
+const { generateTempPassword } = require("../utils/password");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -24,10 +25,6 @@ const SELECT_FIELDS = {
   class: { select: { id: true, name: true, batchYear: true } },
 };
 
-// Deterministic auto-generated password from an institute name, e.g. "ABC Institute of Technology" -> "ABCInstituteofTechnology@123"
-function passwordForInstitute(instituteName) {
-  return `${String(instituteName).replace(/\s+/g, "")}@123`;
-}
 
 // Maps flexible spreadsheet header text -> our field names
 const FIELD_ALIASES = {
@@ -109,8 +106,8 @@ router.get("/", authenticate, requireRole("ADMIN"), async (req, res) => {
 });
 
 // ADMIN: create a Staff, Admin, or Student account directly (no self-registration needed).
-// Password is auto-generated from the institute name (InstituteName@123) — the admin never types one —
-// and the account is flagged to force a password change on first login.
+// Password is a unique, randomly generated temporary one — the admin never types one — and the
+// account is flagged to force a password change on first login.
 router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
   try {
     const { name, email, role, rollNumber, department, mobile, program, batchYear, section, instituteId, classId } = req.body;
@@ -136,7 +133,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return res.status(409).json({ error: "Email already registered" });
 
-    const generatedPassword = passwordForInstitute(institute.name);
+    const generatedPassword = generateTempPassword();
     const passwordHash = await bcrypt.hash(generatedPassword, 10);
     const user = await prisma.user.create({
       data: {
@@ -174,8 +171,8 @@ router.get("/bulk-template", authenticate, requireRole("ADMIN"), (req, res) => {
 
 // ADMIN: bulk-create student accounts from an uploaded .xlsx/.csv file.
 // Each row must name an existing Institute and, under it, an existing Class — both are validated
-// against the database. The password for each row is auto-generated from that row's institute name
-// (InstituteName@123), and the account is flagged to force a password change on first login.
+// against the database. Each row gets its own unique, randomly generated password (not shared
+// with any other row), and the account is flagged to force a password change on first login.
 router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -271,7 +268,7 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
       seenEmails.add(email);
       seenRolls.add(rollKey);
 
-      const generatedPassword = passwordForInstitute(institute.name);
+      const generatedPassword = generateTempPassword();
       const passwordHash = await bcrypt.hash(generatedPassword, 10);
 
       try {
@@ -502,20 +499,20 @@ router.get("/:id/performance/report.pdf", authenticate, requireRole("ADMIN", "ST
   }
 });
 
-// ADMIN: reset a student's (or any account's) password back to the platform default.
+// ADMIN: reset a student's (or any account's) password to a new, unique random temporary one.
 // The account is flagged to force a password change on next login, same as any other reset.
-const DEFAULT_RESET_PASSWORD = "Sanjivani@1";
 router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.params.id } });
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const passwordHash = await bcrypt.hash(DEFAULT_RESET_PASSWORD, 10);
+    const newPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(newPassword, 10);
     await prisma.user.update({
       where: { id: req.params.id },
       data: { passwordHash, mustChangePassword: true },
     });
-    res.json({ success: true, defaultPassword: DEFAULT_RESET_PASSWORD });
+    res.json({ success: true, defaultPassword: newPassword });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to reset password" });

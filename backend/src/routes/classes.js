@@ -3,9 +3,9 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
+const { generateTempPassword } = require("../utils/password");
 
 const router = express.Router();
-const DEFAULT_RESET_PASSWORD = "Sanjivani@1";
 
 // ADMIN/STAFF: list classes/programs, with a student headcount per class. Institute-scoped
 // accounts always see only their own institute; platform-level accounts (no instituteId)
@@ -154,8 +154,11 @@ router.get("/:id/students", authenticate, requireRole("ADMIN", "STAFF"), attachR
   }
 });
 
-// ADMIN: reset every student in a class back to the default password. Each account is
-// flagged to force a password change on next login, same as any other reset.
+// ADMIN: reset every student in a class to their own new, unique random temporary password —
+// NOT the same password for the whole class (a shared reset password would be exactly the kind
+// of reused-across-many-accounts secret that gets a class collectively compromised if any one
+// student's password leaks). Each account is flagged to force a password change on next login.
+// Individual per-row updates (not a single updateMany) since each student needs a distinct hash.
 router.post("/:id/bulk-reset-password", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
   try {
     const cls = await prisma.class.findUnique({ where: { id: req.params.id } });
@@ -164,12 +167,20 @@ router.post("/:id/bulk-reset-password", authenticate, requireRole("ADMIN"), atta
       return res.status(403).json({ error: "You can only manage classes under your own institute" });
     }
 
-    const passwordHash = await bcrypt.hash(DEFAULT_RESET_PASSWORD, 10);
-    const result = await prisma.user.updateMany({
+    const students = await prisma.user.findMany({
       where: { classId: req.params.id, role: "STUDENT" },
-      data: { passwordHash, mustChangePassword: true },
+      select: { id: true, name: true, email: true, rollNumber: true },
     });
-    res.json({ resetCount: result.count });
+
+    const reset = [];
+    for (const student of students) {
+      const newPassword = generateTempPassword();
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+      await prisma.user.update({ where: { id: student.id }, data: { passwordHash, mustChangePassword: true } });
+      reset.push({ id: student.id, name: student.name, email: student.email, rollNumber: student.rollNumber, newPassword });
+    }
+
+    res.json({ resetCount: reset.length, students: reset });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to bulk-reset passwords" });

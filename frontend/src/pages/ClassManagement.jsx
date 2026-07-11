@@ -14,6 +14,7 @@ export default function ClassManagement() {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ name: "", code: "", batchYear: "", instituteId: "" });
   const [resettingId, setResettingId] = useState(null);
+  const [resetResult, setResetResult] = useState(null); // { className, students: [{name,email,rollNumber,newPassword}] }
 
   function load(instituteId) {
     api.get("/classes", { params: instituteId ? { instituteId } : {} }).then((res) => setClasses(res.data));
@@ -84,7 +85,13 @@ export default function ClassManagement() {
     setResettingId(cls.id);
     try {
       const { data } = await api.post(`/classes/${cls.id}/bulk-reset-password`);
-      alert(`Reset password for ${data.resetCount} student${data.resetCount === 1 ? "" : "s"} in ${cls.name} (${cls.batchYear}) to the default password. Each will be asked to set a new one on next login.`);
+      if (data.resetCount === 0) {
+        alert(`No students in ${cls.name} (${cls.batchYear}) to reset.`);
+      } else {
+        // Each student gets their own unique new password (not one shared value) — shown here
+        // so the admin can relay them individually, same as the bulk-upload account creation flow.
+        setResetResult({ className: `${cls.name} (${cls.batchYear})`, students: data.students });
+      }
     } catch (err) {
       alert(err.response?.data?.error || "Failed to reset passwords");
     } finally {
@@ -151,6 +158,43 @@ export default function ClassManagement() {
               </select>
             </div>
           </>
+        )}
+
+        {resetResult && (
+          <div className="card" style={{ padding: 20, marginTop: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "var(--mint)" }}>
+                  Reset {resetResult.students.length} password{resetResult.students.length === 1 ? "" : "s"} in {resetResult.className}
+                </div>
+                <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>
+                  Each student got their own new temporary password — share these individually. They'll be asked to
+                  set a new one on next login.
+                </p>
+              </div>
+              <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => setResetResult(null)}>Dismiss</button>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+              <thead>
+                <tr style={{ textAlign: "left", borderBottom: "2px solid var(--line)", fontSize: 12, color: "var(--ink-dim)" }}>
+                  <th style={{ padding: "6px 4px" }}>Name</th>
+                  <th>Email</th>
+                  <th>Roll no.</th>
+                  <th>New temporary password</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resetResult.students.map((s) => (
+                  <tr key={s.id} style={{ borderBottom: "1px solid var(--line)", fontSize: 13 }}>
+                    <td style={{ padding: "6px 4px" }}>{s.name}</td>
+                    <td className="mono">{s.email}</td>
+                    <td className="mono">{s.rollNumber}</td>
+                    <td className="mono" style={{ fontWeight: 700 }}>{s.newPassword}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         <div style={{ display: "grid", gap: 10, marginTop: 20 }}>
