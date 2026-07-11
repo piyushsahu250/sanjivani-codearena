@@ -307,6 +307,7 @@ function QuickActions({ learningResumeId }) {
       <Link to="/learning" className="btn btn-ghost">💻 Practice Coding</Link>
       <Link to="/dashboard/performance" className="btn btn-ghost">📈 My Performance</Link>
       <Link to="/achievements" className="btn btn-ghost">🏆 Achievements</Link>
+      <Link to="/resume" className="btn btn-ghost">📄 Resume Builder</Link>
       <Link to="/account" className="btn btn-ghost">👤 Profile</Link>
     </div>
   );

@@ -36,6 +36,8 @@ import CourseCertificate from "./pages/CourseCertificate";
 import LearningManagement from "./pages/LearningManagement";
 import Achievements from "./pages/Achievements";
 import GamificationManagement from "./pages/GamificationManagement";
+import ResumeBuilder from "./pages/ResumeBuilder";
+import ResumeAdmin from "./pages/ResumeAdmin";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
@@ -83,6 +85,7 @@ export default function App() {
           <Route path="/test/:id/result" element={<Protected roles={["STUDENT"]}><StudentTestResult /></Protected>} />
           <Route path="/dashboard/performance" element={<Protected roles={["STUDENT"]}><StudentPerformance /></Protected>} />
           <Route path="/achievements" element={<Protected roles={["STUDENT"]}><Achievements /></Protected>} />
+          <Route path="/resume" element={<Protected roles={["STUDENT"]}><ResumeBuilder /></Protected>} />
 
           {/* Learning module — browsable by Student, Admin, and Staff (admin/staff preview content they manage) */}
           <Route path="/learning" element={<Protected roles={["STUDENT", "ADMIN", "STAFF"]}><LearningHub /></Protected>} />
@@ -103,6 +106,7 @@ export default function App() {
           <Route path="/staff" element={<Protected roles={["ADMIN", "STAFF"]}><StaffDashboard /></Protected>} />
           <Route path="/staff/learning" element={<Protected roles={["ADMIN", "STAFF"]}><LearningManagement /></Protected>} />
           <Route path="/staff/gamification" element={<Protected roles={["ADMIN", "STAFF"]}><GamificationManagement /></Protected>} />
+          <Route path="/staff/resumes" element={<Protected roles={["ADMIN", "STAFF"]}><ResumeAdmin /></Protected>} />
           <Route path="/staff/questions" element={<Protected roles={["ADMIN", "STAFF"]}><QuestionBank /></Protected>} />
           <Route path="/staff/questions/new" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />
           <Route path="/staff/questions/:id/edit" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />

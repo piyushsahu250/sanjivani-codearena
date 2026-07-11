@@ -92,6 +92,8 @@ model User {
   xpEvents        XpEvent[]
   badges          StudentBadge[]
   streak          StudentStreak?
+  resume          Resume?
+  resumeFeedback  ResumeFeedback[]
 }
 
 model Test {
@@ -424,4 +426,63 @@ model StudentStreak {
   longestStreak  Int      @default(0)
   lastActiveDate DateTime?
   updatedAt      DateTime @updatedAt
+}
+
+// ===================================================================
+// Resume Builder — one resume per student. The repeating sub-sections
+// (education, skills, projects, experience, certifications, achievements,
+// languages) are stored as JSON arrays rather than separate join tables:
+// they have no identity or use outside their parent resume, are always
+// read/written as a whole section, and this keeps "save the whole resume
+// in one PATCH" simple instead of needing 7 sets of CRUD endpoints.
+// ===================================================================
+
+model Resume {
+  id        String @id @default(uuid())
+  student   User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String @unique
+
+  template String @default("modern") // modern | professional | minimal | classic | software-engineer | fresher | experienced
+
+  fullName String?
+  photoUrl String? // external image URL — no in-house file storage, same constraint as Learning Module videos/PDFs
+  email    String?
+  mobile   String?
+  linkedin String?
+  github   String?
+  portfolio String?
+  address  String?
+  summary  String?
+
+  education      Json? // [{ degree, specialization, institution, board, startYear, endYear, score, status }]
+  skills         Json? // [{ category, name, proficiency, order }]
+  projects       Json? // [{ title, description, technologies, role, duration, githubUrl, liveUrl }]
+  experience     Json? // [{ company, title, employmentType, startDate, endDate, responsibilities, technologies }]
+  certifications Json? // [{ name, org, issueDate, expiryDate, credentialId, credentialUrl }]
+  achievements   Json? // [{ category, text }]
+  languages      Json? // [{ name, proficiency }]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Single-row admin config: which resume sections are treated as mandatory for completion/ATS
+// purposes. Seeded with sensible defaults; admins can edit via the CMS.
+model ResumeFieldConfig {
+  id                String   @id @default("default")
+  mandatorySections Json // string[] of section keys, e.g. ["summary","education","skills","projects"]
+  updatedAt         DateTime @updatedAt
+}
+
+// Lightweight admin -> student feedback notes on a resume ("Suggest improvements"), separate
+// from the auto-generated ATS suggestions.
+model ResumeFeedback {
+  id        String   @id @default(uuid())
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String
+  authorName String
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([studentId, createdAt])
 }
