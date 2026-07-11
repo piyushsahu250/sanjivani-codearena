@@ -45,12 +45,6 @@ export default function Login() {
           justifyContent: "center",
         }}
       >
-        <img
-          src="/logo.jpg"
-          alt="CodeArena"
-          style={{ height: 64, marginBottom: 16, objectFit: "contain", background: "#fff", borderRadius: 8, padding: 4 }}
-          onError={(e) => { e.currentTarget.style.display = "none"; }}
-        />
         <span className="mono" style={{ color: "var(--amber)", fontSize: 13, letterSpacing: "0.08em" }}>
           &gt;_ CODE. LEARN. ASSESS.
         </span>
