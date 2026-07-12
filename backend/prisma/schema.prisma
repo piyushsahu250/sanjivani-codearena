@@ -415,6 +415,7 @@ model ModuleCodingTest {
   maxViolations      Int      @default(3) // proctoring violations before auto-submit
   requireFullscreen  Boolean  @default(true)
   requireWebcam      Boolean  @default(false) // best-effort face presence check, see note above
+  requireMicrophone  Boolean  @default(false) // mirrors requireWebcam — mic-drop is monitored/warned but never blocks final Submit
   allowResume        Boolean  @default(true) // resume an IN_PROGRESS attempt after a browser crash/refresh
   isActive           Boolean  @default(true) // false = gate is skipped entirely, module ungated
   createdAt          DateTime @default(now())

@@ -448,7 +448,7 @@ const EMPTY_TEST_FORM = {
   title: "Module Coding Assessment", instructions: "",
   questionCount: 3, randomizeQuestions: true, passingPercent: 70, timeLimitMin: 45,
   maxAttempts: 3, cooldownMinutes: 0, maxViolations: 3,
-  requireFullscreen: true, requireWebcam: false, allowResume: true,
+  requireFullscreen: true, requireWebcam: false, requireMicrophone: false, allowResume: true,
   allowedLanguages: ["java", "python", "javascript", "c", "cpp"],
 };
 
@@ -468,7 +468,7 @@ function CodingTestPanel({ moduleId }) {
           passingPercent: res.data.passingPercent, timeLimitMin: res.data.timeLimitMin,
           maxAttempts: res.data.maxAttempts ?? "", cooldownMinutes: res.data.cooldownMinutes,
           maxViolations: res.data.maxViolations, requireFullscreen: res.data.requireFullscreen,
-          requireWebcam: res.data.requireWebcam, allowResume: res.data.allowResume,
+          requireWebcam: res.data.requireWebcam, requireMicrophone: res.data.requireMicrophone, allowResume: res.data.allowResume,
           allowedLanguages: res.data.allowedLanguages, isActive: res.data.isActive,
         });
       }
@@ -593,6 +593,9 @@ function ConfigFields({ form, setForm, toggleLanguage }) {
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
           <input type="checkbox" checked={!!form.requireWebcam} onChange={(e) => setForm({ ...form, requireWebcam: e.target.checked })} /> Require webcam (face detection)
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+          <input type="checkbox" checked={!!form.requireMicrophone} onChange={(e) => setForm({ ...form, requireMicrophone: e.target.checked })} /> Require microphone
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
           <input type="checkbox" checked={!!form.allowResume} onChange={(e) => setForm({ ...form, allowResume: e.target.checked })} /> Allow resume after crash/refresh

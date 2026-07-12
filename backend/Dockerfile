@@ -1,10 +1,14 @@
 FROM node:20-slim
 
-# Toolchains needed by the judge for C, C++, Java and Python submissions
+# Toolchains needed by the judge for C, C++, Java and Python submissions.
+# `time` (GNU time, not the bash builtin) gives the judge real per-submission peak-memory
+# reporting via `time -v -o <file>` — writing its report to a file rather than stderr keeps it
+# cleanly separate from the submitted program's own stderr output.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     default-jdk \
     python3 \
+    time \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

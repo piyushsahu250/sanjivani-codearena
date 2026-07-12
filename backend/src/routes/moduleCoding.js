@@ -97,7 +97,7 @@ router.get("/module/:moduleId", authenticate, requireRole("STUDENT"), async (req
         passingPercent: test.passingPercent, timeLimitMin: test.timeLimitMin,
         maxAttempts: test.maxAttempts, cooldownMinutes: test.cooldownMinutes,
         maxViolations: test.maxViolations, requireFullscreen: test.requireFullscreen,
-        requireWebcam: test.requireWebcam,
+        requireWebcam: test.requireWebcam, requireMicrophone: test.requireMicrophone,
       },
       lessonsComplete, attemptsUsed, attemptsRemaining, bestScore, alreadyPassed,
       cooldownRemainingSec, canStart,
@@ -139,10 +139,23 @@ router.post("/module/:moduleId/start", authenticate, requireRole("STUDENT"), asy
         if (Date.now() > deadlineOf(existing)) {
           await gradeModuleCodingAttempt(existing.id, { reason: "TIME_EXPIRED" });
         } else {
+          // Resuming (e.g. after a page refresh or a dropped connection) must restore whatever
+          // was last autosaved per question — otherwise a student's real progress, safely sitting
+          // in ModuleCodingSubmission, would appear to vanish from the editor and get silently
+          // overwritten with starter code on their next keystroke. This is the actual mechanism
+          // behind the spec's "never lose work on refresh/reconnect" requirement.
+          const submissions = await prisma.moduleCodingSubmission.findMany({ where: { attemptId: existing.id } });
+          const subByQuestion = new Map(submissions.map((s) => [s.questionId, s]));
           return res.json({
             attemptId: existing.id,
             deadline: deadlineOf(existing),
             questions: existing.questions.map((q) => sanitizeQuestion(q.question)),
+            savedAnswers: Object.fromEntries(
+              existing.questions.map((q) => {
+                const sub = subByQuestion.get(q.questionId);
+                return [q.questionId, sub ? { language: sub.language, code: sub.code } : null];
+              })
+            ),
             allowedLanguages: test.allowedLanguages,
           });
         }
@@ -327,7 +340,7 @@ router.get("/admin/module/:moduleId", authenticate, requireRole("ADMIN", "STAFF"
 
 router.post("/admin/module/:moduleId", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { title, instructions, allowedLanguages, questionCount, randomizeQuestions, passingPercent, timeLimitMin, maxAttempts, cooldownMinutes, maxViolations, requireFullscreen, requireWebcam, allowResume } = req.body;
+    const { title, instructions, allowedLanguages, questionCount, randomizeQuestions, passingPercent, timeLimitMin, maxAttempts, cooldownMinutes, maxViolations, requireFullscreen, requireWebcam, requireMicrophone, allowResume } = req.body;
     const test = await prisma.moduleCodingTest.create({
       data: {
         moduleId: req.params.moduleId,
@@ -343,6 +356,7 @@ router.post("/admin/module/:moduleId", authenticate, requireRole("ADMIN", "STAFF
         maxViolations: Number(maxViolations) || 3,
         requireFullscreen: requireFullscreen !== undefined ? !!requireFullscreen : true,
         requireWebcam: !!requireWebcam,
+        requireMicrophone: !!requireMicrophone,
         allowResume: allowResume !== undefined ? !!allowResume : true,
       },
     });
@@ -368,6 +382,7 @@ router.patch("/admin/tests/:id", authenticate, requireRole("ADMIN", "STAFF"), as
     if (f.maxViolations !== undefined) data.maxViolations = Number(f.maxViolations);
     if (f.requireFullscreen !== undefined) data.requireFullscreen = !!f.requireFullscreen;
     if (f.requireWebcam !== undefined) data.requireWebcam = !!f.requireWebcam;
+    if (f.requireMicrophone !== undefined) data.requireMicrophone = !!f.requireMicrophone;
     if (f.allowResume !== undefined) data.allowResume = !!f.allowResume;
     if (f.isActive !== undefined) data.isActive = !!f.isActive;
     const test = await prisma.moduleCodingTest.update({ where: { id: req.params.id }, data });
@@ -393,6 +408,12 @@ router.post("/admin/tests/:id/questions", authenticate, requireRole("ADMIN", "ST
     const { title, description, difficulty, timeLimitMs, starterCode, testCases } = req.body;
     if (!description) return res.status(400).json({ error: "description is required" });
     const cases = Array.isArray(testCases) ? testCases : [];
+    if (cases.filter((tc) => !tc.isHidden).length < 2) {
+      return res.status(400).json({ error: "Each question needs at least 2 visible sample test cases" });
+    }
+    if (cases.filter((tc) => tc.isHidden).length < 2) {
+      return res.status(400).json({ error: "Each question needs at least 2 hidden test cases for final evaluation" });
+    }
     const q = await prisma.question.create({
       data: {
         title: title || null, description, difficulty: difficulty || "EASY",
@@ -420,6 +441,12 @@ router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF")
     if (starterCode !== undefined) data.starterCode = starterCode;
 
     if (Array.isArray(testCases)) {
+      if (testCases.filter((tc) => !tc.isHidden).length < 2) {
+        return res.status(400).json({ error: "Each question needs at least 2 visible sample test cases" });
+      }
+      if (testCases.filter((tc) => tc.isHidden).length < 2) {
+        return res.status(400).json({ error: "Each question needs at least 2 hidden test cases for final evaluation" });
+      }
       await prisma.testCase.deleteMany({ where: { questionId: req.params.id } });
       data.testCases = { create: testCases.map((tc) => ({ input: tc.input || "", expected: tc.expected || "", isHidden: !!tc.isHidden })) };
     }

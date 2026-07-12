@@ -23,6 +23,12 @@ const path = require("path");
 const { mapWithConcurrency } = require("./queue");
 
 const CASE_CONCURRENCY = Number(process.env.JUDGE_CASE_CONCURRENCY || 2);
+const MEMORY_LIMIT_KB = Number(process.env.JUDGE_MEMORY_LIMIT_KB || 262144); // 256 MB default
+
+// Text patterns that show up in stderr when a program actually ran out of the memory budget
+// `ulimit -v` gave it, as opposed to some unrelated crash — used to report a distinct "Memory
+// Limit Exceeded" verdict instead of a generic Runtime Error.
+const OOM_PATTERNS = /cannot allocate memory|bad_alloc|outofmemoryerror|memoryerror|std::length_error|java\.lang\.outofmemory/i;
 
 // Compiled languages need the source filename to match what the compiler expects
 // (Java in particular requires the file to be named after its public class, so
@@ -92,13 +98,25 @@ function summarizeError(language, rawMessage) {
   return { line, message: summary };
 }
 
-function spawnWithTimeout(cmd, args, options, input, timeLimitMs) {
+// Runs `cmd args...` under a virtual-memory ulimit (real OS-level enforcement — a process that
+// exceeds it gets allocation failures, not just a number we report after the fact) and under
+// `/usr/bin/time -v`, which writes real peak-RSS to a separate file (statsFile) so its report
+// never gets mixed into the submitted program's own stderr.
+function spawnWithTimeout(cmd, args, options, input, timeLimitMs, { enforceMemory = true } = {}) {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { ...options, killSignal: "SIGKILL" });
+    const statsFile = path.join(os.tmpdir(), `judge-time-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+    // The memory ulimit only applies to actually running submitted code, not to compilation —
+    // javac in particular needs real JVM headroom well beyond a student program's own budget,
+    // and capping it the same way would misreport legitimate compiler memory use as an MLE.
+    const wrappedArgs = enforceMemory
+      ? ["-v", "-o", statsFile, "sh", "-c", `ulimit -v ${MEMORY_LIMIT_KB}; exec "$0" "$@"`, cmd, ...args]
+      : ["-v", "-o", statsFile, cmd, ...args];
+    const child = spawn("/usr/bin/time", wrappedArgs, { ...options, killSignal: "SIGKILL" });
 
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    const startedAt = Date.now();
 
     const killTimer = setTimeout(() => {
       timedOut = true;
@@ -113,16 +131,34 @@ function spawnWithTimeout(cmd, args, options, input, timeLimitMs) {
     child.stdout.on("data", (d) => (stdout += d.toString()));
     child.stderr.on("data", (d) => (stderr += d.toString()));
 
+    function readStatsAndCleanup() {
+      let memoryKb = null;
+      try {
+        const raw = fs.readFileSync(statsFile, "utf8");
+        const match = raw.match(/Maximum resident set size \(kbytes\):\s*(\d+)/);
+        if (match) memoryKb = Number(match[1]);
+      } catch { /* stats file may not exist if the process never actually started */ }
+      fs.rm(statsFile, () => {});
+      return memoryKb;
+    }
+
     child.on("close", (codeExit) => {
       clearTimeout(killTimer);
-      if (timedOut) return resolve({ ok: false, timedOut: true });
-      if (codeExit !== 0) return resolve({ ok: false, error: stderr || "Runtime error" });
-      resolve({ ok: true, stdout });
+      const timeMs = Date.now() - startedAt;
+      const memoryKb = readStatsAndCleanup();
+      if (timedOut) return resolve({ ok: false, timedOut: true, timeMs, memoryKb });
+      if (codeExit !== 0) {
+        const memoryExceeded = memoryKb != null && memoryKb >= MEMORY_LIMIT_KB * 0.97;
+        const oom = memoryExceeded || OOM_PATTERNS.test(stderr);
+        return resolve({ ok: false, error: stderr || "Runtime error", oom, timeMs, memoryKb });
+      }
+      resolve({ ok: true, stdout, timeMs, memoryKb });
     });
 
     child.on("error", (err) => {
       clearTimeout(killTimer);
-      resolve({ ok: false, error: err.message });
+      readStatsAndCleanup();
+      resolve({ ok: false, error: err.message, timeMs: Date.now() - startedAt });
     });
   });
 }
@@ -139,8 +175,9 @@ async function prepare(language, code) {
 
   if (runner.compile) {
     const { cmd, args } = runner.compile(file, tmpDir);
-    // Compilation gets a generous fixed budget, separate from the per-test-case run limit
-    const compileResult = await spawnWithTimeout(cmd, args, { cwd: tmpDir }, undefined, 10000);
+    // Compilation gets a generous fixed budget, separate from the per-test-case run limit, and
+    // is exempt from the execution memory ulimit (see spawnWithTimeout's enforceMemory comment).
+    const compileResult = await spawnWithTimeout(cmd, args, { cwd: tmpDir }, undefined, 10000, { enforceMemory: false });
     if (!compileResult.ok) {
       fs.rm(tmpDir, { recursive: true, force: true }, () => {});
       return {
@@ -156,7 +193,7 @@ async function prepare(language, code) {
       const { cmd, args } = runner.run(file, tmpDir);
       const result = await spawnWithTimeout(cmd, args, { cwd: tmpDir, timeout: timeLimitMs }, input, timeLimitMs);
       if (!result.ok) return result;
-      return { ok: true, stdout: result.stdout.trim() };
+      return { ok: true, stdout: result.stdout.trim(), timeMs: result.timeMs, memoryKb: result.memoryKb };
     },
     cleanup() {
       fs.rm(tmpDir, { recursive: true, force: true }, () => {});
@@ -200,8 +237,10 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }
           input: tc.input,
           expected: tc.expected,
           actual: null,
-          verdict: result.timedOut ? "TLE" : "RUNTIME_ERROR",
+          verdict: result.timedOut ? "TLE" : result.oom ? "MLE" : "RUNTIME_ERROR",
           error: result.error,
+          timeMs: result.timeMs ?? null,
+          memoryKb: result.memoryKb ?? null,
         };
       }
       const actual = result.stdout;
@@ -212,6 +251,8 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }
         expected,
         actual,
         verdict: isMatch ? "PASSED" : "WRONG_ANSWER",
+        timeMs: result.timeMs ?? null,
+        memoryKb: result.memoryKb ?? null,
       };
     });
   } finally {
@@ -222,10 +263,13 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }
 
   let verdict = "ACCEPTED";
   if (passed === 0) {
-    verdict = details.some((d) => d.verdict === "TLE") ? "TLE" : "WRONG_ANSWER";
+    verdict = details.some((d) => d.verdict === "TLE") ? "TLE" : details.some((d) => d.verdict === "MLE") ? "MLE" : "WRONG_ANSWER";
   } else if (passed < testCases.length) {
     verdict = "PARTIAL";
   }
+
+  const maxTimeMs = details.reduce((max, d) => (d.timeMs != null && d.timeMs > max ? d.timeMs : max), 0);
+  const maxMemoryKb = details.reduce((max, d) => (d.memoryKb != null && d.memoryKb > max ? d.memoryKb : max), 0);
 
   // Only surface a technical error summary when every case failed the same way — a mixed
   // pass/fail result (verdict PARTIAL) stays silent here since exposing it would leak how
@@ -233,14 +277,16 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }
   let errorSummary = null;
   if (passed === 0) {
     if (verdict === "TLE") {
-      errorSummary = { type: "Time Limit Exceeded", line: null, message: "Your program took too long to produce output." };
+      errorSummary = { type: "Time Limit Exceeded", line: null, message: "Your program took too long to produce output — the algorithm is likely too slow for the input size; try a more efficient approach." };
+    } else if (verdict === "MLE") {
+      errorSummary = { type: "Memory Limit Exceeded", line: null, message: "Your program used more memory than allowed — check for unbounded data structures, infinite recursion, or unnecessarily large allocations." };
     } else {
       const errored = details.find((d) => d.verdict === "RUNTIME_ERROR");
       if (errored) errorSummary = { type: "Runtime Error", ...summarizeError(language, errored.error) };
     }
   }
 
-  return { passedCases: passed, totalCases: testCases.length, verdict, details, errorSummary };
+  return { passedCases: passed, totalCases: testCases.length, verdict, details, errorSummary, maxTimeMs, maxMemoryKb: maxMemoryKb || null };
 }
 
 module.exports = { judgeSubmission };

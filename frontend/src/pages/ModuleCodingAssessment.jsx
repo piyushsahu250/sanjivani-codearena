@@ -31,6 +31,7 @@ const VIOLATION_LABEL = {
   FACE_MISSING: "no face being detected in the camera frame",
   MULTIPLE_FACES: "multiple faces being detected in the camera frame",
   CAMERA_DROPPED: "your camera being turned off or disconnected",
+  MIC_DROPPED: "your microphone being turned off or disconnected",
 };
 
 export default function ModuleCodingAssessment() {
@@ -56,12 +57,27 @@ export default function ModuleCodingAssessment() {
   const [violationWarning, setViolationWarning] = useState(null);
   const [violationCount, setViolationCount] = useState(0);
   const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [editorHeight, setEditorHeight] = useState(() => Number(localStorage.getItem("moduleCodingEditorHeight")) || 420);
+  const resizingRef = useRef(false);
 
   const deadlineRef = useRef(null);
   const attemptIdRef = useRef(null);
   const finalizedRef = useRef(false);
   const lastSavedCodeRef = useRef({});
   const timerRef = useRef(null);
+  // Mirrors of state, kept current via effects below — flushAutosave reads through these refs
+  // (not the state variables directly) specifically so it never sees stale data no matter when
+  // its enclosing closure was created. This is what fixes a real scoring bug: the previous
+  // version's autosave only ever flushed the single currently-active question, and its
+  // "flush when switching away" effect closed over `answers` from whenever `activeIdx` last
+  // changed — not the latest keystrokes — so a question's actual final code could silently never
+  // reach the server (or reach it as stale starter code) while another question's did, producing
+  // exactly the "solved everything but scored 33%" pattern (100% on the one question that did
+  // save, 0% on two that didn't/couldn't).
+  const answersRef = useRef({});
+  const questionsRef = useRef([]);
+  useEffect(() => { answersRef.current = answers; }, [answers]);
+  useEffect(() => { questionsRef.current = questions; }, [questions]);
 
   function load() {
     setPhase("loading");
@@ -96,8 +112,10 @@ export default function ModuleCodingAssessment() {
     active: phase === "active",
     requireFullscreen: status?.test?.requireFullscreen !== false,
     requireWebcam: !!status?.test?.requireWebcam,
+    requireMicrophone: !!status?.test?.requireMicrophone,
     onViolation,
   });
+  const micBlocked = !!status?.test?.requireMicrophone && proctor.micStatus === "UNAVAILABLE";
 
   async function beginOrResume() {
     setPhase("starting");
@@ -112,10 +130,16 @@ export default function ModuleCodingAssessment() {
       setQuestions(data.questions);
       setAllowedLanguages(Array.isArray(data.allowedLanguages) ? data.allowedLanguages : ["java"]);
 
+      // On resume (page refresh, dropped connection, etc.), the server returns whatever was last
+      // autosaved per question — restore that instead of wiping back to starter code, otherwise
+      // real, already-saved progress would appear to vanish from the editor.
       const initialAnswers = {};
       data.questions.forEach((q) => {
-        const lang = (Array.isArray(data.allowedLanguages) && data.allowedLanguages[0]) || "java";
-        initialAnswers[q.id] = { language: lang, code: q.starterCode || defaultStarter(lang) };
+        const saved = data.savedAnswers?.[q.id];
+        const lang = saved?.language || (Array.isArray(data.allowedLanguages) && data.allowedLanguages[0]) || "java";
+        const code = saved?.code ?? (q.starterCode || defaultStarter(lang));
+        initialAnswers[q.id] = { language: lang, code };
+        if (saved) lastSavedCodeRef.current[q.id] = `${lang}:${code}`;
       });
       setAnswers(initialAnswers);
       setSecondsLeft(Math.max(0, Math.floor((data.deadline - Date.now()) / 1000)));
@@ -141,36 +165,71 @@ export default function ModuleCodingAssessment() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, secondsLeft !== null]);
 
-  // Auto-save every 10 seconds (spec-required interval) — only the active question's code, only
-  // if it changed since the last save.
+  // Auto-save every 10 seconds (spec-required interval) — flushes EVERY question's latest code,
+  // not just the active one, reading through refs so this timer never needs `answers` in its
+  // deps (which would otherwise reset the interval on every keystroke and could go long stretches
+  // without ever actually firing while a student types continuously).
   useEffect(() => {
     if (phase !== "active") return;
     const interval = setInterval(() => flushAutosave(), AUTOSAVE_INTERVAL_MS);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, activeIdx, answers]);
+  }, [phase]);
 
-  async function flushAutosave() {
-    const q = questions[activeIdx];
-    if (!q || !attemptIdRef.current || finalizedRef.current) return;
-    const a = answers[q.id];
-    if (!a) return;
-    const key = `${a.language}:${a.code}`;
-    if (lastSavedCodeRef.current[q.id] === key) return;
-    try {
-      await api.post(`/module-coding/attempts/${attemptIdRef.current}/autosave`, { questionId: q.id, language: a.language, code: a.code });
-      lastSavedCodeRef.current[q.id] = key;
-      setLastSavedAt(new Date());
-    } catch {
-      // best-effort — retried on the next interval tick
-    }
+  // questionId omitted = flush every question currently held in state; specify one to flush just
+  // that question (used for the "leaving this question" nicety below). Always reads the latest
+  // values via refs, so it's correct regardless of when the calling closure was created.
+  async function flushAutosave(questionId) {
+    if (!attemptIdRef.current || finalizedRef.current) return;
+    const ids = questionId ? [questionId] : questionsRef.current.map((q) => q.id);
+    await Promise.all(ids.map(async (qid) => {
+      const a = answersRef.current[qid];
+      if (!a) return;
+      const key = `${a.language}:${a.code}`;
+      if (lastSavedCodeRef.current[qid] === key) return;
+      try {
+        await api.post(`/module-coding/attempts/${attemptIdRef.current}/autosave`, { questionId: qid, language: a.language, code: a.code });
+        lastSavedCodeRef.current[qid] = key;
+        setLastSavedAt(new Date());
+      } catch {
+        // best-effort — retried on the next interval tick, and unconditionally again at finalize()
+      }
+    }));
   }
 
-  // Flush the outgoing question's code the moment the candidate navigates away from it.
+  // Flush the outgoing question's code the moment the candidate navigates away from it — a
+  // latency nicety, not the safety net (finalize() below flushes everything unconditionally).
   useEffect(() => {
-    return () => { if (phase === "active") flushAutosave(); };
+    const outgoingId = questions[activeIdx]?.id;
+    return () => { if (outgoingId) flushAutosave(outgoingId); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIdx]);
+
+  // Resizable editor — drag the handle between editor and results panel. Height persists across
+  // questions (it's a single piece of state, never reset by activeIdx) and across sessions via
+  // localStorage. Min/max clamp keeps the editor from being dragged unusably small or off-screen.
+  function startResize(e) {
+    resizingRef.current = true;
+    document.body.style.cursor = "row-resize";
+    e.preventDefault();
+  }
+  useEffect(() => {
+    function onMove(e) {
+      if (!resizingRef.current) return;
+      setEditorHeight((h) => Math.min(800, Math.max(200, h + e.movementY)));
+    }
+    function onUp() {
+      if (!resizingRef.current) return;
+      resizingRef.current = false;
+      document.body.style.cursor = "";
+      setEditorHeight((h) => { localStorage.setItem("moduleCodingEditorHeight", String(h)); return h; });
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
 
   const current = questions[activeIdx];
   const answer = current ? answers[current.id] : null;
@@ -329,7 +388,8 @@ export default function ModuleCodingAssessment() {
 
             <p style={{ fontSize: 13, marginTop: 16, color: "var(--ink-dim)" }}>
               This assessment runs in fullscreen. Switching tabs, exiting fullscreen, copy/paste, right-click, and
-              devtools shortcuts are blocked or logged{t.requireWebcam ? ", and your face must stay visible in the camera" : ""}.
+              devtools shortcuts are blocked or logged{t.requireWebcam ? ", your face must stay visible in the camera" : ""}
+              {t.requireMicrophone ? ", and your microphone must stay enabled" : ""}.
               Exceeding {t.maxViolations} violations auto-submits your assessment.
             </p>
 
@@ -341,18 +401,20 @@ export default function ModuleCodingAssessment() {
               <Banner color="var(--rust)">You've used all allowed attempts. Contact your instructor for an additional attempt.</Banner>
             ) : !status.activeAttemptId && status.cooldownRemainingSec > 0 ? (
               <Banner color="var(--amber-dark)">Please wait {Math.ceil(status.cooldownRemainingSec / 60)} more minute(s) before retrying.</Banner>
-            ) : t.requireWebcam && !status.activeAttemptId ? (
+            ) : (t.requireWebcam || t.requireMicrophone) && !status.activeAttemptId ? (
               <div style={{ marginTop: 16, padding: 16, border: "1px solid var(--line)", borderRadius: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>Camera check</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>
+                  {t.requireWebcam && t.requireMicrophone ? "Camera & microphone check" : t.requireMicrophone ? "Microphone check" : "Camera check"}
+                </div>
                 {proctor.mediaGranted ? (
                   <>
-                    <video ref={proctor.videoRef} autoPlay muted playsInline style={{ width: 160, height: 120, borderRadius: 8, marginTop: 10, background: "#000", objectFit: "cover" }} />
-                    <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 8, fontWeight: 600 }}>✓ Camera ready</p>
+                    {t.requireWebcam && <video ref={proctor.videoRef} autoPlay muted playsInline style={{ width: 160, height: 120, borderRadius: 8, marginTop: 10, background: "#000", objectFit: "cover" }} />}
+                    <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 8, fontWeight: 600 }}>✓ Ready</p>
                   </>
                 ) : (
                   <>
                     <button className="btn btn-dark" style={{ marginTop: 10 }} onClick={proctor.requestMedia} disabled={proctor.requestingMedia}>
-                      {proctor.requestingMedia ? "Requesting access…" : "Grant camera access"}
+                      {proctor.requestingMedia ? "Requesting access…" : t.requireWebcam && t.requireMicrophone ? "Grant camera & microphone access" : t.requireMicrophone ? "Grant microphone access" : "Grant camera access"}
                     </button>
                     {proctor.mediaError && <p style={{ fontSize: 12, color: "var(--rust)", marginTop: 8 }}>{proctor.mediaError}</p>}
                   </>
@@ -362,9 +424,9 @@ export default function ModuleCodingAssessment() {
 
             <button
               className="btn btn-primary"
-              style={{ marginTop: 20, width: "100%", padding: "12px 24px", opacity: status.canStart && (!t.requireWebcam || proctor.mediaGranted || status.activeAttemptId) ? 1 : 0.4 }}
+              style={{ marginTop: 20, width: "100%", padding: "12px 24px", opacity: status.canStart && (!(t.requireWebcam || t.requireMicrophone) || proctor.mediaGranted || status.activeAttemptId) ? 1 : 0.4 }}
               onClick={beginOrResume}
-              disabled={phase === "starting" || !status.canStart || (t.requireWebcam && !status.activeAttemptId && !proctor.mediaGranted)}
+              disabled={phase === "starting" || !status.canStart || ((t.requireWebcam || t.requireMicrophone) && !status.activeAttemptId && !proctor.mediaGranted)}
             >
               {phase === "starting" ? "Starting…" : status.activeAttemptId ? "Resume Assessment (Fullscreen)" : "Begin Assessment (Fullscreen)"}
             </button>
@@ -388,6 +450,15 @@ export default function ModuleCodingAssessment() {
         </div>
         <button className="btn btn-primary" onClick={() => finalize(null)}>Submit Assessment</button>
       </div>
+
+      {micBlocked && (
+        <div className="mono" style={{ background: "var(--rust)", color: "#fff", padding: "12px 24px", fontSize: 13, fontWeight: 700, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 14, flexWrap: "wrap" }}>
+          <span>🎙 Microphone is disabled. Please enable your microphone to continue.</span>
+          <button className="btn btn-ghost" style={{ borderColor: "#fff", color: "#fff" }} onClick={proctor.requestMedia} disabled={proctor.requestingMedia}>
+            {proctor.requestingMedia ? "Reconnecting…" : "Re-enable Microphone"}
+          </button>
+        </div>
+      )}
 
       {status.test.requireWebcam && (
         <video ref={proctor.videoRef} autoPlay muted playsInline style={{
@@ -460,13 +531,13 @@ export default function ModuleCodingAssessment() {
             <select value={answer?.language || allowedLanguages[0]} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
               {ALL_LANGUAGES.filter((l) => allowedLanguages.includes(l.id)).map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
-            <button className="btn btn-ghost" onClick={handleRun} disabled={running}>{running ? "Running…" : "▶ Run sample"}</button>
+            <button className="btn btn-ghost" onClick={handleRun} disabled={running || micBlocked}>{running ? "Running…" : "▶ Run sample"}</button>
           </div>
           <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", padding: "6px 16px 0" }}>
             Your code is auto-saved every 10 seconds. "Run sample" checks against sample cases only — your saved code
             is graded against all (including hidden) test cases when you submit.
           </p>
-          <div style={{ flex: 1, minHeight: 0 }}>
+          <div style={{ height: editorHeight, minHeight: 0, flexShrink: 0 }}>
             <Editor
               height="100%"
               language={ALL_LANGUAGES.find((l) => l.id === answer?.language)?.monaco}
@@ -476,7 +547,14 @@ export default function ModuleCodingAssessment() {
               options={{ fontSize: 14, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace" }}
             />
           </div>
-          <div style={{ height: 160, overflowY: "auto", padding: 16, background: "#FBF9F4", flexShrink: 0 }}>
+          <div
+            onMouseDown={startResize}
+            title="Drag to resize editor"
+            style={{ height: 9, cursor: "row-resize", background: "var(--line)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <div style={{ width: 40, height: 3, borderRadius: 2, background: "var(--ink-dim)" }} />
+          </div>
+          <div style={{ flex: 1, minHeight: 80, overflowY: "auto", padding: 16, background: "#FBF9F4" }}>
             {running && <p className="mono" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>⏳ Compiling and running…</p>}
             {!running && runResult && <ResultBlock result={runResult} />}
           </div>
@@ -521,10 +599,22 @@ function ResultBlock({ result }) {
       <div className="mono" style={{ fontWeight: 700, color }}>
         {result.verdict} — {result.passedCases}/{result.totalCases} sample cases passed
       </div>
+      <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 4 }}>
+        {result.maxTimeMs != null && `⏱ ${result.maxTimeMs} ms`}
+        {result.maxMemoryKb != null && ` · 💾 ${(result.maxMemoryKb / 1024).toFixed(1)} MB`}
+      </div>
       {result.details?.map((d, i) => (
         <div key={i} style={{ fontSize: 12, marginTop: 6 }} className="mono">
           <span style={{ color: d.verdict === "PASSED" ? "var(--mint)" : "var(--rust)" }}>[{d.verdict}]</span>{" "}
-          input: {d.input} | expected: {d.expected} | got: {d.actual ?? d.error}
+          input: {d.input}
+          {d.verdict === "PASSED" ? (
+            <> | output: {d.actual}</>
+          ) : d.verdict === "WRONG_ANSWER" ? (
+            <> | expected: {d.expected} | your output: {d.actual}</>
+          ) : (
+            <> | {d.error || "no output"}</>
+          )}
+          {d.timeMs != null && <span style={{ color: "var(--ink-dim)" }}> ({d.timeMs} ms)</span>}
         </div>
       ))}
     </div>

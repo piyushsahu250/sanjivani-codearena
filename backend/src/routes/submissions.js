@@ -37,7 +37,7 @@ function sanitizeSubmitResponse(question, result) {
   if (question.questionType !== "CODING") {
     return { status: "SUBMITTED" };
   }
-  if (result.verdict === "COMPILE_ERROR" || result.verdict === "TLE") {
+  if (result.verdict === "COMPILE_ERROR" || result.verdict === "TLE" || result.verdict === "MLE") {
     return { status: result.verdict, error: result.errorSummary };
   }
   if (result.errorSummary) {
