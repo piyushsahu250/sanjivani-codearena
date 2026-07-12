@@ -411,6 +411,22 @@ router.get("/courses/:slug/certificate", authenticate, requireRole("STUDENT"), a
   }
 });
 
+// PUBLIC (no auth) — reached via the certificate's "Verify Certificate" link / QR-equivalent,
+// same pattern as the interview certificate's /certificate/verify/:code.
+router.get("/certificate/verify/:code", async (req, res) => {
+  try {
+    const cert = await prisma.certificate.findUnique({
+      where: { certificateCode: req.params.code },
+      include: { student: { select: { name: true } }, course: { select: { name: true } } },
+    });
+    if (!cert) return res.status(404).json({ valid: false });
+    res.json({ valid: true, studentName: cert.student.name, courseName: cert.course.name, issuedAt: cert.issuedAt, certificateCode: cert.certificateCode });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ valid: false, error: "Verification failed" });
+  }
+});
+
 // STUDENT: download the certificate as a PDF (must already be eligible/issued).
 router.get("/courses/:slug/certificate/download", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {

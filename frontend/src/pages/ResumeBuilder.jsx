@@ -843,9 +843,17 @@ function VersionHistoryCard({ onRestore }) {
   const [versions, setVersions] = useState([]);
   const [compareIds, setCompareIds] = useState([]);
   const [compareResult, setCompareResult] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [clearingAll, setClearingAll] = useState(false);
+  const [notice, setNotice] = useState("");
 
   function load() { api.get("/resume/me/versions").then((res) => setVersions(res.data)); }
   useEffect(load, []);
+
+  function flash(msg) {
+    setNotice(msg);
+    setTimeout(() => setNotice((m) => (m === msg ? "" : m)), 4000);
+  }
 
   async function restore(id) {
     if (!confirm("Restore this version? Your current state is saved first, so this can be undone.")) return;
@@ -855,6 +863,54 @@ function VersionHistoryCard({ onRestore }) {
       load();
     } catch (err) {
       alert(err.response?.data?.error || "Failed to restore this version");
+    }
+  }
+
+  async function downloadVersion(id) {
+    setBusyId(id);
+    try {
+      const { data } = await api.get(`/resume/me/versions/${id}/pdf`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = "resume-version.pdf";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Failed to download this version");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function deleteVersion(id) {
+    if (!confirm("Delete this saved version? This action cannot be undone.")) return;
+    setBusyId(id);
+    try {
+      await api.delete(`/resume/me/versions/${id}`);
+      setCompareIds((prev) => prev.filter((x) => x !== id));
+      setCompareResult(null);
+      load();
+      flash("Resume version deleted successfully.");
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to delete this version");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function clearAll() {
+    if (!confirm("Are you sure you want to permanently delete all saved resume versions? This action cannot be undone.")) return;
+    setClearingAll(true);
+    try {
+      await api.delete("/resume/me/versions");
+      setCompareIds([]);
+      setCompareResult(null);
+      load();
+      flash("All resume versions cleared successfully.");
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to clear version history");
+    } finally {
+      setClearingAll(false);
     }
   }
 
@@ -872,18 +928,30 @@ function VersionHistoryCard({ onRestore }) {
 
   return (
     <div className="card" style={{ padding: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>Version History</div>
-        {compareIds.length === 2 && <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={runCompare}>Compare selected</button>}
+        <div style={{ display: "flex", gap: 6 }}>
+          {compareIds.length === 2 && <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={runCompare}>Compare selected</button>}
+          {versions.length > 0 && (
+            <button className="btn btn-ghost" style={{ fontSize: 11, color: "var(--rust)", borderColor: "var(--rust)" }} onClick={clearAll} disabled={clearingAll}>
+              {clearingAll ? "Clearing…" : "Clear All Versions"}
+            </button>
+          )}
+        </div>
       </div>
+      {notice && <p style={{ fontSize: 11, color: "var(--mint)", marginTop: 6, fontWeight: 600 }}>✓ {notice}</p>}
       <div style={{ display: "grid", gap: 6, marginTop: 10, maxHeight: 220, overflowY: "auto" }}>
         {versions.map((v) => (
-          <div key={v.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+          <div key={v.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, gap: 6, flexWrap: "wrap" }}>
             <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
               <input type="checkbox" checked={compareIds.includes(v.id)} onChange={() => toggleCompare(v.id)} />
               <span className="mono">{new Date(v.createdAt).toLocaleString()}</span> — {v.atsScore}/100
             </label>
-            <button className="btn btn-ghost" style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => restore(v.id)}>Restore</button>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button className="btn btn-ghost" style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => restore(v.id)} disabled={busyId === v.id}>Restore</button>
+              <button className="btn btn-ghost" style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => downloadVersion(v.id)} disabled={busyId === v.id}>Download</button>
+              <button className="btn btn-ghost" style={{ fontSize: 11, padding: "2px 8px", color: "var(--rust)" }} onClick={() => deleteVersion(v.id)} disabled={busyId === v.id}>Delete</button>
+            </div>
           </div>
         ))}
         {versions.length === 0 && <p style={{ fontSize: 12, color: "var(--ink-dim)" }}>No saved versions yet — one is captured automatically each time you save.</p>}

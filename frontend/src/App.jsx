@@ -36,6 +36,7 @@ import StudentPerformance from "./pages/StudentPerformance";
 import LearningHub from "./pages/LearningHub";
 import CourseOverview from "./pages/CourseOverview";
 import CourseCertificate from "./pages/CourseCertificate";
+import CourseCertificateVerify from "./pages/CourseCertificateVerify";
 import LearningManagement from "./pages/LearningManagement";
 import Achievements from "./pages/Achievements";
 import GamificationManagement from "./pages/GamificationManagement";
@@ -80,6 +81,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/change-password" element={<ForceChangePassword />} />
           <Route path="/interview/verify/:code" element={<InterviewVerify />} />
+          <Route path="/learning/certificate/verify/:code" element={<CourseCertificateVerify />} />
           <Route path="/account" element={<Protected><AccountSettings /></Protected>} />
 
           {/* Student */}

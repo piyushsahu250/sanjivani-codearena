@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import CertificateShareBar from "../components/CertificateShareBar";
 import "./interviewPrep.css";
 
 export default function InterviewCertificate() {
@@ -57,9 +58,15 @@ export default function InterviewCertificate() {
               Certificate ID: {cert.certificateCode}<br />
               Issued: {new Date(cert.issuedAt).toLocaleDateString()}
             </p>
-            <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={download} disabled={downloading}>
-              {downloading ? "Preparing…" : "Download PDF"}
-            </button>
+            <CertificateShareBar
+              verifyUrl={`${window.location.origin}/interview/verify/${cert.certificateCode}`}
+              downloadFn={download}
+              downloading={downloading}
+              studentName={cert.studentName}
+              credentialName="Interview Ready Certificate"
+              issueDate={cert.issuedAt}
+              certificateCode={cert.certificateCode}
+            />
           </div>
         )}
       </div>

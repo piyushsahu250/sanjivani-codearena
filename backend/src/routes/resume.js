@@ -337,6 +337,50 @@ router.get("/me/versions/:id", authenticate, requireRole("STUDENT"), async (req,
   }
 });
 
+router.get("/me/versions/:id/pdf", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!resume) return res.status(404).json({ error: "No resume found" });
+    const version = await prisma.resumeVersion.findUnique({ where: { id: req.params.id } });
+    if (!version || version.resumeId !== resume.id) return res.status(404).json({ error: "Version not found" });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${resumeFilename(version.snapshot, "pdf")}"`);
+    generateResumePdf(version.snapshot, res);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to generate PDF for this version" });
+  }
+});
+
+// Delete one saved version — does not touch the active resume or any other version.
+router.delete("/me/versions/:id", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!resume) return res.status(404).json({ error: "No resume found" });
+    const version = await prisma.resumeVersion.findUnique({ where: { id: req.params.id } });
+    if (!version || version.resumeId !== resume.id) return res.status(404).json({ error: "Version not found" });
+    await prisma.resumeVersion.delete({ where: { id: version.id } });
+    res.json({ message: "Resume version deleted successfully." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete version" });
+  }
+});
+
+// Clear every saved version for this student's resume — the active resume itself is untouched
+// (ResumeVersion is a separate table; deleting rows here never affects the Resume record).
+router.delete("/me/versions", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!resume) return res.status(404).json({ error: "No resume found" });
+    await prisma.resumeVersion.deleteMany({ where: { resumeId: resume.id } });
+    res.json({ message: "All resume versions cleared successfully." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to clear version history" });
+  }
+});
+
 router.post("/me/versions/:id/restore", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
     const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });

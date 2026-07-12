@@ -165,18 +165,44 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
   const [mediaError, setMediaError] = useState(null);
   const [requestingMedia, setRequestingMedia] = useState(false);
   const mediaStreamRef = useRef(null);
-  const videoRef = useRef(null);
+  const videoNodeRef = useRef(null);
   const [faceStatus, setFaceStatus] = useState("OK"); // OK | MISSING | MULTIPLE
   const faceStatusRef = useRef("OK");
   const faceModelRef = useRef(null);
+
+  const stopMedia = useCallback(() => {
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
+  }, []);
+
+  // Callback ref (not a plain object ref) — every consumer of this hook renders a *different*
+  // <video> element for the preflight camera-check preview vs. the persistent in-session video
+  // badge (two separate DOM nodes at two different points in the render tree). A plain object
+  // ref only gets reattached by React on mount; it doesn't re-run any effect. An effect keyed off
+  // `mediaGranted` alone (the previous implementation) therefore only ever attached the live
+  // MediaStream to the FIRST video element it saw and silently went dark — readyState stuck at 0
+  // — the moment the second one mounted. That's exactly what was starving face detection during
+  // the actual interview/assessment (readyState < 2 guard below never passed), even though the
+  // camera-check preview during preflight looked fine. Using a callback ref re-attaches the
+  // stream every time the mounted node changes, so it stays correct across the phase transition.
+  const setVideoNode = useCallback((node) => {
+    videoNodeRef.current = node;
+    if (node && mediaStreamRef.current) node.srcObject = mediaStreamRef.current;
+  }, []);
 
   const requestMedia = useCallback(async () => {
     setRequestingMedia(true);
     setMediaError(null);
     try {
+      stopMedia(); // release any stale/partially-live stream before reacquiring
       const stream = await navigator.mediaDevices.getUserMedia({ video: requireWebcam, audio: requireMicrophone });
       mediaStreamRef.current = stream;
+      if (videoNodeRef.current) videoNodeRef.current.srcObject = stream;
       setMediaGranted(true);
+      cameraStatusRef.current = "OK";
+      setCameraStatus("OK");
+      micStatusRef.current = "OK";
+      setMicStatus("OK");
     } catch (err) {
       setMediaError(
         err.name === "NotAllowedError"
@@ -189,18 +215,13 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
     } finally {
       setRequestingMedia(false);
     }
-  }, [requireWebcam, requireMicrophone]);
+  }, [requireWebcam, requireMicrophone, stopMedia]);
 
-  const stopMedia = useCallback(() => {
-    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-    mediaStreamRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    if (mediaGranted && videoRef.current && mediaStreamRef.current) {
-      videoRef.current.srcObject = mediaStreamRef.current;
-    }
-  }, [mediaGranted]);
+  // ---- Camera / microphone device availability (ongoing status, not just a one-shot event) ----
+  const [cameraStatus, setCameraStatus] = useState("OK"); // OK | UNAVAILABLE
+  const [micStatus, setMicStatus] = useState("OK"); // OK | UNAVAILABLE
+  const cameraStatusRef = useRef("OK");
+  const micStatusRef = useRef("OK");
 
   useEffect(() => {
     if (!requireWebcam) return;
@@ -218,11 +239,13 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
 
   useEffect(() => {
     if (!active || !requireWebcam) return;
-    const video = videoRef.current;
-    if (!video) return;
     const interval = setInterval(async () => {
+      // Read the node fresh on every tick (not captured once outside the interval) — the
+      // preflight and in-session video elements are different DOM nodes, and this effect's
+      // lifetime spans both when `active` flips true right as the session view mounts.
+      const video = videoNodeRef.current;
       const model = faceModelRef.current;
-      if (!model || document.hidden || video.readyState < 2) return;
+      if (!video || !model || document.hidden || video.readyState < 2) return;
       let predictions;
       try {
         predictions = await model.estimateFaces(video, false);
@@ -241,26 +264,49 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
     return () => clearInterval(interval);
   }, [active, requireWebcam, report]);
 
+  // Ongoing camera/microphone availability — exposed as persistent status (like faceStatus),
+  // not just a one-shot violation event, so the UI can show a standing "camera/mic unavailable"
+  // banner that clears itself the moment the device comes back, the same way faceStatus does.
+  // Checks both `readyState` (device physically stopped/disconnected/revoked) and `enabled`
+  // (track muted programmatically) — either alone missed real-world drop scenarios reported as
+  // "not reliably detecting". Polls every 2s (was 5s) since a mic/camera outage during a live
+  // interview needs to surface fast, not lag up to 5 seconds behind.
   useEffect(() => {
     if (!active || (!requireWebcam && !requireMicrophone)) return;
     const stream = mediaStreamRef.current;
     if (!stream) return;
-    function handleEnded(kind) {
-      return () => report(kind === "video" ? "CAMERA_DROPPED" : "MIC_DROPPED");
+
+    function checkTracks() {
+      const videoTracks = stream.getVideoTracks();
+      const audioTracks = stream.getAudioTracks();
+      if (requireWebcam && videoTracks.length) {
+        const live = videoTracks.every((t) => t.readyState === "live" && t.enabled);
+        const next = live ? "OK" : "UNAVAILABLE";
+        if (next !== cameraStatusRef.current) {
+          cameraStatusRef.current = next;
+          setCameraStatus(next);
+          if (next === "UNAVAILABLE") report("CAMERA_DROPPED");
+        }
+      }
+      if (requireMicrophone && audioTracks.length) {
+        const live = audioTracks.every((t) => t.readyState === "live" && t.enabled);
+        const next = live ? "OK" : "UNAVAILABLE";
+        if (next !== micStatusRef.current) {
+          micStatusRef.current = next;
+          setMicStatus(next);
+          if (next === "UNAVAILABLE") report("MIC_DROPPED");
+        }
+      }
     }
+
     const videoTracks = stream.getVideoTracks();
     const audioTracks = stream.getAudioTracks();
-    const onVideoEnded = handleEnded("video");
-    const onAudioEnded = handleEnded("audio");
-    videoTracks.forEach((t) => t.addEventListener("ended", onVideoEnded));
-    audioTracks.forEach((t) => t.addEventListener("ended", onAudioEnded));
-    const poll = setInterval(() => {
-      if (videoTracks.length && !videoTracks.every((t) => t.readyState === "live")) report("CAMERA_DROPPED");
-      if (audioTracks.length && !audioTracks.every((t) => t.readyState === "live")) report("MIC_DROPPED");
-    }, 5000);
+    videoTracks.forEach((t) => t.addEventListener("ended", checkTracks));
+    audioTracks.forEach((t) => t.addEventListener("ended", checkTracks));
+    const poll = setInterval(checkTracks, 2000);
     return () => {
-      videoTracks.forEach((t) => t.removeEventListener("ended", onVideoEnded));
-      audioTracks.forEach((t) => t.removeEventListener("ended", onAudioEnded));
+      videoTracks.forEach((t) => t.removeEventListener("ended", checkTracks));
+      audioTracks.forEach((t) => t.removeEventListener("ended", checkTracks));
       clearInterval(poll);
     };
   }, [active, requireWebcam, requireMicrophone, report]);
@@ -327,7 +373,7 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
 
   return {
     requestFullscreen,
-    mediaGranted, mediaError, requestingMedia, requestMedia, stopMedia, videoRef, faceStatus,
-    noiseWarning,
+    mediaGranted, mediaError, requestingMedia, requestMedia, stopMedia, videoRef: setVideoNode,
+    faceStatus, cameraStatus, micStatus, noiseWarning,
   };
 }

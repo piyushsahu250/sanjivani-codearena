@@ -179,6 +179,7 @@ export default function InterviewSession() {
 
   const q = questions[activeIdx];
   const draft = drafts[q.id] || {};
+  const micBlocked = proctor.micStatus === "UNAVAILABLE";
 
   function updateDraft(patch) {
     setDrafts((d) => ({ ...d, [q.id]: { ...d[q.id], ...patch } }));
@@ -302,12 +303,25 @@ export default function InterviewSession() {
 
         {proctor.faceStatus === "MISSING" && (
           <div className="mono" style={{ background: "var(--rust)", color: "#fff", padding: "10px 20px", fontSize: 12, fontWeight: 700, textAlign: "center", marginTop: 12, borderRadius: 8 }}>
-            Face not detected. Please return to the camera.
+            Face not detected. Please position yourself in front of the camera.
           </div>
         )}
         {proctor.faceStatus === "MULTIPLE" && (
           <div className="mono" style={{ background: "var(--rust)", color: "#fff", padding: "10px 20px", fontSize: 12, fontWeight: 700, textAlign: "center", marginTop: 12, borderRadius: 8 }}>
             Multiple faces detected — only you should be visible during this interview.
+          </div>
+        )}
+        {proctor.cameraStatus === "UNAVAILABLE" && (
+          <div className="mono" style={{ background: "var(--rust)", color: "#fff", padding: "10px 20px", fontSize: 12, fontWeight: 700, textAlign: "center", marginTop: 12, borderRadius: 8 }}>
+            Camera is unavailable — it may be off, blocked, or permission was revoked. Please reconnect it.
+          </div>
+        )}
+        {proctor.micStatus === "UNAVAILABLE" && (
+          <div className="mono" style={{ background: "var(--rust)", color: "#fff", padding: "14px 20px", fontSize: 13, fontWeight: 700, textAlign: "center", marginTop: 12, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 14, flexWrap: "wrap" }}>
+            <span>🎙 Microphone is disabled. Please enable your microphone to continue the interview.</span>
+            <button className="btn btn-ghost" style={{ borderColor: "#fff", color: "#fff" }} onClick={proctor.requestMedia} disabled={proctor.requestingMedia}>
+              {proctor.requestingMedia ? "Reconnecting…" : "Re-enable Microphone"}
+            </button>
           </div>
         )}
         {proctor.noiseWarning && (
@@ -366,7 +380,7 @@ export default function InterviewSession() {
                 <select className="ip-select" value={draft.language} onChange={(e) => updateDraft({ language: e.target.value })}>
                   {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
                 </select>
-                <button className="btn btn-primary" onClick={runCode} disabled={running}>{running ? "Running…" : "Run"}</button>
+                <button className="btn btn-primary" onClick={runCode} disabled={running || micBlocked}>{running ? "Running…" : "Run"}</button>
               </div>
               <div style={{ marginTop: 10, border: "1px solid var(--ip-glass-border)", borderRadius: 8, overflow: "hidden" }}>
                 <Editor
@@ -390,11 +404,11 @@ export default function InterviewSession() {
 
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-ghost" disabled={activeIdx === 0} onClick={() => go(-1)}>← Previous</button>
-              <button className="btn btn-ghost" onClick={skip}>Skip</button>
+              <button className="btn btn-ghost" disabled={activeIdx === 0 || micBlocked} onClick={() => go(-1)}>← Previous</button>
+              <button className="btn btn-ghost" onClick={skip} disabled={micBlocked}>Skip</button>
             </div>
             {activeIdx < questions.length - 1 ? (
-              <button className="btn btn-primary" onClick={() => go(1)} disabled={saving}>{saving ? "Saving…" : "Next →"}</button>
+              <button className="btn btn-primary" onClick={() => go(1)} disabled={saving || micBlocked}>{saving ? "Saving…" : "Next →"}</button>
             ) : (
               <button className="btn btn-primary" onClick={finalize} disabled={saving}>{saving ? "Submitting…" : "Submit Interview"}</button>
             )}
