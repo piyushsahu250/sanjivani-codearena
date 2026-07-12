@@ -15,17 +15,18 @@ export default function InterviewReport() {
   const location = useLocation();
   const [report, setReport] = useState(location.state?.report || null);
   const [recommendedLearning, setRecommendedLearning] = useState(location.state?.recommendedLearning || null);
+  const [sessionStatus, setSessionStatus] = useState(null);
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const dark = localStorage.getItem("interviewPrepDark") === "1";
 
   useEffect(() => {
-    if (report && recommendedLearning) return;
     api.get(`/interview/sessions/${id}`).then((res) => {
+      setSessionStatus(res.data.session.status);
       if (res.data.session.report) setReport(res.data.session.report);
-      else setError("This interview hasn't been submitted yet.");
-      setRecommendedLearning(res.data.recommendedLearning || []);
-    }).catch((err) => setError(err.response?.data?.error || "Failed to load report"));
+      else if (!report) setError("This interview hasn't been submitted yet.");
+      if (!recommendedLearning) setRecommendedLearning(res.data.recommendedLearning || []);
+    }).catch((err) => { if (!report) setError(err.response?.data?.error || "Failed to load report"); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -59,6 +60,13 @@ export default function InterviewReport() {
           <div><h1>Feedback Report</h1><ChalkUnderline /></div>
           <Link to="/interview" className="btn btn-ghost">← AI Mock Interview</Link>
         </div>
+
+        {sessionStatus === "TERMINATED" && (
+          <div className="ip-glass" style={{ padding: 14, marginTop: 16, borderLeft: "4px solid var(--rust)" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--rust)" }}>⚠ This interview was terminated early for proctoring rule violations.</span>
+            <span style={{ fontSize: 12, opacity: 0.75, marginLeft: 6 }}>The score below reflects only what was answered before termination.</span>
+          </div>
+        )}
 
         <div className="ip-glass" style={{ padding: 28, marginTop: 20, textAlign: "center" }}>
           <div className="mono" style={{ fontSize: 44, fontWeight: 700, color: "var(--ip-accent)" }}>{report.overallScore}%</div>
@@ -106,6 +114,9 @@ export default function InterviewReport() {
                 <div key={i} style={{ fontSize: 13 }}>
                   <strong>{rec.area}:</strong> {rec.action}{" "}
                   <Link to={rec.link} style={{ color: "var(--ip-accent)" }}>→</Link>
+                  {typeof rec.suggestedCodingPractice === "number" && rec.suggestedCodingPractice > 0 && (
+                    <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>💻 {rec.suggestedCodingPractice} practice problem{rec.suggestedCodingPractice === 1 ? "" : "s"}</span>
+                  )}
                 </div>
               ))}
             </div>

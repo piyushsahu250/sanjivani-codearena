@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import api from "../api";
+import { useProctoring } from "../hooks/useProctoring";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import "./interviewPrep.css";
@@ -10,13 +11,21 @@ const LANGUAGES = [
   { id: "java", label: "Java", monaco: "java" }, { id: "javascript", label: "JavaScript", monaco: "javascript" },
   { id: "python", label: "Python", monaco: "python" }, { id: "c", label: "C", monaco: "c" }, { id: "cpp", label: "C++", monaco: "cpp" },
 ];
-const CATEGORY_LABEL = { HR: "HR", TECHNICAL: "Technical", CODING: "Coding", APTITUDE: "Aptitude", SYSTEM_DESIGN: "System Design", BEHAVIORAL: "Behavioral" };
+const CATEGORY_LABEL = { HR: "HR", TECHNICAL: "Technical", CODING: "Coding", APTITUDE: "Aptitude", SYSTEM_DESIGN: "System Design", BEHAVIORAL: "Behavioral", MANAGERIAL: "Managerial" };
+const FREE_TEXT_CATEGORIES = ["HR", "TECHNICAL", "SYSTEM_DESIGN", "BEHAVIORAL", "MANAGERIAL"];
+const VIOLATION_LABEL = {
+  TAB_SWITCH: "switching tabs",
+  FULLSCREEN_EXIT: "exiting fullscreen",
+  CAMERA_DROPPED: "your camera being turned off or disconnected",
+  MIC_DROPPED: "your microphone being turned off or disconnected",
+};
 
 export default function InterviewSession() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [phase, setPhase] = useState("preflight"); // preflight | active | terminated
   const [activeIdx, setActiveIdx] = useState(0);
   const [drafts, setDrafts] = useState({}); // questionId -> {answerText, code, language, selected}
   const [saving, setSaving] = useState(false);
@@ -24,12 +33,17 @@ export default function InterviewSession() {
   const [running, setRunning] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [recording, setRecording] = useState(false);
+  const [violationCount, setViolationCount] = useState(0);
+  const [maxViolations, setMaxViolations] = useState(3);
+  const [violationWarning, setViolationWarning] = useState(null);
   const recognitionRef = useRef(null);
+  const finalizedRef = useRef(false);
   const dark = localStorage.getItem("interviewPrepDark") === "1";
 
   useEffect(() => {
     api.get(`/interview/sessions/${id}`).then((res) => {
       setData(res.data);
+      setViolationCount(res.data.session.violationCount || 0);
       const initial = {};
       for (const q of res.data.questions) {
         initial[q.id] = {
@@ -49,17 +63,120 @@ export default function InterviewSession() {
   }, [id]);
 
   useEffect(() => {
-    if (secondsLeft === null) return;
+    if (phase !== "active" || secondsLeft === null) return;
     if (secondsLeft <= 0) { finalize(); return; }
     const t = setInterval(() => setSecondsLeft((s) => (s === null ? null : s - 1)), 1000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [secondsLeft === 0]);
+  }, [phase, secondsLeft === 0]);
+
+  // Every violation type is reported to the server, which decides — never trusted client-side —
+  // whether it's penalized (tab switch, fullscreen exit, camera/mic dropped: counts toward the
+  // 3-strike auto-terminate) or logged only (face missing briefly, multiple faces detected: per
+  // spec, "future ready, log don't penalize"). Noise/silent-environment reminders never reach
+  // here at all — they're pure client-side UI state from useProctoring's `noiseWarning`.
+  async function onViolation(type) {
+    if (finalizedRef.current) return;
+    try {
+      const { data: res } = await api.post(`/interview/sessions/${id}/violation`, { type });
+      if (res.penalized) setViolationCount(res.violationCount);
+      setMaxViolations(res.maxViolations);
+      if (res.terminated) {
+        finalizedRef.current = true;
+        setPhase("terminated");
+        proctor.stopMedia();
+        if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+      } else if (res.penalized) {
+        const msg = `Warning ${res.violationCount}/${res.maxViolations}: ${VIOLATION_LABEL[type] || type}. The interview will be terminated if this continues.`;
+        setViolationWarning(msg);
+        setTimeout(() => setViolationWarning((m) => (m === msg ? null : m)), 6000);
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  const proctor = useProctoring({
+    active: phase === "active",
+    requireFullscreen: true,
+    requireWebcam: true,
+    requireMicrophone: true,
+    onViolation,
+  });
+
+  async function begin() {
+    try { await document.documentElement.requestFullscreen?.(); } catch { /* best-effort */ }
+    setPhase("active");
+  }
 
   if (error) return <div className={`interview-prep ${dark ? "dark" : ""}`}><Navbar /><div style={{ maxWidth: 800, margin: "0 auto", padding: 48 }}><p style={{ color: "var(--rust)" }}>{error}</p><Link to="/interview" className="btn btn-ghost">← AI Mock Interview</Link></div></div>;
   if (!data) return <div className={`interview-prep ${dark ? "dark" : ""}`}><Navbar /><div style={{ maxWidth: 800, margin: "0 auto", padding: 48 }} className="mono">Loading…</div></div>;
 
   const { session, questions } = data;
+
+  if (phase === "terminated") {
+    return (
+      <div className={`interview-prep ${dark ? "dark" : ""}`}>
+        <Navbar />
+        <div style={{ maxWidth: 560, margin: "80px auto", padding: 24 }}>
+          <div className="ip-glass" style={{ padding: 32, textAlign: "center" }}>
+            <div style={{ fontSize: 32 }}>⚠️</div>
+            <h2 style={{ marginTop: 12, color: "var(--rust)" }}>Proctoring Rules Violated</h2>
+            <p style={{ marginTop: 10, opacity: 0.8 }}>
+              This interview was automatically terminated after {maxViolations} proctoring violations. A report
+              was generated from whatever was answered before termination.
+            </p>
+            <Link to={`/interview/report/${id}`} className="btn btn-primary" style={{ marginTop: 20, display: "inline-block" }}>View Report</Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "preflight") {
+    return (
+      <div className={`interview-prep ${dark ? "dark" : ""}`}>
+        <Navbar />
+        <div style={{ display: "flex", justifyContent: "center", padding: 24 }}>
+          <div className="ip-glass" style={{ padding: 32, maxWidth: 560, marginTop: 24 }}>
+            <h2>{session.isMock ? "Mock Interview" : session.isCompanyRound ? `${session.config?.company || ""} Company Round` : session.isResumeBased ? "Resume-based Interview" : `${CATEGORY_LABEL[session.category]} Interview`}</h2>
+            <ChalkUnderline />
+            <p style={{ fontSize: 13, marginTop: 14, opacity: 0.85 }}>
+              This interview is fully proctored and runs in fullscreen with your camera and microphone on for the
+              whole duration. Switching tabs, exiting fullscreen, or turning off your camera/microphone is tracked
+              and logged; after {maxViolations} such violations the interview is automatically terminated. Your face
+              should stay visible in frame — briefly stepping away or multiple people appearing in frame is logged
+              for review but won't end your interview. Background noise triggers a friendly reminder only, never a
+              violation.
+            </p>
+
+            <div style={{ marginTop: 20, padding: 16, border: "1px solid var(--ip-glass-border)", borderRadius: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>Camera &amp; microphone check</div>
+              {proctor.mediaGranted ? (
+                <>
+                  <video ref={proctor.videoRef} autoPlay muted playsInline style={{ width: 160, height: 120, borderRadius: 8, marginTop: 10, background: "#000", objectFit: "cover" }} />
+                  <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 8, fontWeight: 600 }}>✓ Camera and microphone are ready</p>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>Both are required before you can begin — they stay on for the whole interview.</p>
+                  <button className="btn btn-dark" style={{ marginTop: 10 }} onClick={proctor.requestMedia} disabled={proctor.requestingMedia}>
+                    {proctor.requestingMedia ? "Requesting access…" : "Grant camera & microphone access"}
+                  </button>
+                  {proctor.mediaError && <p style={{ fontSize: 12, color: "var(--rust)", marginTop: 8 }}>{proctor.mediaError}</p>}
+                </>
+              )}
+            </div>
+
+            <button className="btn btn-primary" style={{ marginTop: 20, width: "100%", padding: "12px 24px", opacity: proctor.mediaGranted ? 1 : 0.4 }} onClick={begin} disabled={!proctor.mediaGranted}>
+              Begin Interview (Fullscreen)
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const q = questions[activeIdx];
   const draft = drafts[q.id] || {};
 
@@ -76,6 +193,13 @@ export default function InterviewSession() {
       else body.answerText = draft.answerText;
       const { data: res } = await api.post(`/interview/sessions/${id}/answer`, body);
       if (res.immediateResult) setRunResult(res.immediateResult);
+      if (res.followUpQuestion) {
+        setData((d) => (d.questions.some((qq) => qq.id === res.followUpQuestion.id) ? d : { ...d, questions: [...d.questions, res.followUpQuestion] }));
+        setDrafts((dr) => ({
+          ...dr,
+          [res.followUpQuestion.id]: { answerText: "", code: res.followUpQuestion.starterCode || "", language: res.followUpQuestion.language || "java", selected: null },
+        }));
+      }
       return res;
     } catch (err) {
       alert(err.response?.data?.error || "Failed to save answer");
@@ -105,12 +229,17 @@ export default function InterviewSession() {
   }
 
   async function finalize() {
+    if (finalizedRef.current) return;
+    finalizedRef.current = true;
     setSaving(true);
     try {
       await saveAnswer(false);
       const { data: res } = await api.post(`/interview/sessions/${id}/finalize`);
+      proctor.stopMedia();
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
       navigate(`/interview/report/${id}`, { state: { report: res.report, recommendedLearning: res.recommendedLearning } });
     } catch (err) {
+      finalizedRef.current = false;
       alert(err.response?.data?.error || "Failed to submit interview");
     } finally {
       setSaving(false);
@@ -152,15 +281,45 @@ export default function InterviewSession() {
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "48px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
           <div>
-            <h1>{session.isMock ? "Mock Interview" : session.isResumeBased ? "Resume-based Interview" : `${CATEGORY_LABEL[session.category]} Interview`}</h1>
-            {session.config?.company && <span className="badge" style={{ marginRight: 8 }}>{session.config.company}</span>}
+            <h1>{session.isMock ? "Mock Interview" : session.isCompanyRound ? `${session.config?.company || ""} Company Round` : session.isResumeBased ? "Resume-based Interview" : `${CATEGORY_LABEL[session.category]} Interview`}</h1>
+            {session.config?.company && !session.isCompanyRound && <span className="badge" style={{ marginRight: 8 }}>{session.config.company}</span>}
             <ChalkUnderline />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="mono" style={{ fontSize: 12, color: violationCount > 0 ? "var(--rust)" : "inherit", opacity: violationCount > 0 ? 1 : 0.6 }}>
+              ⚠ {violationCount}/{maxViolations}
+            </span>
             {secondsLeft != null && <span className="mono ip-glass" style={{ padding: "6px 12px", fontWeight: 700 }}>⏱ {mm}:{ss}</span>}
             <Link to="/interview" className="btn btn-ghost">Exit</Link>
           </div>
         </div>
+
+        <video ref={proctor.videoRef} autoPlay muted playsInline style={{
+          position: "fixed", bottom: 16, right: 16, width: 140, height: 105, borderRadius: 8,
+          objectFit: "cover", background: "#000", zIndex: 50,
+          border: proctor.faceStatus !== "OK" ? "3px solid var(--rust)" : "2px solid var(--ip-accent)",
+        }} />
+
+        {proctor.faceStatus === "MISSING" && (
+          <div className="mono" style={{ background: "var(--rust)", color: "#fff", padding: "10px 20px", fontSize: 12, fontWeight: 700, textAlign: "center", marginTop: 12, borderRadius: 8 }}>
+            Face not detected. Please return to the camera.
+          </div>
+        )}
+        {proctor.faceStatus === "MULTIPLE" && (
+          <div className="mono" style={{ background: "var(--rust)", color: "#fff", padding: "10px 20px", fontSize: 12, fontWeight: 700, textAlign: "center", marginTop: 12, borderRadius: 8 }}>
+            Multiple faces detected — only you should be visible during this interview.
+          </div>
+        )}
+        {proctor.noiseWarning && (
+          <div className="mono" style={{ background: "var(--amber)", color: "#3a2c00", padding: "10px 20px", fontSize: 12, fontWeight: 700, textAlign: "center", marginTop: 12, borderRadius: 8 }}>
+            Please maintain a quiet interview environment.
+          </div>
+        )}
+        {violationWarning && (
+          <div className="mono" style={{ background: "var(--rust)", color: "#fff", padding: "10px 20px", fontSize: 12, fontWeight: 700, textAlign: "center", marginTop: 12, borderRadius: 8 }}>
+            ⚠ {violationWarning}
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 16 }}>
           {questions.map((qq, i) => (
@@ -174,20 +333,19 @@ export default function InterviewSession() {
           <span className="badge">{CATEGORY_LABEL[q.category]}{q.subject ? ` · ${q.subject}` : ""}{q.aptitudeCategory ? ` · ${q.aptitudeCategory}` : ""}</span>
           <p style={{ marginTop: 12, fontWeight: 600, fontSize: 16 }}>{q.prompt}</p>
 
-          {(q.category === "HR" || q.category === "TECHNICAL" || q.category === "SYSTEM_DESIGN" || q.category === "BEHAVIORAL") && (
+          {FREE_TEXT_CATEGORIES.includes(q.category) && (
             <>
               <textarea
                 className="ip-select"
                 style={{ width: "100%", minHeight: 140, marginTop: 14, fontFamily: "var(--font-body)", fontSize: 14 }}
                 value={draft.answerText || ""}
                 onChange={(e) => updateDraft({ answerText: e.target.value })}
-                placeholder="Type your answer…"
+                placeholder="Type your answer, or use the mic below to speak it…"
               />
-              {(q.category === "HR" || q.category === "BEHAVIORAL") && (
-                <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={toggleRecording}>
-                  {recording ? "⏹ Stop recording" : "🎙 Record answer (speech-to-text)"}
-                </button>
-              )}
+              <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={toggleRecording}>
+                {recording ? "⏹ Stop recording" : "🎙 Record answer (speech-to-text)"}
+              </button>
+              {recording && <span className="mono" style={{ fontSize: 11, marginLeft: 8, opacity: 0.7 }}>Listening… click Stop, then edit the transcript before moving on if needed.</span>}
             </>
           )}
 

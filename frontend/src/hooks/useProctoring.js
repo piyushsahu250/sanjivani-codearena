@@ -15,7 +15,7 @@ const VIOLATION_DEDUPE_MS = 1200; // collapses e.g. fullscreenchange+visibilityc
 // side already uses — extended here to also flag MULTIPLE faces, not just a missing one. No
 // image is ever captured or stored (this platform has no object storage) — face checks only
 // ever produce a logged violation event.
-export function useProctoring({ active, requireFullscreen = true, requireWebcam = false, onViolation }) {
+export function useProctoring({ active, requireFullscreen = true, requireWebcam = false, requireMicrophone = false, onViolation }) {
   const onViolationRef = useRef(onViolation);
   onViolationRef.current = onViolation;
 
@@ -174,22 +174,22 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
     setRequestingMedia(true);
     setMediaError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: requireWebcam, audio: requireMicrophone });
       mediaStreamRef.current = stream;
       setMediaGranted(true);
     } catch (err) {
       setMediaError(
         err.name === "NotAllowedError"
-          ? "Camera access was denied. Please allow it to begin this assessment."
+          ? `${requireWebcam && requireMicrophone ? "Camera and microphone" : requireMicrophone ? "Microphone" : "Camera"} access was denied. Please allow it to begin.`
           : err.name === "NotFoundError"
-          ? "No camera was found on this device."
-          : "Could not access your camera. Please check your device and browser permissions."
+          ? `No ${requireWebcam && requireMicrophone ? "camera or microphone" : requireMicrophone ? "microphone" : "camera"} was found on this device.`
+          : "Could not access your camera/microphone. Please check your device and browser permissions."
       );
       setMediaGranted(false);
     } finally {
       setRequestingMedia(false);
     }
-  }, []);
+  }, [requireWebcam, requireMicrophone]);
 
   const stopMedia = useCallback(() => {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -242,22 +242,83 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
   }, [active, requireWebcam, report]);
 
   useEffect(() => {
-    if (!active || !requireWebcam) return;
+    if (!active || (!requireWebcam && !requireMicrophone)) return;
     const stream = mediaStreamRef.current;
     if (!stream) return;
-    function handleEnded() {
-      report("CAMERA_DROPPED");
+    function handleEnded(kind) {
+      return () => report(kind === "video" ? "CAMERA_DROPPED" : "MIC_DROPPED");
     }
-    const tracks = stream.getTracks();
-    tracks.forEach((t) => t.addEventListener("ended", handleEnded));
+    const videoTracks = stream.getVideoTracks();
+    const audioTracks = stream.getAudioTracks();
+    const onVideoEnded = handleEnded("video");
+    const onAudioEnded = handleEnded("audio");
+    videoTracks.forEach((t) => t.addEventListener("ended", onVideoEnded));
+    audioTracks.forEach((t) => t.addEventListener("ended", onAudioEnded));
     const poll = setInterval(() => {
-      if (!stream.getTracks().every((t) => t.readyState === "live")) report("CAMERA_DROPPED");
+      if (videoTracks.length && !videoTracks.every((t) => t.readyState === "live")) report("CAMERA_DROPPED");
+      if (audioTracks.length && !audioTracks.every((t) => t.readyState === "live")) report("MIC_DROPPED");
     }, 5000);
     return () => {
-      tracks.forEach((t) => t.removeEventListener("ended", handleEnded));
+      videoTracks.forEach((t) => t.removeEventListener("ended", onVideoEnded));
+      audioTracks.forEach((t) => t.removeEventListener("ended", onAudioEnded));
       clearInterval(poll);
     };
-  }, [active, requireWebcam, report]);
+  }, [active, requireWebcam, requireMicrophone, report]);
+
+  // Background-noise / silent-environment reminder — purely informational, exactly like the
+  // exam proctoring's noise check: never calls report(), never counts toward violations. Spec
+  // is explicit that this "should not count as a cheating warning."
+  const [noiseWarning, setNoiseWarning] = useState(false);
+  const noiseWarningTimeoutRef = useRef(null);
+  const lastNoiseWarningAtRef = useRef(0);
+
+  useEffect(() => {
+    if (!active || !requireMicrophone) return;
+    const stream = mediaStreamRef.current;
+    if (!stream || stream.getAudioTracks().length === 0) return;
+
+    let audioContext;
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    } catch {
+      return;
+    }
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+
+    const NOISE_RMS_THRESHOLD = 0.35;
+    const NOISE_WARNING_COOLDOWN_MS = 20000;
+
+    const interval = setInterval(() => {
+      if (document.hidden) return;
+      analyser.getByteTimeDomainData(data);
+      let sumSquares = 0;
+      for (let i = 0; i < data.length; i++) {
+        const normalized = (data[i] - 128) / 128;
+        sumSquares += normalized * normalized;
+      }
+      const rms = Math.sqrt(sumSquares / data.length);
+      if (rms > NOISE_RMS_THRESHOLD) {
+        const now = Date.now();
+        if (now - lastNoiseWarningAtRef.current > NOISE_WARNING_COOLDOWN_MS) {
+          lastNoiseWarningAtRef.current = now;
+          setNoiseWarning(true);
+          clearTimeout(noiseWarningTimeoutRef.current);
+          noiseWarningTimeoutRef.current = setTimeout(() => setNoiseWarning(false), 5000);
+        }
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(noiseWarningTimeoutRef.current);
+      source.disconnect();
+      audioContext.close().catch(() => {});
+    };
+  }, [active, requireMicrophone]);
 
   useEffect(() => {
     return () => stopMedia();
@@ -267,5 +328,6 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
   return {
     requestFullscreen,
     mediaGranted, mediaError, requestingMedia, requestMedia, stopMedia, videoRef, faceStatus,
+    noiseWarning,
   };
 }

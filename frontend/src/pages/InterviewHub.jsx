@@ -11,8 +11,10 @@ const CARDS = [
   { key: "CODING", title: "Coding Interview", icon: "💻", desc: "Solve real coding problems, graded by the judge." },
   { key: "SYSTEM_DESIGN", title: "System Design Interview", icon: "🏗️", desc: "Explain your approach to designing scalable systems." },
   { key: "BEHAVIORAL", title: "Behavioral Interview", icon: "🧭", desc: "STAR-style questions about how you've handled real situations." },
+  { key: "MANAGERIAL", title: "Managerial Interview", icon: "🧑‍💼", desc: "Leadership, prioritization, and team-management scenarios." },
   { key: "APTITUDE", title: "Aptitude Interview", icon: "🧮", desc: "Timed quantitative, logical, verbal & DI questions." },
-  { key: "COMPANY", title: "Company-Specific Interview", icon: "🏢", desc: "Practice questions tagged to a specific company's hiring pattern." },
+  { key: "COMPANY", title: "Company-Specific Interview", icon: "🏢", desc: "Practice questions tagged to a specific company's hiring pattern, one round at a time." },
+  { key: "COMPANY_ROUND", title: "Company Round", icon: "🏆", desc: "A full HR + Technical + Coding + Managerial round for one company, all in one session." },
   { key: "MOCK", title: "Mock Interview", icon: "🎯", desc: "A 30-minute mixed HR + Technical + Coding session." },
   { key: "RESUME_BASED", title: "Resume-based Interview", icon: "📄", desc: "Questions generated from your own resume." },
 ];
@@ -61,7 +63,9 @@ export default function InterviewHub() {
         ? { isMock: true, config: { jobRole: config.jobRole || undefined, experienceLevel: config.experienceLevel } }
         : category === "RESUME_BASED"
           ? { isResumeBased: true, config: {} }
-          : { category, config: extraConfig || {} };
+          : category === "COMPANY_ROUND"
+            ? { isCompanyRound: true, config: { company: config.company, difficulty: config.difficulty, ...commonConfig() } }
+            : { category, config: extraConfig || {} };
       const { data } = await api.post("/interview/sessions", body);
       navigate(`/interview/session/${data.session.id}`);
     } catch (err) {
@@ -71,7 +75,7 @@ export default function InterviewHub() {
     }
   }
 
-  const CONFIGURABLE = ["TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL", "COMPANY"];
+  const CONFIGURABLE = ["TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL", "MANAGERIAL", "COMPANY", "COMPANY_ROUND"];
 
   function handleCardClick(key) {
     if (CONFIGURABLE.includes(key)) {
@@ -179,6 +183,18 @@ export default function InterviewHub() {
                       )}
                     </>
                   )}
+                  {c.key === "COMPANY_ROUND" && (
+                    <>
+                      <select className="ip-select" value={config.company} onChange={(e) => setConfig({ ...config, company: e.target.value })}>
+                        <option value="">Select a company…</option>
+                        {companies.map((co) => <option key={co.company} value={co.company}>{co.company} ({co.questionCount})</option>)}
+                      </select>
+                      <select className="ip-select" value={config.difficulty} onChange={(e) => setConfig({ ...config, difficulty: e.target.value })}>
+                        <option value="EASY">Beginner</option><option value="MEDIUM">Intermediate</option><option value="HARD">Advanced</option>
+                      </select>
+                      <p style={{ fontSize: 11, opacity: 0.7, margin: 0 }}>HR + Technical + Coding + Managerial, ~45 minutes.</p>
+                    </>
+                  )}
 
                   {/* Shared config: job role, experience level, duration — spec's "Interview Configuration" */}
                   <select className="ip-select" value={config.jobRole} onChange={(e) => setConfig({ ...config, jobRole: e.target.value })}>
@@ -195,13 +211,14 @@ export default function InterviewHub() {
 
                   <button
                     className="btn btn-primary"
-                    disabled={starting || (c.key === "COMPANY" && !config.company)}
+                    disabled={starting || ((c.key === "COMPANY" || c.key === "COMPANY_ROUND") && !config.company)}
                     onClick={() => {
                       if (c.key === "TECHNICAL") start("TECHNICAL", { subject: config.subject, difficulty: config.difficulty, ...commonConfig() });
                       else if (c.key === "CODING") start("CODING", { subject: config.topic, difficulty: config.difficulty, language: config.language, ...commonConfig() });
                       else if (c.key === "APTITUDE") start("APTITUDE", { aptitudeCategory: config.aptitudeCategory, negativeMarking: config.negativeMarking, durationMin: config.durationMin || 10 });
-                      else if (c.key === "SYSTEM_DESIGN" || c.key === "BEHAVIORAL") start(c.key, commonConfig());
+                      else if (c.key === "SYSTEM_DESIGN" || c.key === "BEHAVIORAL" || c.key === "MANAGERIAL") start(c.key, commonConfig());
                       else if (c.key === "COMPANY") start(config.companyCategory, { company: config.company, language: config.language, ...commonConfig() });
+                      else if (c.key === "COMPANY_ROUND") start("COMPANY_ROUND");
                     }}
                   >
                     {starting ? "Starting…" : "Start"}

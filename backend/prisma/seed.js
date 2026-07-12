@@ -4,6 +4,7 @@ const { seedLearningModule } = require("./seedLearning");
 const { seedGamification } = require("./seedGamification");
 const { seedInterviewModule } = require("./seedInterview");
 const { seedInterviewExtras } = require("./seedInterviewExtras");
+const { seedInterviewExtras2 } = require("./seedInterviewExtras2");
 const { seedModuleCoding } = require("./seedModuleCoding");
 
 const prisma = new PrismaClient();
@@ -32,6 +33,7 @@ async function main() {
   await seedGamification(prisma);
   await seedInterviewModule(prisma);
   await seedInterviewExtras(prisma);
+  await seedInterviewExtras2(prisma);
   await seedModuleCoding(prisma);
 }
 

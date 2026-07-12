@@ -663,6 +663,7 @@ enum InterviewCategory {
   APTITUDE
   SYSTEM_DESIGN
   BEHAVIORAL
+  MANAGERIAL
 }
 
 enum AptitudeCategory {
@@ -700,6 +701,16 @@ model InterviewQuestion {
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
 
+  // Rule-based "adaptive" follow-up: when an admin links a natural next question (e.g. "Explain
+  // JVM" -> "How does JVM differ from JRE?"), answering this question inserts that one as the
+  // next question in the session. Deterministic and admin-authored, not a real NLU model
+  // generating a follow-up from the semantic content of the answer — genuinely understanding an
+  // arbitrary free-text answer well enough to ask a *good* dynamic follow-up is a real LLM
+  // capability this platform doesn't have (see "no real AI anywhere" elsewhere in this file).
+  followUp   InterviewQuestion?  @relation("QuestionFollowUp", fields: [followUpQuestionId], references: [id])
+  followUpQuestionId String?
+  followUpOf InterviewQuestion[] @relation("QuestionFollowUp")
+
   answers InterviewAnswer[]
 
   @@index([category])
@@ -713,22 +724,43 @@ model InterviewQuestion {
 // (config.mix records the composition). Resume-based sessions set isResumeBased=true and
 // their questions are the ephemeral generatedForStudentId rows created for this student.
 model InterviewSession {
-  id            String   @id @default(uuid())
-  student       User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  studentId     String
-  category      InterviewCategory?  // null for a pure mock session spanning categories
-  isMock        Boolean  @default(false)
-  isResumeBased Boolean  @default(false)
-  status        String   @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
-  config        Json?    // {difficulty, subject, language, aptitudeCategory, negativeMarking, durationMin, topic, mix}
-  startedAt     DateTime @default(now())
-  submittedAt   DateTime?
+  id             String   @id @default(uuid())
+  student        User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId      String
+  category       InterviewCategory?  // null for a pure mock/company-round session spanning categories
+  isMock         Boolean  @default(false)
+  isResumeBased  Boolean  @default(false)
+  isCompanyRound Boolean  @default(false) // HR + Technical + Coding + Managerial, all filtered by config.company
+  status         String   @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED, TERMINATED (proctoring violations exceeded)
+  violationCount Int      @default(0)
+  terminationReason String? // e.g. "MAX_VIOLATIONS", set only when status = TERMINATED
+  config         Json?    // {difficulty, subject, language, aptitudeCategory, negativeMarking, durationMin, topic, mix, company, jobRole, experienceLevel}
+  startedAt      DateTime @default(now())
+  submittedAt    DateTime?
 
-  answers InterviewAnswer[]
-  report  InterviewReport?
+  answers    InterviewAnswer[]
+  report     InterviewReport?
+  violations InterviewViolation[]
 
   @@index([studentId, category])
   @@index([studentId, status])
+}
+
+// Event-level proctoring log for interview sessions — mirrors ProctoringViolation (the module-
+// coding equivalent) but kept as its own model rather than a shared polymorphic one, same
+// "sibling model over a complicated shared one" call made there. `penalized` distinguishes
+// events that count toward the 3-strike auto-terminate threshold (tab switch, fullscreen exit,
+// camera/mic dropped) from ones that are only logged for review (face missing briefly, multiple
+// faces detected — explicitly "future ready, log don't penalize" per spec).
+model InterviewViolation {
+  id        String   @id @default(uuid())
+  session   InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  type      String
+  penalized Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, createdAt])
 }
 
 model InterviewAnswer {

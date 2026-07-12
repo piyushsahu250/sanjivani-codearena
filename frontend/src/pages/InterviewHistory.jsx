@@ -27,15 +27,26 @@ export default function InterviewHistory() {
         {data && data.sessions.length === 0 && <div className="ip-glass" style={{ padding: 24, marginTop: 24, textAlign: "center" }}>No completed interviews yet.</div>}
 
         <div style={{ display: "grid", gap: 10, marginTop: 20 }}>
-          {data?.sessions.map((s) => (
-            <Link key={s.id} to={`/interview/report/${s.id}`} className="ip-glass" style={{ padding: 16, display: "flex", justifyContent: "space-between", alignItems: "center", textDecoration: "none", color: "inherit" }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{s.isMock ? "Mock Interview" : s.isResumeBased ? "Resume-based Interview" : `${s.category} Interview`}</div>
-                <div className="mono" style={{ fontSize: 12, opacity: 0.7 }}>{new Date(s.submittedAt).toLocaleString()}</div>
-              </div>
-              <div className="mono" style={{ fontWeight: 700, color: "var(--ip-accent)" }}>{s.report?.overallScore ?? "—"}%</div>
-            </Link>
-          ))}
+          {data?.sessions.map((s) => {
+            const durationSec = s.submittedAt ? Math.round((new Date(s.submittedAt) - new Date(s.startedAt)) / 1000) : null;
+            const durationLabel = durationSec != null ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : "—";
+            const typeLabel = s.isMock ? "Mock Interview" : s.isCompanyRound ? "Company Round" : s.isResumeBased ? "Resume-based Interview" : `${s.category} Interview`;
+            return (
+              <Link key={s.id} to={`/interview/report/${s.id}`} className="ip-glass" style={{ padding: 16, display: "flex", justifyContent: "space-between", alignItems: "center", textDecoration: "none", color: "inherit", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {typeLabel}
+                    {s.config?.company && <span className="badge" style={{ marginLeft: 8, fontSize: 11 }}>{s.config.company}</span>}
+                    {s.status === "TERMINATED" && <span className="badge" style={{ marginLeft: 8, fontSize: 11, background: "var(--rust)", color: "#fff" }}>Terminated</span>}
+                  </div>
+                  <div className="mono" style={{ fontSize: 12, opacity: 0.7 }}>
+                    {new Date(s.submittedAt).toLocaleString()} · {durationLabel}
+                  </div>
+                </div>
+                <div className="mono" style={{ fontWeight: 700, color: s.status === "TERMINATED" ? "var(--rust)" : "var(--ip-accent)" }}>{s.report?.overallScore ?? "—"}%</div>
+              </Link>
+            );
+          })}
         </div>
 
         {data && data.totalPages > 1 && (

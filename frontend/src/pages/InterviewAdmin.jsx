@@ -5,15 +5,16 @@ import ChalkUnderline from "../components/ChalkUnderline";
 
 const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, marginTop: 4 };
 const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--ink-dim)" };
-const CATEGORIES = ["HR", "TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL"];
+const CATEGORIES = ["HR", "TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL", "MANAGERIAL"];
 const APTITUDE_CATS = ["QUANTITATIVE", "LOGICAL", "VERBAL", "DATA_INTERPRETATION"];
 
-const EMPTY_Q = { category: "HR", subject: "", company: "", aptitudeCategory: "", difficulty: "EASY", prompt: "", expectedKeywords: "", modelAnswer: "", options: "", correctAnswer: "", explanation: "", starterCode: "", testCases: "", language: "java" };
+const EMPTY_Q = { category: "HR", subject: "", company: "", aptitudeCategory: "", difficulty: "EASY", prompt: "", expectedKeywords: "", modelAnswer: "", options: "", correctAnswer: "", explanation: "", starterCode: "", testCases: "", language: "java", followUpQuestionId: "" };
 
 export default function InterviewAdmin() {
   const [stats, setStats] = useState(null);
   const [students, setStudents] = useState(null);
   const [questions, setQuestions] = useState(null);
+  const [weakTopics, setWeakTopics] = useState(null);
   const [filterCategory, setFilterCategory] = useState("");
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_Q);
@@ -22,6 +23,7 @@ export default function InterviewAdmin() {
   function loadAll() {
     api.get("/interview/admin/stats").then((res) => setStats(res.data));
     api.get("/interview/admin/students").then((res) => setStudents(res.data));
+    api.get("/interview/admin/weak-topics").then((res) => setWeakTopics(res.data));
     loadQuestions();
   }
   function loadQuestions() {
@@ -45,6 +47,7 @@ export default function InterviewAdmin() {
         starterCode: form.starterCode || null,
         testCases: form.testCases ? JSON.parse(form.testCases) : undefined,
         language: form.language || null,
+        followUpQuestionId: form.followUpQuestionId || null,
       };
       await api.post("/interview/admin/questions", payload);
       setForm(EMPTY_Q);
@@ -185,6 +188,12 @@ export default function InterviewAdmin() {
               </>
             )}
 
+            <label style={labelStyle}>Follow-up question (optional — asked automatically right after this one is answered)</label>
+            <select style={inputStyle} value={form.followUpQuestionId} onChange={(e) => setForm({ ...form, followUpQuestionId: e.target.value })}>
+              <option value="">None</option>
+              {(questions || []).map((q) => <option key={q.id} value={q.id}>[{q.category}] {q.prompt.slice(0, 60)}{q.prompt.length > 60 ? "…" : ""}</option>)}
+            </select>
+
             <button className="btn btn-primary" style={{ marginTop: 14 }}>Save Question</button>
           </form>
         )}
@@ -194,6 +203,7 @@ export default function InterviewAdmin() {
             <div key={q.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
               <div>
                 <span className="badge">{q.category}{q.subject ? ` · ${q.subject}` : ""}{q.aptitudeCategory ? ` · ${q.aptitudeCategory}` : ""}{q.company ? ` · 🏢 ${q.company}` : ""}</span>
+                {q.followUpQuestionId && <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>↳ has follow-up</span>}
                 <div style={{ marginTop: 4 }}>{q.prompt}</div>
               </div>
               <button style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 12 }} onClick={() => deleteQuestion(q.id)}>Delete</button>
@@ -216,6 +226,18 @@ export default function InterviewAdmin() {
               </div>
             </div>
           ))}
+        </div>
+
+        <h3 style={{ fontSize: 16, marginTop: 32 }}>Weak Topics (across all students)</h3>
+        <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+          {weakTopics && weakTopics.topics.length === 0 && <p style={{ fontSize: 13, color: "var(--ink-dim)" }}>Not enough report data yet.</p>}
+          {(weakTopics?.topics || []).map((t, i) => (
+            <div key={t.topic} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+              <div><span className="mono" style={{ opacity: 0.5, marginRight: 8 }}>#{i + 1}</span>{t.topic}</div>
+              <span className="badge">{t.count} report{t.count === 1 ? "" : "s"}</span>
+            </div>
+          ))}
+          {weakTopics && <p style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 4 }}>Based on {weakTopics.totalReports} report{weakTopics.totalReports === 1 ? "" : "s"}.</p>}
         </div>
       </div>
     </div>

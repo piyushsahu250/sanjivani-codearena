@@ -18,9 +18,14 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";
 const CERT_THRESHOLD = 80;
 
-const SESSION_QUESTION_COUNT = { HR: 6, TECHNICAL: 6, APTITUDE: 10, CODING: 3, SYSTEM_DESIGN: 3, BEHAVIORAL: 6 };
+const SESSION_QUESTION_COUNT = { HR: 6, TECHNICAL: 6, APTITUDE: 10, CODING: 3, SYSTEM_DESIGN: 3, BEHAVIORAL: 6, MANAGERIAL: 5 };
 const MOCK_DURATION_MIN = 30;
-const VALID_CATEGORIES = ["HR", "TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL"];
+const COMPANY_ROUND_DURATION_MIN = 45;
+const MAX_INTERVIEW_VIOLATIONS = 3;
+const VALID_CATEGORIES = ["HR", "TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL", "MANAGERIAL"];
+// Free-text categories (as opposed to APTITUDE's MCQ or CODING's editor) — these get voice
+// input and the short-answer depth-probe follow-up.
+const FREE_TEXT_CATEGORIES = ["HR", "TECHNICAL", "SYSTEM_DESIGN", "BEHAVIORAL", "MANAGERIAL"];
 
 function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
@@ -56,7 +61,7 @@ async function pickQuestions(category, config, count) {
 router.get("/summary", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
     const sessions = await prisma.interviewSession.findMany({
-      where: { studentId: req.user.id, status: "COMPLETED" },
+      where: { studentId: req.user.id, status: { in: ["COMPLETED", "TERMINATED"] } },
       include: { report: true },
     });
     const totalAttempted = sessions.length;
@@ -98,16 +103,19 @@ router.get("/summary", authenticate, requireRole("STUDENT"), async (req, res) =>
 // STUDENT: start (or resume, if one's already in progress with the same shape) a session.
 router.post("/sessions", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
-    const { category, isMock, isResumeBased, config } = req.body;
-    if (!isMock && !isResumeBased && !VALID_CATEGORIES.includes(category)) {
+    const { category, isMock, isResumeBased, isCompanyRound, config } = req.body;
+    if (!isMock && !isResumeBased && !isCompanyRound && !VALID_CATEGORIES.includes(category)) {
       return res.status(400).json({ error: "Invalid category" });
+    }
+    if (isCompanyRound && !config?.company) {
+      return res.status(400).json({ error: "A company must be selected for a Company Round interview" });
     }
 
     const existing = await prisma.interviewSession.findFirst({
       where: {
         studentId: req.user.id, status: "IN_PROGRESS",
-        category: isMock || isResumeBased ? null : category,
-        isMock: !!isMock, isResumeBased: !!isResumeBased,
+        category: isMock || isResumeBased || isCompanyRound ? null : category,
+        isMock: !!isMock, isResumeBased: !!isResumeBased, isCompanyRound: !!isCompanyRound,
       },
       include: { answers: true },
     });
@@ -140,12 +148,25 @@ router.post("/sessions", authenticate, requireRole("STUDENT"), async (req, res) 
       );
       sessionData = { ...sessionData, isResumeBased: true, category: null };
     } else if (isMock) {
+      const difficultyCfg = { difficulty: config?.difficulty };
       const [hr, tech, coding] = await Promise.all([
-        pickQuestions("HR", {}, 3), pickQuestions("TECHNICAL", {}, 3), pickQuestions("CODING", {}, 2),
+        pickQuestions("HR", difficultyCfg, 3), pickQuestions("TECHNICAL", difficultyCfg, 3), pickQuestions("CODING", difficultyCfg, 2),
       ]);
       questions = [...hr, ...tech, ...coding];
       if (questions.length === 0) return res.status(400).json({ error: "No interview questions available yet — ask an admin to add some." });
       sessionData = { ...sessionData, isMock: true, category: null, config: { ...config, durationMin: MOCK_DURATION_MIN } };
+    } else if (isCompanyRound) {
+      // "Student selects TCS -> HR + Technical + Coding + Managerial questions, all scoped to
+      // that company (falling back to the general pool per-category if that company doesn't
+      // have questions in a given category yet — see pickQuestions)."
+      const roundCfg = { company: config.company, difficulty: config?.difficulty };
+      const [hr, tech, coding, managerial] = await Promise.all([
+        pickQuestions("HR", roundCfg, 2), pickQuestions("TECHNICAL", roundCfg, 3),
+        pickQuestions("CODING", roundCfg, 2), pickQuestions("MANAGERIAL", roundCfg, 2),
+      ]);
+      questions = [...hr, ...tech, ...coding, ...managerial];
+      if (questions.length === 0) return res.status(400).json({ error: "No interview questions available yet — ask an admin to add some." });
+      sessionData = { ...sessionData, isCompanyRound: true, category: null, config: { ...config, durationMin: COMPANY_ROUND_DURATION_MIN } };
     } else {
       questions = await pickQuestions(category, config || {});
       if (questions.length === 0) return res.status(400).json({ error: "No questions available for this selection yet — try a different subject/difficulty or ask an admin to add more." });
@@ -172,12 +193,12 @@ router.get("/sessions", authenticate, requireRole("STUDENT"), async (req, res) =
     const pageSize = 10;
     const [sessions, total] = await Promise.all([
       prisma.interviewSession.findMany({
-        where: { studentId: req.user.id, status: "COMPLETED" },
+        where: { studentId: req.user.id, status: { in: ["COMPLETED", "TERMINATED"] } },
         include: { report: true },
         orderBy: { submittedAt: "desc" },
         skip: (page - 1) * pageSize, take: pageSize,
       }),
-      prisma.interviewSession.count({ where: { studentId: req.user.id, status: "COMPLETED" } }),
+      prisma.interviewSession.count({ where: { studentId: req.user.id, status: { in: ["COMPLETED", "TERMINATED"] } } }),
     ]);
     res.json({ sessions, page, pageSize, total, totalPages: Math.ceil(total / pageSize) });
   } catch (err) {
@@ -203,9 +224,47 @@ router.get("/sessions/:id", authenticate, requireRole("STUDENT"), async (req, re
   }
 });
 
+// Rule-based "adaptive" follow-up — NOT a real NLU model generating a question from the
+// semantic content of the answer (that's a genuine LLM capability this platform doesn't have).
+// Two mechanisms: (1) an admin-configured link on the question itself (e.g. "Explain JVM" ->
+// "How does JVM differ from JRE?"), deterministic and transparent; (2) a generic depth-probe,
+// at most once per session, when a free-text answer is very short — honestly framed as "that
+// was brief, elaborate," not a claim of having understood the answer's content.
+async function maybeInsertFollowUp(session, question, answerText, skipped) {
+  if (skipped) return null;
+
+  if (question.followUpQuestionId) {
+    const alreadyAsked = await prisma.interviewAnswer.findUnique({
+      where: { sessionId_questionId: { sessionId: session.id, questionId: question.followUpQuestionId } },
+    });
+    if (alreadyAsked) return null;
+    const followUpQ = await prisma.interviewQuestion.findUnique({ where: { id: question.followUpQuestionId } });
+    return followUpQ && followUpQ.isActive ? followUpQ : null;
+  }
+
+  if (FREE_TEXT_CATEGORIES.includes(question.category) && answerText && answerText.trim().split(/\s+/).filter(Boolean).length < 15) {
+    const probeAlreadyUsed = await prisma.interviewAnswer.count({
+      where: { sessionId: session.id, question: { prompt: { startsWith: "[Follow-up]" } } },
+    });
+    if (probeAlreadyUsed === 0) {
+      return prisma.interviewQuestion.create({
+        data: {
+          category: question.category, subject: question.subject,
+          prompt: "[Follow-up] Can you elaborate further and give a specific example?",
+          expectedKeywords: question.expectedKeywords || [],
+          generatedForStudentId: session.studentId,
+        },
+      });
+    }
+  }
+  return null;
+}
+
 // STUDENT: submit/update one answer. Coding gets immediate pass/fail feedback (like Run); HR/
 // Technical/Aptitude are graded silently — the full picture only shows up in the final report,
-// matching "AI evaluates after submission" (of the whole interview, not each question).
+// matching "AI evaluates after submission" (of the whole interview, not each question). May
+// return a `followUpQuestion` when this answer triggers one (see maybeInsertFollowUp) — the
+// frontend appends it to the live question list rather than the session needing to be re-fetched.
 router.post("/sessions/:id/answer", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
     const session = await prisma.interviewSession.findUnique({ where: { id: req.params.id } });
@@ -219,10 +278,9 @@ router.post("/sessions/:id/answer", authenticate, requireRole("STUDENT"), async 
     let score = 0, breakdown = null, immediateResult = null;
     if (skipped) {
       score = 0; breakdown = null;
-    } else if (question.category === "HR" || question.category === "BEHAVIORAL") {
-      // Behavioral questions are free-text/speech, same as HR — the same linguistic heuristics
-      // (completeness, hedging, filler words, professionalism) apply equally well to "Tell me
-      // about a time you..." as to "Tell me about yourself."
+    } else if (question.category === "HR" || question.category === "BEHAVIORAL" || question.category === "MANAGERIAL") {
+      // Managerial questions (leadership, prioritization, conflict resolution) are free-text/
+      // speech, same shape as HR/Behavioral — the same linguistic heuristics apply.
       const r = evaluateHrAnswer(answerText, question.expectedKeywords || []);
       score = r.score; breakdown = r.breakdown;
     } else if (question.category === "TECHNICAL" || question.category === "SYSTEM_DESIGN") {
@@ -248,12 +306,41 @@ router.post("/sessions/:id/answer", authenticate, requireRole("STUDENT"), async 
       create: { sessionId: session.id, questionId, answerText: answerText ?? null, code: code ?? null, language: language ?? null, skipped: !!skipped, timeTakenSec: timeTakenSec ?? null, score, breakdown: breakdown ?? undefined },
     });
 
-    res.json({ saved: true, answer, immediateResult });
+    let followUpQuestion = null;
+    try {
+      const followUpQ = await maybeInsertFollowUp(session, question, answerText, skipped);
+      if (followUpQ) {
+        await prisma.interviewAnswer.create({ data: { sessionId: session.id, questionId: followUpQ.id, skipped: true } });
+        followUpQuestion = sanitizeQuestion(followUpQ);
+      }
+    } catch (e) {
+      console.error("follow-up insertion failed", e);
+    }
+
+    res.json({ saved: true, answer, immediateResult, followUpQuestion });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to save answer" });
   }
 });
+
+// Shared by the normal finalize flow and the proctoring-violation auto-terminate path — a
+// terminated session still gets a real report built from whatever was genuinely answered before
+// termination (partial credit), not an empty/blank one.
+async function finalizeSession(session, { status = "COMPLETED", terminationReason = null } = {}) {
+  const answers = await prisma.interviewAnswer.findMany({ where: { sessionId: session.id } });
+  const questions = await prisma.interviewQuestion.findMany({ where: { id: { in: answers.map((a) => a.questionId) } } });
+  const answersWithQuestions = answers.map((a) => ({ ...a, question: questions.find((q) => q.id === a.questionId) || {} }));
+  const built = buildInterviewReport(answersWithQuestions);
+
+  const [updated, report] = await prisma.$transaction([
+    prisma.interviewSession.update({ where: { id: session.id }, data: { status, submittedAt: new Date(), terminationReason } }),
+    prisma.interviewReport.upsert({
+      where: { sessionId: session.id }, update: built, create: { sessionId: session.id, studentId: session.studentId, ...built },
+    }),
+  ]);
+  return { session: updated, report };
+}
 
 router.post("/sessions/:id/finalize", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
@@ -263,26 +350,46 @@ router.post("/sessions/:id/finalize", authenticate, requireRole("STUDENT"), asyn
       return res.json({ session, report: session.report });
     }
 
-    const answers = await prisma.interviewAnswer.findMany({ where: { sessionId: session.id } });
-    const questions = await prisma.interviewQuestion.findMany({ where: { id: { in: answers.map((a) => a.questionId) } } });
-    const answersWithQuestions = answers.map((a) => ({ ...a, question: questions.find((q) => q.id === a.questionId) || {} }));
-
-    const built = buildInterviewReport(answersWithQuestions);
-
-    const [updated, report] = await prisma.$transaction([
-      prisma.interviewSession.update({ where: { id: session.id }, data: { status: "COMPLETED", submittedAt: new Date() } }),
-      prisma.interviewReport.upsert({
-        where: { sessionId: session.id },
-        update: built,
-        create: { sessionId: session.id, studentId: req.user.id, ...built },
-      }),
-    ]);
-
+    const { session: updated, report } = await finalizeSession(session);
     const recommendedLearning = await buildRecommendations(report.weakAreas);
     res.json({ session: updated, report, recommendedLearning });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to finalize interview" });
+  }
+});
+
+// STUDENT: report a proctoring violation. `type` distinguishes what happened; `penalized`
+// (client-supplied, cross-checked against a fixed server-side set below — never trust the
+// client's own penalized flag) determines whether it counts toward the 3-strike auto-terminate
+// threshold or is only logged for review (face missing briefly, multiple faces detected — per
+// spec, "future ready, log don't penalize"). Noise/silent-environment reminders never reach this
+// endpoint at all — they're pure client-side UI state, not a proctoring concern.
+const PENALIZED_VIOLATION_TYPES = new Set(["TAB_SWITCH", "FULLSCREEN_EXIT", "CAMERA_DROPPED", "MIC_DROPPED"]);
+router.post("/sessions/:id/violation", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const session = await prisma.interviewSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.studentId !== req.user.id) return res.status(403).json({ error: "Invalid session" });
+    if (session.status !== "IN_PROGRESS") {
+      return res.json({ violationCount: session.violationCount, maxViolations: MAX_INTERVIEW_VIOLATIONS, terminated: session.status === "TERMINATED" });
+    }
+
+    const type = String(req.body.type || "UNKNOWN").toUpperCase().slice(0, 40);
+    const penalized = PENALIZED_VIOLATION_TYPES.has(type);
+    await prisma.interviewViolation.create({ data: { sessionId: session.id, type, penalized } });
+
+    const violationCount = penalized ? session.violationCount + 1 : session.violationCount;
+    if (penalized) await prisma.interviewSession.update({ where: { id: session.id }, data: { violationCount } });
+
+    const terminated = penalized && violationCount >= MAX_INTERVIEW_VIOLATIONS;
+    if (terminated) {
+      await finalizeSession({ ...session, violationCount }, { status: "TERMINATED", terminationReason: "MAX_VIOLATIONS" });
+    }
+
+    res.json({ violationCount, maxViolations: MAX_INTERVIEW_VIOLATIONS, penalized, terminated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to record violation" });
   }
 });
 
@@ -486,7 +593,7 @@ router.get("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asyn
 
 router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { category, subject, company, aptitudeCategory, difficulty, prompt, expectedKeywords, modelAnswer, options, correctAnswer, explanation, starterCode, testCases, language } = req.body;
+    const { category, subject, company, aptitudeCategory, difficulty, prompt, expectedKeywords, modelAnswer, options, correctAnswer, explanation, starterCode, testCases, language, followUpQuestionId } = req.body;
     if (!category || !prompt) return res.status(400).json({ error: "category and prompt are required" });
     const q = await prisma.interviewQuestion.create({
       data: {
@@ -494,6 +601,7 @@ router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asy
         prompt, expectedKeywords: expectedKeywords ?? undefined, modelAnswer: modelAnswer || null,
         options: options ?? undefined, correctAnswer: correctAnswer ?? undefined, explanation: explanation || null,
         starterCode: starterCode || null, testCases: testCases ?? undefined, language: language || null,
+        followUpQuestionId: followUpQuestionId || null,
       },
     });
     res.json(q);
@@ -505,7 +613,7 @@ router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asy
 
 router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const fields = ["category", "subject", "company", "aptitudeCategory", "difficulty", "prompt", "expectedKeywords", "modelAnswer", "options", "correctAnswer", "explanation", "starterCode", "testCases", "language", "isActive"];
+    const fields = ["category", "subject", "company", "aptitudeCategory", "difficulty", "prompt", "expectedKeywords", "modelAnswer", "options", "correctAnswer", "explanation", "starterCode", "testCases", "language", "isActive", "followUpQuestionId"];
     const data = {};
     for (const f of fields) if (req.body[f] !== undefined) data[f] = f === "isActive" ? !!req.body[f] : req.body[f];
     const q = await prisma.interviewQuestion.update({ where: { id: req.params.id }, data });
@@ -657,6 +765,31 @@ router.get("/admin/students", authenticate, requireRole("ADMIN", "STAFF"), attac
   }
 });
 
+// ADMIN/STAFF: which topics show up as "weak areas" most often across all reports — the
+// signal an admin actually needs to decide what to update in the question bank next.
+router.get("/admin/weak-topics", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const where = req.requesterInstituteId ? { instituteId: req.requesterInstituteId, role: "STUDENT" } : { role: "STUDENT" };
+    const students = await prisma.user.findMany({ where, select: { id: true } });
+    const ids = students.map((s) => s.id);
+    const reports = ids.length ? await prisma.interviewReport.findMany({ where: { studentId: { in: ids } }, select: { weakAreas: true, strongAreas: true } }) : [];
+
+    const weakCounts = new Map();
+    for (const r of reports) {
+      for (const area of r.weakAreas || []) weakCounts.set(area, (weakCounts.get(area) || 0) + 1);
+    }
+    const topics = [...weakCounts.entries()]
+      .map(([topic, count]) => ({ topic, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15);
+
+    res.json({ totalReports: reports.length, topics });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load weak-topic analytics" });
+  }
+});
+
 router.get("/admin/students/:studentId/sessions", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   try {
     const target = await prisma.user.findUnique({ where: { id: req.params.studentId } });
@@ -665,7 +798,7 @@ router.get("/admin/students/:studentId/sessions", authenticate, requireRole("ADM
       return res.status(403).json({ error: "You can only view students under your own institute" });
     }
     const sessions = await prisma.interviewSession.findMany({
-      where: { studentId: req.params.studentId, status: "COMPLETED" },
+      where: { studentId: req.params.studentId, status: { in: ["COMPLETED", "TERMINATED"] } },
       include: { report: true },
       orderBy: { submittedAt: "desc" },
     });
@@ -673,6 +806,23 @@ router.get("/admin/students/:studentId/sessions", authenticate, requireRole("ADM
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load student sessions" });
+  }
+});
+
+// ADMIN/STAFF: event-level proctoring log for one session — for reviewing exactly what
+// happened during a TERMINATED (or any) interview, not just the final violation count.
+router.get("/admin/sessions/:sessionId/violations", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const session = await prisma.interviewSession.findUnique({ where: { id: req.params.sessionId }, include: { student: true } });
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (req.requesterInstituteId && session.student.instituteId !== req.requesterInstituteId) {
+      return res.status(403).json({ error: "You can only view students under your own institute" });
+    }
+    const violations = await prisma.interviewViolation.findMany({ where: { sessionId: session.id }, orderBy: { createdAt: "asc" } });
+    res.json(violations);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load violation log" });
   }
 });
 
