@@ -10,7 +10,7 @@ const LANGUAGES = [
   { id: "java", label: "Java", monaco: "java" }, { id: "javascript", label: "JavaScript", monaco: "javascript" },
   { id: "python", label: "Python", monaco: "python" }, { id: "c", label: "C", monaco: "c" }, { id: "cpp", label: "C++", monaco: "cpp" },
 ];
-const CATEGORY_LABEL = { HR: "HR", TECHNICAL: "Technical", CODING: "Coding", APTITUDE: "Aptitude" };
+const CATEGORY_LABEL = { HR: "HR", TECHNICAL: "Technical", CODING: "Coding", APTITUDE: "Aptitude", SYSTEM_DESIGN: "System Design", BEHAVIORAL: "Behavioral" };
 
 export default function InterviewSession() {
   const { id } = useParams();
@@ -56,7 +56,7 @@ export default function InterviewSession() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secondsLeft === 0]);
 
-  if (error) return <div className={`interview-prep ${dark ? "dark" : ""}`}><Navbar /><div style={{ maxWidth: 800, margin: "0 auto", padding: 48 }}><p style={{ color: "var(--rust)" }}>{error}</p><Link to="/interview" className="btn btn-ghost">← Interview Prep</Link></div></div>;
+  if (error) return <div className={`interview-prep ${dark ? "dark" : ""}`}><Navbar /><div style={{ maxWidth: 800, margin: "0 auto", padding: 48 }}><p style={{ color: "var(--rust)" }}>{error}</p><Link to="/interview" className="btn btn-ghost">← AI Mock Interview</Link></div></div>;
   if (!data) return <div className={`interview-prep ${dark ? "dark" : ""}`}><Navbar /><div style={{ maxWidth: 800, margin: "0 auto", padding: 48 }} className="mono">Loading…</div></div>;
 
   const { session, questions } = data;
@@ -109,7 +109,7 @@ export default function InterviewSession() {
     try {
       await saveAnswer(false);
       const { data: res } = await api.post(`/interview/sessions/${id}/finalize`);
-      navigate(`/interview/report/${id}`, { state: { report: res.report } });
+      navigate(`/interview/report/${id}`, { state: { report: res.report, recommendedLearning: res.recommendedLearning } });
     } catch (err) {
       alert(err.response?.data?.error || "Failed to submit interview");
     } finally {
@@ -153,6 +153,7 @@ export default function InterviewSession() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
           <div>
             <h1>{session.isMock ? "Mock Interview" : session.isResumeBased ? "Resume-based Interview" : `${CATEGORY_LABEL[session.category]} Interview`}</h1>
+            {session.config?.company && <span className="badge" style={{ marginRight: 8 }}>{session.config.company}</span>}
             <ChalkUnderline />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -173,7 +174,7 @@ export default function InterviewSession() {
           <span className="badge">{CATEGORY_LABEL[q.category]}{q.subject ? ` · ${q.subject}` : ""}{q.aptitudeCategory ? ` · ${q.aptitudeCategory}` : ""}</span>
           <p style={{ marginTop: 12, fontWeight: 600, fontSize: 16 }}>{q.prompt}</p>
 
-          {(q.category === "HR" || q.category === "TECHNICAL") && (
+          {(q.category === "HR" || q.category === "TECHNICAL" || q.category === "SYSTEM_DESIGN" || q.category === "BEHAVIORAL") && (
             <>
               <textarea
                 className="ip-select"
@@ -182,7 +183,7 @@ export default function InterviewSession() {
                 onChange={(e) => updateDraft({ answerText: e.target.value })}
                 placeholder="Type your answer…"
               />
-              {q.category === "HR" && (
+              {(q.category === "HR" || q.category === "BEHAVIORAL") && (
                 <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={toggleRecording}>
                   {recording ? "⏹ Stop recording" : "🎙 Record answer (speech-to-text)"}
                 </button>

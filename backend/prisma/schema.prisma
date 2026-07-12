@@ -661,6 +661,8 @@ enum InterviewCategory {
   TECHNICAL
   CODING
   APTITUDE
+  SYSTEM_DESIGN
+  BEHAVIORAL
 }
 
 enum AptitudeCategory {
@@ -682,6 +684,7 @@ model InterviewQuestion {
   id                    String   @id @default(uuid())
   category              InterviewCategory
   subject               String? // Technical: "Java","Python","SQL","DBMS","OS","CN","OOP","DSA",...; Coding: topic e.g. "Arrays"
+  company               String? // e.g. "TCS", "Amazon" — set only for company-specific question-bank entries; null = general pool
   aptitudeCategory       AptitudeCategory?
   difficulty            Difficulty @default(EASY)
   prompt                String
@@ -701,6 +704,7 @@ model InterviewQuestion {
 
   @@index([category])
   @@index([subject])
+  @@index([company])
   @@index([generatedForStudentId])
 }
 

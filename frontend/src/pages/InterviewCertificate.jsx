@@ -37,7 +37,7 @@ export default function InterviewCertificate() {
       <div style={{ maxWidth: 700, margin: "0 auto", padding: "48px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div><h1>Interview Ready Certificate</h1><ChalkUnderline /></div>
-          <Link to="/interview" className="btn btn-ghost">← Interview Prep</Link>
+          <Link to="/interview" className="btn btn-ghost">← AI Mock Interview</Link>
         </div>
 
         {error && (

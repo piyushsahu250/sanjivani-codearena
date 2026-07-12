@@ -5,10 +5,10 @@ import ChalkUnderline from "../components/ChalkUnderline";
 
 const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, marginTop: 4 };
 const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--ink-dim)" };
-const CATEGORIES = ["HR", "TECHNICAL", "CODING", "APTITUDE"];
+const CATEGORIES = ["HR", "TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL"];
 const APTITUDE_CATS = ["QUANTITATIVE", "LOGICAL", "VERBAL", "DATA_INTERPRETATION"];
 
-const EMPTY_Q = { category: "HR", subject: "", aptitudeCategory: "", difficulty: "EASY", prompt: "", expectedKeywords: "", modelAnswer: "", options: "", correctAnswer: "", explanation: "", starterCode: "", testCases: "", language: "java" };
+const EMPTY_Q = { category: "HR", subject: "", company: "", aptitudeCategory: "", difficulty: "EASY", prompt: "", expectedKeywords: "", modelAnswer: "", options: "", correctAnswer: "", explanation: "", starterCode: "", testCases: "", language: "java" };
 
 export default function InterviewAdmin() {
   const [stats, setStats] = useState(null);
@@ -34,7 +34,7 @@ export default function InterviewAdmin() {
     e.preventDefault();
     try {
       const payload = {
-        category: form.category, subject: form.subject || null,
+        category: form.category, subject: form.subject || null, company: form.company || null,
         aptitudeCategory: form.category === "APTITUDE" ? (form.aptitudeCategory || null) : null,
         difficulty: form.difficulty, prompt: form.prompt,
         expectedKeywords: form.expectedKeywords ? form.expectedKeywords.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
@@ -90,7 +90,7 @@ export default function InterviewAdmin() {
     <div>
       <Navbar />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px" }}>
-        <h1>Interview Prep — Admin</h1>
+        <h1>AI Mock Interview — Admin</h1>
         <ChalkUnderline />
 
         {stats && (
@@ -126,7 +126,7 @@ export default function InterviewAdmin() {
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
-              {form.category === "TECHNICAL" || form.category === "CODING" ? (
+              {form.category === "TECHNICAL" || form.category === "CODING" || form.category === "SYSTEM_DESIGN" ? (
                 <div><label style={labelStyle}>Subject / Topic</label><input style={inputStyle} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></div>
               ) : form.category === "APTITUDE" ? (
                 <div>
@@ -143,12 +143,16 @@ export default function InterviewAdmin() {
                   <option value="EASY">Easy</option><option value="MEDIUM">Medium</option><option value="HARD">Hard</option>
                 </select>
               </div>
+              <div>
+                <label style={labelStyle}>Company (optional — leave blank for the general pool)</label>
+                <input style={inputStyle} value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} placeholder="e.g. TCS, Amazon" />
+              </div>
             </div>
 
             <label style={labelStyle}>Prompt</label>
             <textarea style={{ ...inputStyle, minHeight: 60 }} required value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} />
 
-            {(form.category === "HR" || form.category === "TECHNICAL") && (
+            {(form.category === "HR" || form.category === "TECHNICAL" || form.category === "SYSTEM_DESIGN" || form.category === "BEHAVIORAL") && (
               <>
                 <label style={labelStyle}>Expected Keywords (comma-separated)</label>
                 <input style={inputStyle} value={form.expectedKeywords} onChange={(e) => setForm({ ...form, expectedKeywords: e.target.value })} />
@@ -189,7 +193,7 @@ export default function InterviewAdmin() {
           {(questions || []).map((q) => (
             <div key={q.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
               <div>
-                <span className="badge">{q.category}{q.subject ? ` · ${q.subject}` : ""}{q.aptitudeCategory ? ` · ${q.aptitudeCategory}` : ""}</span>
+                <span className="badge">{q.category}{q.subject ? ` · ${q.subject}` : ""}{q.aptitudeCategory ? ` · ${q.aptitudeCategory}` : ""}{q.company ? ` · 🏢 ${q.company}` : ""}</span>
                 <div style={{ marginTop: 4 }}>{q.prompt}</div>
               </div>
               <button style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 12 }} onClick={() => deleteQuestion(q.id)}>Delete</button>

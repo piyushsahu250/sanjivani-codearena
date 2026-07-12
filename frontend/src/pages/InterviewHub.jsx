@@ -9,7 +9,10 @@ const CARDS = [
   { key: "HR", title: "HR Interview", icon: "🗣️", desc: "Practice common HR questions — type or speak your answer." },
   { key: "TECHNICAL", title: "Technical Interview", icon: "💡", desc: "Subject-based Q&A across 11 core CS subjects." },
   { key: "CODING", title: "Coding Interview", icon: "💻", desc: "Solve real coding problems, graded by the judge." },
+  { key: "SYSTEM_DESIGN", title: "System Design Interview", icon: "🏗️", desc: "Explain your approach to designing scalable systems." },
+  { key: "BEHAVIORAL", title: "Behavioral Interview", icon: "🧭", desc: "STAR-style questions about how you've handled real situations." },
   { key: "APTITUDE", title: "Aptitude Interview", icon: "🧮", desc: "Timed quantitative, logical, verbal & DI questions." },
+  { key: "COMPANY", title: "Company-Specific Interview", icon: "🏢", desc: "Practice questions tagged to a specific company's hiring pattern." },
   { key: "MOCK", title: "Mock Interview", icon: "🎯", desc: "A 30-minute mixed HR + Technical + Coding session." },
   { key: "RESUME_BASED", title: "Resume-based Interview", icon: "📄", desc: "Questions generated from your own resume." },
 ];
@@ -21,6 +24,12 @@ const APTITUDE_CATS = [
   { id: "VERBAL", label: "Verbal" }, { id: "DATA_INTERPRETATION", label: "Data Interpretation" },
 ];
 const LANGUAGES = ["java", "python", "javascript", "c", "cpp"];
+const COMPANY_CATEGORIES = [
+  { id: "HR", label: "HR" }, { id: "TECHNICAL", label: "Technical" }, { id: "CODING", label: "Coding" },
+  { id: "SYSTEM_DESIGN", label: "System Design" }, { id: "BEHAVIORAL", label: "Behavioral" },
+];
+const DURATIONS = [15, 30, 45, 60];
+const JOB_ROLES = ["Java Developer", "Full Stack Developer", "Backend Developer", "Software Engineer", "Data Analyst", "AI/ML Engineer"];
 
 export default function InterviewHub() {
   const navigate = useNavigate();
@@ -28,10 +37,17 @@ export default function InterviewHub() {
   const [dark, setDark] = useState(() => localStorage.getItem("interviewPrepDark") === "1");
   const [setupCard, setSetupCard] = useState(null);
   const [starting, setStarting] = useState(false);
-  const [config, setConfig] = useState({ subject: "Java", topic: "Arrays", difficulty: "EASY", language: "java", aptitudeCategory: "QUANTITATIVE", negativeMarking: false });
+  const [companies, setCompanies] = useState([]);
+  const [config, setConfig] = useState({
+    subject: "Java", topic: "Arrays", difficulty: "EASY", language: "java",
+    aptitudeCategory: "QUANTITATIVE", negativeMarking: false,
+    durationMin: 30, jobRole: "", experienceLevel: "Fresher",
+    company: "", companyCategory: "HR",
+  });
 
   useEffect(() => {
     api.get("/interview/summary").then((res) => setSummary(res.data));
+    api.get("/interview/companies").then((res) => setCompanies(res.data));
   }, []);
 
   useEffect(() => {
@@ -42,7 +58,7 @@ export default function InterviewHub() {
     setStarting(true);
     try {
       const body = category === "MOCK"
-        ? { isMock: true, config: {} }
+        ? { isMock: true, config: { jobRole: config.jobRole || undefined, experienceLevel: config.experienceLevel } }
         : category === "RESUME_BASED"
           ? { isResumeBased: true, config: {} }
           : { category, config: extraConfig || {} };
@@ -55,12 +71,18 @@ export default function InterviewHub() {
     }
   }
 
+  const CONFIGURABLE = ["TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL", "COMPANY"];
+
   function handleCardClick(key) {
-    if (key === "TECHNICAL" || key === "CODING" || key === "APTITUDE") {
+    if (CONFIGURABLE.includes(key)) {
       setSetupCard(setupCard === key ? null : key);
     } else {
       start(key);
     }
+  }
+
+  function commonConfig() {
+    return { durationMin: config.durationMin, jobRole: config.jobRole || undefined, experienceLevel: config.experienceLevel };
   }
 
   return (
@@ -69,7 +91,7 @@ export default function InterviewHub() {
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
           <div>
-            <h1>Interview Prep</h1>
+            <h1>AI Mock Interview</h1>
             <ChalkUnderline />
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -141,16 +163,46 @@ export default function InterviewHub() {
                       </label>
                     </>
                   )}
+                  {c.key === "COMPANY" && (
+                    <>
+                      <select className="ip-select" value={config.company} onChange={(e) => setConfig({ ...config, company: e.target.value })}>
+                        <option value="">Select a company…</option>
+                        {companies.map((co) => <option key={co.company} value={co.company}>{co.company} ({co.questionCount})</option>)}
+                      </select>
+                      <select className="ip-select" value={config.companyCategory} onChange={(e) => setConfig({ ...config, companyCategory: e.target.value })}>
+                        {COMPANY_CATEGORIES.map((cc) => <option key={cc.id} value={cc.id}>{cc.label}</option>)}
+                      </select>
+                      {config.companyCategory === "CODING" && (
+                        <select className="ip-select" value={config.language} onChange={(e) => setConfig({ ...config, language: e.target.value })}>
+                          {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                      )}
+                    </>
+                  )}
+
+                  {/* Shared config: job role, experience level, duration — spec's "Interview Configuration" */}
+                  <select className="ip-select" value={config.jobRole} onChange={(e) => setConfig({ ...config, jobRole: e.target.value })}>
+                    <option value="">Any job role</option>
+                    {JOB_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <select className="ip-select" value={config.experienceLevel} onChange={(e) => setConfig({ ...config, experienceLevel: e.target.value })}>
+                    <option value="Fresher">Fresher</option>
+                    <option value="Experienced">Experienced</option>
+                  </select>
+                  <select className="ip-select" value={config.durationMin} onChange={(e) => setConfig({ ...config, durationMin: Number(e.target.value) })}>
+                    {DURATIONS.map((d) => <option key={d} value={d}>{d} minutes</option>)}
+                  </select>
+
                   <button
                     className="btn btn-primary"
-                    disabled={starting}
-                    onClick={() =>
-                      start(c.key, c.key === "TECHNICAL"
-                        ? { subject: config.subject, difficulty: config.difficulty }
-                        : c.key === "CODING"
-                          ? { subject: config.topic, difficulty: config.difficulty, language: config.language }
-                          : { aptitudeCategory: config.aptitudeCategory, negativeMarking: config.negativeMarking, durationMin: 10 })
-                    }
+                    disabled={starting || (c.key === "COMPANY" && !config.company)}
+                    onClick={() => {
+                      if (c.key === "TECHNICAL") start("TECHNICAL", { subject: config.subject, difficulty: config.difficulty, ...commonConfig() });
+                      else if (c.key === "CODING") start("CODING", { subject: config.topic, difficulty: config.difficulty, language: config.language, ...commonConfig() });
+                      else if (c.key === "APTITUDE") start("APTITUDE", { aptitudeCategory: config.aptitudeCategory, negativeMarking: config.negativeMarking, durationMin: config.durationMin || 10 });
+                      else if (c.key === "SYSTEM_DESIGN" || c.key === "BEHAVIORAL") start(c.key, commonConfig());
+                      else if (c.key === "COMPANY") start(config.companyCategory, { company: config.company, language: config.language, ...commonConfig() });
+                    }}
                   >
                     {starting ? "Starting…" : "Start"}
                   </button>

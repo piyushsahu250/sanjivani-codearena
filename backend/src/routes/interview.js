@@ -8,16 +8,19 @@ const { judgeSubmission } = require("../utils/judge");
 const { runQueued } = require("../utils/queue");
 const { evaluateHrAnswer, evaluateTechnicalAnswer, evaluateAptitudeAnswer, evaluateCodingAnswer } = require("../utils/interviewEvaluation");
 const { buildInterviewReport } = require("../utils/interviewReport");
+const { buildRecommendations } = require("../utils/interviewRecommendations");
 const { generateResumeQuestions } = require("../utils/resumeInterviewQuestions");
 const { generateInterviewCertificatePdf } = require("../utils/interviewCertificatePdf");
+const { generateInterviewReportPdf } = require("../utils/interviewReportPdf");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";
 const CERT_THRESHOLD = 80;
 
-const SESSION_QUESTION_COUNT = { HR: 6, TECHNICAL: 6, APTITUDE: 10, CODING: 3 };
+const SESSION_QUESTION_COUNT = { HR: 6, TECHNICAL: 6, APTITUDE: 10, CODING: 3, SYSTEM_DESIGN: 3, BEHAVIORAL: 6 };
 const MOCK_DURATION_MIN = 30;
+const VALID_CATEGORIES = ["HR", "TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL"];
 
 function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
@@ -25,7 +28,7 @@ function shuffle(arr) {
 
 function sanitizeQuestion(q) {
   return {
-    id: q.id, category: q.category, subject: q.subject, aptitudeCategory: q.aptitudeCategory,
+    id: q.id, category: q.category, subject: q.subject, company: q.company, aptitudeCategory: q.aptitudeCategory,
     difficulty: q.difficulty, prompt: q.prompt, options: q.options,
     starterCode: q.starterCode, language: q.language,
   };
@@ -36,7 +39,15 @@ async function pickQuestions(category, config, count) {
   if (config.subject) where.subject = config.subject;
   if (config.difficulty) where.difficulty = config.difficulty;
   if (config.aptitudeCategory) where.aptitudeCategory = config.aptitudeCategory;
-  const pool = await prisma.interviewQuestion.findMany({ where });
+  if (config.company) where.company = config.company;
+  let pool = await prisma.interviewQuestion.findMany({ where });
+  // A company filter that turns up nothing (a category/company combination that hasn't been
+  // seeded yet) falls back to the general pool rather than a hard error — company-specific
+  // banks are seeded modestly on purpose and grown via the admin CMS over time.
+  if (pool.length === 0 && config.company) {
+    const { company, ...rest } = where;
+    pool = await prisma.interviewQuestion.findMany({ where: rest });
+  }
   return shuffle(pool).slice(0, count || SESSION_QUESTION_COUNT[category] || 6);
 }
 
@@ -68,7 +79,7 @@ router.get("/summary", authenticate, requireRole("STUDENT"), async (req, res) =>
       .slice(0, 5);
 
     const byCategory = {};
-    for (const cat of ["HR", "TECHNICAL", "CODING", "APTITUDE"]) {
+    for (const cat of VALID_CATEGORIES) {
       const catSessions = sessions.filter((s) => s.category === cat && !s.isMock && !s.isResumeBased);
       byCategory[cat] = catSessions.length;
     }
@@ -88,7 +99,7 @@ router.get("/summary", authenticate, requireRole("STUDENT"), async (req, res) =>
 router.post("/sessions", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
     const { category, isMock, isResumeBased, config } = req.body;
-    if (!isMock && !isResumeBased && !["HR", "TECHNICAL", "CODING", "APTITUDE"].includes(category)) {
+    if (!isMock && !isResumeBased && !VALID_CATEGORIES.includes(category)) {
       return res.status(400).json({ error: "Invalid category" });
     }
 
@@ -184,7 +195,8 @@ router.get("/sessions/:id", authenticate, requireRole("STUDENT"), async (req, re
     if (!session || session.studentId !== req.user.id) return res.status(404).json({ error: "Session not found" });
     const questions = await prisma.interviewQuestion.findMany({ where: { id: { in: session.answers.map((a) => a.questionId) } } });
     const ordered = session.answers.map((a) => ({ ...sanitizeQuestion(questions.find((q) => q.id === a.questionId) || {}), answer: a }));
-    res.json({ session, questions: ordered });
+    const recommendedLearning = session.report ? await buildRecommendations(session.report.weakAreas) : [];
+    res.json({ session, questions: ordered, recommendedLearning });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load session" });
@@ -207,10 +219,16 @@ router.post("/sessions/:id/answer", authenticate, requireRole("STUDENT"), async 
     let score = 0, breakdown = null, immediateResult = null;
     if (skipped) {
       score = 0; breakdown = null;
-    } else if (question.category === "HR") {
+    } else if (question.category === "HR" || question.category === "BEHAVIORAL") {
+      // Behavioral questions are free-text/speech, same as HR — the same linguistic heuristics
+      // (completeness, hedging, filler words, professionalism) apply equally well to "Tell me
+      // about a time you..." as to "Tell me about yourself."
       const r = evaluateHrAnswer(answerText, question.expectedKeywords || []);
       score = r.score; breakdown = r.breakdown;
-    } else if (question.category === "TECHNICAL") {
+    } else if (question.category === "TECHNICAL" || question.category === "SYSTEM_DESIGN") {
+      // System Design answers are free-text explanations graded the same way as a technical
+      // concept answer: keyword coverage against the expected-concepts list an admin sets on
+      // the question (e.g. "load balancer", "caching", "sharding", "CAP theorem").
       const r = evaluateTechnicalAnswer(answerText, question.expectedKeywords || []);
       score = r.score; breakdown = r.breakdown;
     } else if (question.category === "APTITUDE") {
@@ -260,10 +278,37 @@ router.post("/sessions/:id/finalize", authenticate, requireRole("STUDENT"), asyn
       }),
     ]);
 
-    res.json({ session: updated, report });
+    const recommendedLearning = await buildRecommendations(report.weakAreas);
+    res.json({ session: updated, report, recommendedLearning });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to finalize interview" });
+  }
+});
+
+// STUDENT: download the full detailed report as a PDF (questions, answers/code, per-question
+// score, overall breakdown, strengths/weaknesses, improvement plan) — distinct from the
+// platform-wide "Interview Ready" certificate PDF, which is a single summary document, not a
+// per-session report.
+router.get("/sessions/:id/report/pdf", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const session = await prisma.interviewSession.findUnique({
+      where: { id: req.params.id },
+      include: { answers: { orderBy: { createdAt: "asc" } }, report: true },
+    });
+    if (!session || session.studentId !== req.user.id) return res.status(404).json({ error: "Session not found" });
+    if (!session.report) return res.status(400).json({ error: "This interview hasn't been submitted yet" });
+
+    const questions = await prisma.interviewQuestion.findMany({ where: { id: { in: session.answers.map((a) => a.questionId) } } });
+    const ordered = session.answers.map((a) => ({ ...sanitizeQuestion(questions.find((q) => q.id === a.questionId) || {}), answer: a }));
+    const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="interview-report-${session.id.slice(0, 8)}.pdf"`);
+    generateInterviewReportPdf({ studentName: student.name, session, questions: ordered, report: session.report }, res);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to generate report PDF" });
   }
 });
 
@@ -353,6 +398,17 @@ router.get("/subjects", authenticate, async (req, res) => {
   res.json(bySubject);
 });
 
+// Companies with at least one seeded question — the hub only offers a company as a filter
+// option once real content exists for it, rather than listing all 12 named in the spec
+// regardless of whether any have been seeded/added yet.
+router.get("/companies", authenticate, async (req, res) => {
+  const rows = await prisma.interviewQuestion.groupBy({
+    by: ["company"], where: { isActive: true, generatedForStudentId: null, company: { not: null } },
+    _count: { _all: true },
+  });
+  res.json(rows.map((r) => ({ company: r.company, questionCount: r._count._all })).sort((a, b) => a.company.localeCompare(b.company)));
+});
+
 // =========================== Certificate ===========================
 
 async function computeAverageInterviewScore(studentId) {
@@ -430,11 +486,11 @@ router.get("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asyn
 
 router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { category, subject, aptitudeCategory, difficulty, prompt, expectedKeywords, modelAnswer, options, correctAnswer, explanation, starterCode, testCases, language } = req.body;
+    const { category, subject, company, aptitudeCategory, difficulty, prompt, expectedKeywords, modelAnswer, options, correctAnswer, explanation, starterCode, testCases, language } = req.body;
     if (!category || !prompt) return res.status(400).json({ error: "category and prompt are required" });
     const q = await prisma.interviewQuestion.create({
       data: {
-        category, subject: subject || null, aptitudeCategory: aptitudeCategory || null, difficulty: difficulty || "EASY",
+        category, subject: subject || null, company: company || null, aptitudeCategory: aptitudeCategory || null, difficulty: difficulty || "EASY",
         prompt, expectedKeywords: expectedKeywords ?? undefined, modelAnswer: modelAnswer || null,
         options: options ?? undefined, correctAnswer: correctAnswer ?? undefined, explanation: explanation || null,
         starterCode: starterCode || null, testCases: testCases ?? undefined, language: language || null,
@@ -449,7 +505,7 @@ router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asy
 
 router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const fields = ["category", "subject", "aptitudeCategory", "difficulty", "prompt", "expectedKeywords", "modelAnswer", "options", "correctAnswer", "explanation", "starterCode", "testCases", "language", "isActive"];
+    const fields = ["category", "subject", "company", "aptitudeCategory", "difficulty", "prompt", "expectedKeywords", "modelAnswer", "options", "correctAnswer", "explanation", "starterCode", "testCases", "language", "isActive"];
     const data = {};
     for (const f of fields) if (req.body[f] !== undefined) data[f] = f === "isActive" ? !!req.body[f] : req.body[f];
     const q = await prisma.interviewQuestion.update({ where: { id: req.params.id }, data });
@@ -475,7 +531,7 @@ router.get("/admin/questions/export", authenticate, requireRole("ADMIN", "STAFF"
   if (req.query.category) where.category = req.query.category;
   const questions = await prisma.interviewQuestion.findMany({ where });
   const rows = questions.map((q) => ({
-    category: q.category, subject: q.subject || "", aptitudeCategory: q.aptitudeCategory || "", difficulty: q.difficulty,
+    category: q.category, subject: q.subject || "", company: q.company || "", aptitudeCategory: q.aptitudeCategory || "", difficulty: q.difficulty,
     prompt: q.prompt, expectedKeywords: Array.isArray(q.expectedKeywords) ? q.expectedKeywords.join("|") : "",
     modelAnswer: q.modelAnswer || "", options: Array.isArray(q.options) ? q.options.join("|") : "",
     correctAnswer: q.correctAnswer ?? "", explanation: q.explanation || "", starterCode: q.starterCode || "",
@@ -509,7 +565,7 @@ router.post("/admin/questions/import", authenticate, requireRole("ADMIN", "STAFF
       const row = rows[i];
       const rowNum = i + 2;
       const category = String(row.category || "").trim().toUpperCase();
-      if (!["HR", "TECHNICAL", "CODING", "APTITUDE"].includes(category)) {
+      if (!VALID_CATEGORIES.includes(category)) {
         errors.push({ row: rowNum, reason: `Invalid category "${row.category}"` });
         continue;
       }
@@ -520,7 +576,7 @@ router.post("/admin/questions/import", authenticate, requireRole("ADMIN", "STAFF
       try {
         await prisma.interviewQuestion.create({
           data: {
-            category, subject: row.subject || null, aptitudeCategory: row.aptitudeCategory || null,
+            category, subject: row.subject || null, company: row.company || null, aptitudeCategory: row.aptitudeCategory || null,
             difficulty: ["EASY", "MEDIUM", "HARD"].includes(String(row.difficulty || "").toUpperCase()) ? String(row.difficulty).toUpperCase() : "EASY",
             prompt: row.prompt,
             expectedKeywords: row.expectedKeywords ? String(row.expectedKeywords).split("|").map((s) => s.trim()).filter(Boolean) : undefined,

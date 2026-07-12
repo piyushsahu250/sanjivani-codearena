@@ -20,7 +20,7 @@ export default function InterviewProgress() {
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "48px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div><h1>Progress</h1><ChalkUnderline /></div>
-          <Link to="/interview" className="btn btn-ghost">← Interview Prep</Link>
+          <Link to="/interview" className="btn btn-ghost">← AI Mock Interview</Link>
         </div>
 
         {!data && <p className="mono" style={{ marginTop: 24 }}>Loading…</p>}
