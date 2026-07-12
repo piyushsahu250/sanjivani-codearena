@@ -5,6 +5,7 @@ import ChalkUnderline from "../components/ChalkUnderline";
 
 const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, marginTop: 4 };
 const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--ink-dim)" };
+const SECTION_LABELS = { personal: "Personal Details", summary: "Professional Summary", education: "Education", skills: "Skills", projects: "Projects", experience: "Experience", certifications: "Certifications" };
 
 const TEMPLATES = [
   { id: "modern", label: "Modern", accent: "#4F9D6E" },
@@ -66,6 +67,9 @@ export default function ResumeBuilder() {
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [zoom, setZoom] = useState(85);
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [lowConfidenceFields, setLowConfidenceFields] = useState([]);
+  const [undoUploadVersionId, setUndoUploadVersionId] = useState(null);
+  const [clearingAll, setClearingAll] = useState(false);
   const fileInputRef = useRef(null);
 
   function load() {
@@ -78,6 +82,12 @@ export default function ResumeBuilder() {
     setData((d) => ({ ...d, resume: res.resume, completion: res.completion }));
     setAts(res.atsScore);
     setScoreDelta(res.scoreDelta);
+    // Once the student has touched a section themselves, the parser's original confidence
+    // score no longer applies to it — clear that section's "please review" flag.
+    const touchedConfidenceKeys = new Set(
+      Object.keys(patch).map((k) => (["fullName", "email", "mobile", "linkedin", "github", "portfolio", "address"].includes(k) ? "personal" : k))
+    );
+    setLowConfidenceFields((prev) => prev.filter((f) => !touchedConfidenceKeys.has(f)));
   }
 
   async function runAutofill() {
@@ -168,12 +178,56 @@ export default function ResumeBuilder() {
       setData((d) => ({ ...d, resume: res.resume, completion: res.completion }));
       setAts(res.atsScore);
       setScoreDelta(null);
-      alert(`Resume parsed successfully — populated ${res.parsedFieldsCount} field group(s) below. Review and edit anything the parser missed or got wrong.`);
+      setLowConfidenceFields(res.lowConfidenceFields || []);
+      setUndoUploadVersionId(res.previousVersionId || null);
     } catch (err) {
       alert(err.response?.data?.error || "Failed to upload and parse this resume");
     } finally {
       setUploadProgress(null);
       e.target.value = "";
+    }
+  }
+
+  async function undoUpload() {
+    if (!undoUploadVersionId) return;
+    try {
+      const { data: res } = await api.post(`/resume/me/versions/${undoUploadVersionId}/restore`);
+      setData((d) => ({ ...d, resume: res.resume, completion: res.completion }));
+      setAts(res.atsScore);
+      setScoreDelta(null);
+      setLowConfidenceFields([]);
+      setUndoUploadVersionId(null);
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to undo the upload");
+    }
+  }
+
+  async function clearAll() {
+    if (!confirm("Clear ALL resume data? Your current state is saved to Version History first, so this can be undone.")) return;
+    setClearingAll(true);
+    try {
+      const { data: res } = await api.post("/resume/me/clear-all");
+      setData((d) => ({ ...d, resume: res.resume, completion: res.completion }));
+      setAts(res.atsScore);
+      setScoreDelta(null);
+      setLowConfidenceFields([]);
+      setUndoUploadVersionId(null);
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to clear resume data");
+    } finally {
+      setClearingAll(false);
+    }
+  }
+
+  async function clearSection(section) {
+    if (!confirm(`Clear this section? Your current state is saved to Version History first, so this can be undone.`)) return;
+    try {
+      const { data: res } = await api.post("/resume/me/clear-section", { section });
+      setData((d) => ({ ...d, resume: res.resume, completion: res.completion }));
+      setAts(res.atsScore);
+      setLowConfidenceFields((prev) => prev.filter((f) => f !== section));
+    } catch (err) {
+      alert(err.response?.data?.error || "Failed to clear this section");
     }
   }
 
@@ -201,11 +255,36 @@ export default function ResumeBuilder() {
             <button className="btn btn-ghost" onClick={() => window.print()}>🖨 Print</button>
             <button className="btn btn-ghost" onClick={downloadDocx} disabled={downloadingDocx}>{downloadingDocx ? "Preparing…" : "⬇ Download DOCX"}</button>
             <button className="btn btn-primary" onClick={downloadPdf} disabled={downloading}>{downloading ? "Preparing…" : "⬇ Download PDF"}</button>
+            <button className="btn btn-ghost" style={{ color: "var(--rust)", borderColor: "var(--rust)" }} onClick={clearAll} disabled={clearingAll}>
+              {clearingAll ? "Clearing…" : "🗑 Clear All Resume Data"}
+            </button>
           </div>
         </div>
         <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 6 }}>
           Supported upload formats: .pdf, .docx (max 10 MB). Uploading replaces the fields below with what's extracted — review and edit afterward.
         </p>
+
+        {lowConfidenceFields.length > 0 && (
+          <div className="card" style={{ padding: 16, marginTop: 16, background: "#FCEFD9", borderLeft: "4px solid var(--amber-dark)" }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>
+              Some information could not be extracted with high confidence. Please review and update the highlighted sections below.
+            </div>
+            <div style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 4 }}>
+              Lower-confidence sections: {lowConfidenceFields.map((f) => SECTION_LABELS[f] || f).join(", ")}
+            </div>
+            {undoUploadVersionId && (
+              <button className="btn btn-ghost" style={{ marginTop: 10, fontSize: 12 }} onClick={undoUpload}>
+                ↩ Undo this upload (restore what was here before)
+              </button>
+            )}
+          </div>
+        )}
+        {!lowConfidenceFields.length && undoUploadVersionId && (
+          <div className="card" style={{ padding: 12, marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 13, color: "var(--mint)" }}>✓ Resume parsed with high confidence across all sections.</span>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={undoUpload}>↩ Undo this upload</button>
+          </div>
+        )}
 
         {/* Completion */}
         <div className="card" style={{ padding: 16, marginTop: 20 }}>
@@ -319,34 +398,46 @@ export default function ResumeBuilder() {
             <VersionHistoryCard onRestore={(res) => { setData((d) => ({ ...d, resume: res.resume, completion: res.completion })); setAts(res.atsScore); setScoreDelta(null); }} />
 
             {/* Personal details */}
-            <PersonalDetailsForm resume={resume} onSave={save} />
+            <PersonalDetailsForm resume={resume} onSave={save} lowConfidence={lowConfidenceFields.includes("personal") || lowConfidenceFields.includes("summary")} />
 
             <ArraySectionEditor title="Education" items={resume.education || []} fields={EDUCATION_FIELDS}
               onChange={(items) => save({ education: items })}
+              onClear={() => clearSection("education")}
+              lowConfidence={lowConfidenceFields.includes("education")}
               renderSummary={(e) => `${e.degree || "—"}${e.specialization ? ` (${e.specialization})` : ""} — ${e.institution || "—"}`} />
 
             <ArraySectionEditor title="Skills" items={resume.skills || []} fields={SKILL_FIELDS}
               onChange={(items) => save({ skills: items })}
+              onClear={() => clearSection("skills")}
+              lowConfidence={lowConfidenceFields.includes("skills")}
               renderSummary={(s) => `${s.name || "—"} — ${s.category || "Other"} (${s.proficiency || "—"})`} />
 
             <ArraySectionEditor title="Projects" items={resume.projects || []} fields={PROJECT_FIELDS}
               onChange={(items) => save({ projects: items })}
+              onClear={() => clearSection("projects")}
+              lowConfidence={lowConfidenceFields.includes("projects")}
               renderSummary={(p) => `${p.title || "—"}${p.role ? ` — ${p.role}` : ""}`} />
 
             <ArraySectionEditor title="Experience" items={resume.experience || []} fields={EXPERIENCE_FIELDS}
               onChange={(items) => save({ experience: items })}
+              onClear={() => clearSection("experience")}
+              lowConfidence={lowConfidenceFields.includes("experience")}
               renderSummary={(e) => `${e.title || "—"} at ${e.company || "—"} (${e.employmentType || "—"})`} />
 
             <ArraySectionEditor title="Certifications" items={resume.certifications || []} fields={CERT_FIELDS}
               onChange={(items) => save({ certifications: items })}
+              onClear={() => clearSection("certifications")}
+              lowConfidence={lowConfidenceFields.includes("certifications")}
               renderSummary={(c) => `${c.name || "—"} — ${c.org || "—"}`} />
 
             <ArraySectionEditor title="Achievements" items={resume.achievements || []} fields={ACHIEVEMENT_FIELDS}
               onChange={(items) => save({ achievements: items })}
+              onClear={() => clearSection("achievements")}
               renderSummary={(a) => `[${a.category || "—"}] ${a.text || "—"}`} />
 
             <ArraySectionEditor title="Languages" items={resume.languages || []} fields={LANGUAGE_FIELDS}
               onChange={(items) => save({ languages: items })}
+              onClear={() => clearSection("languages")}
               renderSummary={(l) => `${l.name || "—"} — ${l.proficiency || "—"}`} />
           </div>
 
@@ -383,7 +474,7 @@ export default function ResumeBuilder() {
   );
 }
 
-function PersonalDetailsForm({ resume, onSave }) {
+function PersonalDetailsForm({ resume, onSave, lowConfidence }) {
   const [form, setForm] = useState({
     fullName: resume.fullName || "", photoUrl: resume.photoUrl || "", email: resume.email || "", mobile: resume.mobile || "",
     linkedin: resume.linkedin || "", github: resume.github || "", portfolio: resume.portfolio || "",
@@ -401,8 +492,11 @@ function PersonalDetailsForm({ resume, onSave }) {
   }
 
   return (
-    <div className="card" style={{ padding: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Personal Details</div>
+    <div className="card" style={{ padding: 16, border: lowConfidence ? "2px solid var(--amber-dark)" : undefined }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Personal Details</div>
+        {lowConfidence && <span className="badge" style={{ background: "#FCEFD9", color: "var(--amber-dark)", fontSize: 11 }}>Please review</span>}
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
         <Field label="Full Name" value={form.fullName} onChange={(v) => setForm({ ...form, fullName: v })} />
         <Field label="Profile Photo URL (optional)" value={form.photoUrl} onChange={(v) => setForm({ ...form, photoUrl: v })} />
@@ -432,7 +526,7 @@ function Field({ label, value, onChange }) {
   );
 }
 
-function ArraySectionEditor({ title, items, fields, onChange, renderSummary }) {
+function ArraySectionEditor({ title, items, fields, onChange, renderSummary, onClear, lowConfidence }) {
   const [editingIndex, setEditingIndex] = useState(null); // -1 = adding, N = editing index N, null = closed
   const [draft, setDraft] = useState({});
 
@@ -465,10 +559,20 @@ function ArraySectionEditor({ title, items, fields, onChange, renderSummary }) {
   }
 
   return (
-    <div className="card" style={{ padding: 16 }}>
+    <div className="card" style={{ padding: 16, border: lowConfidence ? "2px solid var(--amber-dark)" : undefined }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
-        {editingIndex === null && <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={startAdd}>+ Add</button>}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
+          {lowConfidence && <span className="badge" style={{ background: "#FCEFD9", color: "var(--amber-dark)", fontSize: 11 }}>Please review</span>}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {editingIndex === null && items.length > 0 && onClear && (
+            <button style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 12 }} onClick={() => { if (confirm(`Clear all ${title}?`)) onClear(); }}>
+              Clear section
+            </button>
+          )}
+          {editingIndex === null && <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={startAdd}>+ Add</button>}
+        </div>
       </div>
       <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
         {items.map((item, i) =>

@@ -40,14 +40,14 @@ function pdfFilename(resume) {
 // unbounded growth from an active editing session.
 async function saveVersion(resumeId, resumeSnapshot) {
   const atsScore = computeAtsScore(resumeSnapshot).score;
-  await prisma.resumeVersion.create({ data: { resumeId, snapshot: resumeSnapshot, atsScore } });
+  const version = await prisma.resumeVersion.create({ data: { resumeId, snapshot: resumeSnapshot, atsScore } });
   const versions = await prisma.resumeVersion.findMany({
     where: { resumeId }, orderBy: { createdAt: "desc" }, select: { id: true }, skip: 20,
   });
   if (versions.length) {
     await prisma.resumeVersion.deleteMany({ where: { id: { in: versions.map((v) => v.id) } } });
   }
-  return atsScore;
+  return version.id;
 }
 
 // =========================== Student-facing ===========================
@@ -152,7 +152,10 @@ router.post(
       }
 
       const existing = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
-      if (existing) await saveVersion(existing.id, existing);
+      // Captured so the frontend can offer a one-click "Undo this upload" — restoring exactly
+      // this snapshot — right after the parse, without the student needing to dig through
+      // Version History manually.
+      const previousVersionId = existing ? await saveVersion(existing.id, existing) : null;
 
       const data = {
         fullName: parsed.fullName || existing?.fullName || "",
@@ -182,10 +185,13 @@ router.post(
       await saveVersion(resume.id, resume);
       const config = await getFieldConfig();
 
-      const extractedCount = Object.entries(parsed).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : !!v)).length;
+      const COUNTABLE_FIELDS = ["fullName", "email", "mobile", "linkedin", "github", "portfolio", "address", "summary", "education", "skills", "projects", "experience", "certifications", "achievements", "languages"];
+      const extractedCount = COUNTABLE_FIELDS.filter((k) => (Array.isArray(parsed[k]) ? parsed[k].length > 0 : !!parsed[k])).length;
       res.json({
         resume, completion: computeCompletion(resume, config.mandatorySections), atsScore,
         parsedFieldsCount: extractedCount,
+        confidence: parsed.confidence, lowConfidenceFields: parsed.lowConfidenceFields,
+        previousVersionId,
       });
     } catch (err) {
       console.error(err);
@@ -193,6 +199,64 @@ router.post(
     }
   }
 );
+
+// STUDENT: wipe the entire resume back to a blank draft (keeps the row itself and its template
+// choice). The pre-clear state is snapshotted to version history first, so this is undoable via
+// the same Restore mechanism as everything else — "Clear All Resume Data" / "Delete Uploaded
+// Resume" are the same operation under the hood, since no separate uploaded file is ever stored
+// to delete in the first place (only ever the extracted structured data).
+router.post("/me/clear-all", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const existing = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!existing) return res.status(404).json({ error: "No resume found" });
+    await saveVersion(existing.id, existing);
+
+    const blank = {
+      fullName: "", photoUrl: "", email: "", mobile: "", linkedin: "", github: "", portfolio: "", address: "", summary: "",
+      education: [], skills: [], projects: [], experience: [], certifications: [], achievements: [], languages: [],
+      targetRole: null,
+    };
+    const resume = await prisma.resume.update({ where: { studentId: req.user.id }, data: blank });
+    await saveVersion(resume.id, resume);
+    const config = await getFieldConfig();
+    res.json({ resume, completion: computeCompletion(resume, config.mandatorySections), atsScore: computeAtsScore(resume) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to clear resume" });
+  }
+});
+
+const CLEARABLE_SECTIONS = {
+  summary: { summary: "" },
+  education: { education: [] },
+  skills: { skills: [] },
+  projects: { projects: [] },
+  experience: { experience: [] },
+  certifications: { certifications: [] },
+  achievements: { achievements: [] },
+  languages: { languages: [] },
+};
+
+// STUDENT: clear just one section (e.g. "start Projects over from scratch") without touching
+// anything else — same undo-via-version-history safety net as clear-all.
+router.post("/me/clear-section", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const data = CLEARABLE_SECTIONS[req.body.section];
+    if (!data) return res.status(400).json({ error: "Unknown or non-clearable section" });
+    const existing = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!existing) return res.status(404).json({ error: "No resume found" });
+    await saveVersion(existing.id, existing);
+
+    const resume = await prisma.resume.update({ where: { studentId: req.user.id }, data });
+    const atsScore = computeAtsScore(resume);
+    await saveVersion(resume.id, resume);
+    const config = await getFieldConfig();
+    res.json({ resume, completion: computeCompletion(resume, config.mandatorySections), atsScore });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to clear section" });
+  }
+});
 
 // STUDENT: rule-based rewrite suggestion for one block of text (summary / project description /
 // experience responsibilities / achievement). Returns a suggestion only — never auto-saves, so
