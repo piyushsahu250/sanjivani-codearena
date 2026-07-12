@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
+import { PlusCircle, BookOpen, Trophy, FileText, Mic, Users as UsersIcon, Upload, Download } from "lucide-react";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import { SkeletonGrid } from "../components/Skeleton";
 
 function statusOf(test) {
   const now = new Date();
@@ -18,6 +21,11 @@ function statusOf(test) {
 export default function StaffDashboard() {
   const { user } = useAuth();
   const [tests, setTests] = useState([]);
+  const [classes, setClasses] = useState(null);
+  const [gamiStats, setGamiStats] = useState(null);
+  const [interviewStats, setInterviewStats] = useState(null);
+  const [resumeStats, setResumeStats] = useState(null);
+  const [courseCount, setCourseCount] = useState(null);
 
   const [nameFilter, setNameFilter] = useState("");
   const [instituteFilter, setInstituteFilter] = useState("");
@@ -27,6 +35,11 @@ export default function StaffDashboard() {
 
   useEffect(() => {
     refresh();
+    api.get("/classes").then((res) => setClasses(res.data)).catch(() => setClasses([]));
+    api.get("/gamification/admin/stats").then((res) => setGamiStats(res.data)).catch(() => setGamiStats(null));
+    api.get("/interview/admin/stats").then((res) => setInterviewStats(res.data)).catch(() => setInterviewStats(null));
+    api.get("/resume/admin/stats").then((res) => setResumeStats(res.data)).catch(() => setResumeStats(null));
+    api.get("/learning/courses").then((res) => setCourseCount(res.data.length)).catch(() => setCourseCount(null));
   }, []);
 
   function refresh() {
@@ -85,16 +98,73 @@ export default function StaffDashboard() {
             <h1>Staff control room</h1>
             <ChalkUnderline />
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <Link to="/staff/questions" className="btn btn-ghost">Question Bank</Link>
-            <Link to="/staff/learning" className="btn btn-ghost">Learning Management</Link>
-            <Link to="/staff/gamification" className="btn btn-ghost">🏆 Gamification</Link>
-            <Link to="/staff/resumes" className="btn btn-ghost">📄 Resumes</Link>
-            <Link to="/staff/interviews" className="btn btn-ghost">🎤 Interview Prep</Link>
-            <Link to="/staff/students" className="btn btn-ghost">Student Performance</Link>
-            <Link to="/staff/tests/new" className="btn btn-primary">+ New test</Link>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link to="/staff/tests/new" className="btn btn-primary"><PlusCircle size={15} /> Create Test</Link>
+            <Link to="/staff/learning" className="btn btn-ghost"><BookOpen size={15} /> Learning Management</Link>
+            <Link to="/staff/students" className="btn btn-ghost"><Download size={15} /> Download Reports</Link>
+            <Link to="/staff/students" className="btn btn-ghost"><UsersIcon size={15} /> Student Performance</Link>
+            <Link to="/staff/questions" className="btn btn-ghost"><Upload size={15} /> Upload Questions</Link>
+            <Link to="/staff/gamification" className="btn btn-ghost"><Trophy size={15} /> Gamification</Link>
+            <Link to="/staff/resumes" className="btn btn-ghost"><FileText size={15} /> Resumes</Link>
+            <Link to="/staff/interviews" className="btn btn-ghost"><Mic size={15} /> Mock Interviews</Link>
           </div>
         </div>
+
+        {/* Summary cards */}
+        {classes === null ? (
+          <div style={{ marginTop: 24 }}><SkeletonGrid count={7} minWidth={150} /></div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 24 }}>
+            <StatCard icon="🏫" label="Total Classes" value={classes.length} />
+            <StatCard icon="🎓" label="Total Students" value={classes.reduce((s, c) => s + (c._count?.users || 0), 0)} />
+            <StatCard icon="📝" label="Active Tests" value={tests.filter((t) => statusOf(t).label === "Active").length} />
+            <StatCard icon="📊" label="Total Tests" value={tests.length} />
+            <StatCard icon="📚" label="Learning Courses" value={courseCount ?? "—"} />
+            <StatCard icon="📄" label="Resumes In Progress" value={resumeStats ? resumeStats.resumesStarted : "—"} />
+            <StatCard icon="🎤" label="Avg. Interview Score" value={interviewStats ? `${interviewStats.averageScore}%` : "—"} />
+          </div>
+        )}
+
+        {/* Student analytics */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20, marginTop: 24 }}>
+          <div>
+            <h3 style={{ fontSize: 16, marginBottom: 12 }}>Test Status Overview</h3>
+            <div className="card" style={{ padding: 20, height: 220 }}>
+              {tests.length === 0 ? (
+                <p style={{ color: "var(--ink-dim)", fontSize: 13, textAlign: "center", paddingTop: 60 }}>No tests yet.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={testStatusChartData(tests)}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
+                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="var(--mint)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+          <div>
+            <h3 style={{ fontSize: 16, marginBottom: 12 }}>Top Students (XP)</h3>
+            <div className="card" style={{ padding: 20, height: 220, overflowY: "auto" }}>
+              {!gamiStats || gamiStats.topStudents.length === 0 ? (
+                <p style={{ color: "var(--ink-dim)", fontSize: 13, textAlign: "center", paddingTop: 60 }}>Not enough activity yet.</p>
+              ) : (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {gamiStats.topStudents.slice(0, 6).map((s, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                      <span>#{i + 1} {s.name}</span>
+                      <span className="mono" style={{ color: "var(--mint)", fontWeight: 700 }}>{s.xp} XP</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <h3 style={{ fontSize: 16, marginTop: 32, marginBottom: 4 }}>Manage Tests</h3>
 
         <div className="card" style={{ padding: 16, marginTop: 24, display: "flex", gap: 10, flexWrap: "wrap" }}>
           <input
@@ -190,3 +260,19 @@ export default function StaffDashboard() {
 }
 
 const inputStyle = { padding: "10px 12px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 14 };
+
+function StatCard({ icon, label, value }) {
+  return (
+    <div className="card" style={{ padding: "14px 16px" }}>
+      <div style={{ fontSize: 20 }}>{icon}</div>
+      <div className="mono" style={{ fontSize: 20, fontWeight: 700, marginTop: 4 }}>{value}</div>
+      <div style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}
+
+function testStatusChartData(tests) {
+  const counts = { Draft: 0, Scheduled: 0, Active: 0, Completed: 0 };
+  for (const t of tests) counts[statusOf(t).label] = (counts[statusOf(t).label] || 0) + 1;
+  return Object.entries(counts).map(([name, count]) => ({ name, count }));
+}

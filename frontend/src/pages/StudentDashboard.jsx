@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { PlayCircle, Code2, LineChart, Trophy, FileText, Mic, UserCircle } from "lucide-react";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import { SkeletonGrid, SkeletonLine } from "../components/Skeleton";
 
 const CARD_DEFS = [
   { key: "testsAssigned", label: "Tests Assigned", icon: "📋", color: "var(--ink)" },
@@ -21,10 +24,13 @@ const CARD_DEFS = [
 export default function StudentDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [dash, setDash] = useState(null);
   const [tests, setTests] = useState(null);
   const [learning, setLearning] = useState(null);
   const [gami, setGami] = useState(null);
+  const [interviewSummary, setInterviewSummary] = useState(null);
+  const [resumeCompletion, setResumeCompletion] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -32,7 +38,23 @@ export default function StudentDashboard() {
     api.get("/tests").then((res) => setTests(res.data)).catch(() => setTests([]));
     api.get("/learning/courses/java").then((res) => setLearning(res.data)).catch(() => setLearning(null));
     api.get("/gamification/me").then((res) => setGami(res.data)).catch(() => setGami(null));
+    api.get("/interview/summary").then((res) => setInterviewSummary(res.data)).catch(() => setInterviewSummary(null));
+    api.get("/resume/me").then((res) => setResumeCompletion(res.data.completion?.percent ?? 0)).catch(() => setResumeCompletion(0));
   }, []);
+
+  // Placement Readiness Score — a genuine composite of real signals already on this page (no
+  // separate "AI model," consistent with every other "recommendation"/"score" on this platform):
+  // average test score, learning progress, certificates earned, resume completeness, and average
+  // mock-interview score. Each missing signal is simply left out of the average rather than
+  // counted as 0, so a student who hasn't tried interviews yet isn't penalized for it.
+  const readinessInputs = dash && [
+    dash.cards.averageScorePercent,
+    dash.cards.learningProgressPercent,
+    Math.min(100, (dash.cards.certificatesEarned || 0) * 25),
+    resumeCompletion,
+    interviewSummary?.totalAttempted > 0 ? interviewSummary.averageScore : null,
+  ].filter((v) => v != null);
+  const readinessScore = readinessInputs?.length ? Math.round(readinessInputs.reduce((a, b) => a + b, 0) / readinessInputs.length) : null;
 
   const now = new Date();
   function statusOf(test) {
@@ -48,7 +70,7 @@ export default function StudentDashboard() {
       await api.post(`/tests/${test.id}/start`);
       navigate(`/test/${test.id}`);
     } catch (err) {
-      alert(err.response?.data?.error || "Could not start test");
+      toast.error(err.response?.data?.error || "Could not start test");
     }
   }
 
@@ -71,6 +93,27 @@ export default function StudentDashboard() {
         </div>
 
         {error && <p style={{ color: "var(--rust)", marginTop: 16 }}>{error}</p>}
+
+        {/* Placement Readiness Score — composite of average score, learning progress, certificates,
+            resume completeness, and interview average (see comment near readinessScore above) */}
+        {readinessScore != null && (
+          <div className="card" style={{ padding: 20, marginTop: 20, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+            <div style={{ position: "relative", width: 76, height: 76, flexShrink: 0 }}>
+              <svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
+                <circle cx="18" cy="18" r="16" fill="none" stroke="var(--line)" strokeWidth="3" />
+                <circle cx="18" cy="18" r="16" fill="none" stroke="var(--mint)" strokeWidth="3"
+                  strokeDasharray={`${readinessScore} 100`} strokeLinecap="round" />
+              </svg>
+              <div className="mono" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 17 }}>{readinessScore}</div>
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>Placement Readiness Score</div>
+              <p style={{ fontSize: 12.5, color: "var(--ink-dim)", marginTop: 4, maxWidth: 480 }}>
+                Based on your average test score, learning progress, certificates earned, resume completeness, and mock interview performance.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Level & XP banner */}
         {gami && (
@@ -99,9 +142,9 @@ export default function StudentDashboard() {
         )}
 
         {/* Summary cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 24 }}>
+        <div style={{ display: loading ? "block" : "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 24 }}>
           {loading
-            ? Array.from({ length: 10 }).map((_, i) => <div key={i} className="skeleton" style={{ height: 72 }} />)
+            ? <SkeletonGrid count={10} minWidth={150} />
             : CARD_DEFS.map((c) => (
                 <DashboardCard
                   key={c.key}
@@ -196,6 +239,16 @@ export default function StudentDashboard() {
             <SkeletonLines count={3} />
           ) : (
             <LearningProgressBlock learning={learning} />
+          )}
+        </Section>
+
+        {/* Recommended learning — rule-based, built from real signals already on this page (weak
+            interview topics, current locked/in-progress module), not a real ML recommender */}
+        <Section title="Recommended Learning" style={{ marginTop: 24 }}>
+          {learning === null ? (
+            <SkeletonLines count={2} />
+          ) : (
+            <RecommendedLearningBlock learning={learning} interviewSummary={interviewSummary} />
           )}
         </Section>
 
@@ -303,13 +356,38 @@ function SkeletonLines({ count }) {
 function QuickActions({ learningResumeId }) {
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      <Link to={learningResumeId ? `/learning/java/lesson/${learningResumeId}` : "/learning"} className="btn btn-primary">▶ Continue Learning</Link>
-      <Link to="/learning" className="btn btn-ghost">💻 Practice Coding</Link>
-      <Link to="/dashboard/performance" className="btn btn-ghost">📈 My Performance</Link>
-      <Link to="/achievements" className="btn btn-ghost">🏆 Achievements</Link>
-      <Link to="/resume" className="btn btn-ghost">📄 Resume Builder</Link>
-      <Link to="/interview" className="btn btn-ghost">🎤 AI Mock Interview</Link>
-      <Link to="/account" className="btn btn-ghost">👤 Profile</Link>
+      <Link to={learningResumeId ? `/learning/java/lesson/${learningResumeId}` : "/learning"} className="btn btn-primary"><PlayCircle size={15} /> Continue Learning</Link>
+      <Link to="/learning" className="btn btn-ghost"><Code2 size={15} /> Practice Coding</Link>
+      <Link to="/dashboard/performance" className="btn btn-ghost"><LineChart size={15} /> My Performance</Link>
+      <Link to="/achievements" className="btn btn-ghost"><Trophy size={15} /> Achievements</Link>
+      <Link to="/resume" className="btn btn-ghost"><FileText size={15} /> Resume Builder</Link>
+      <Link to="/interview" className="btn btn-ghost"><Mic size={15} /> AI Mock Interview</Link>
+      <Link to="/account" className="btn btn-ghost"><UserCircle size={15} /> Profile</Link>
+    </div>
+  );
+}
+
+function RecommendedLearningBlock({ learning, interviewSummary }) {
+  const currentModule = learning?.modules?.find((m) => !m.locked && !m.completed);
+  const weakAreas = interviewSummary?.weakAreas || [];
+  const hasAny = currentModule || weakAreas.length > 0;
+
+  if (!hasAny) return <EmptyState text="Keep going — recommendations show up here as you build a track record." />;
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {currentModule && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontSize: 13 }}>
+          <span>📚 Continue <strong>{currentModule.title}</strong> to keep your learning streak going.</span>
+          <Link to={`/learning/${learning.course.slug}/lesson/${currentModule.lessons[0]?.id}`} className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}>Go →</Link>
+        </div>
+      )}
+      {weakAreas.length > 0 && (
+        <div style={{ fontSize: 13 }}>
+          <span>🎯 Based on your mock interviews, focus on: </span>
+          <strong>{weakAreas.join(", ")}</strong>
+        </div>
+      )}
     </div>
   );
 }

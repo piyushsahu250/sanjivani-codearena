@@ -2,7 +2,12 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { GamificationProvider } from "./context/GamificationContext";
+import { ThemeProvider } from "./context/ThemeContext";
+import { ToastProvider } from "./context/ToastContext";
+import { ConfirmProvider } from "./context/ConfirmContext";
+import { SidebarUIProvider } from "./context/SidebarContext";
 import LoadingScreen from "./components/LoadingScreen";
+import Sidebar from "./components/Sidebar";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import StudentDashboard from "./pages/StudentDashboard";
@@ -53,12 +58,20 @@ import InterviewAdmin from "./pages/InterviewAdmin";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
-function Protected({ roles, children }) {
+// noChrome skips the persistent Sidebar — used for the three fullscreen/proctored routes
+// (timed exam, mock interview session, module coding assessment) where offering navigation away
+// from an active, monitored attempt would undermine the whole point of locking it down.
+function Protected({ roles, children, noChrome = false }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   if (user.mustChangePassword) return <Navigate to="/change-password" replace />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
-  return children;
+  return (
+    <>
+      {!noChrome && <Sidebar role={user.role} />}
+      {children}
+    </>
+  );
 }
 
 function Home() {
@@ -70,6 +83,10 @@ function Home() {
 
 export default function App() {
   return (
+    <ThemeProvider>
+    <ToastProvider>
+    <ConfirmProvider>
+    <SidebarUIProvider>
     <AuthProvider>
       <GamificationProvider>
       <BrowserRouter>
@@ -89,7 +106,7 @@ export default function App() {
           <Route
             path="/test/:id"
             element={
-              <Protected roles={["STUDENT"]}>
+              <Protected roles={["STUDENT"]} noChrome>
                 <Suspense fallback={<LoadingScreen label="Loading test…" />}>
                   <TestTaking />
                 </Suspense>
@@ -104,7 +121,7 @@ export default function App() {
           <Route
             path="/interview/session/:id"
             element={
-              <Protected roles={["STUDENT"]}>
+              <Protected roles={["STUDENT"]} noChrome>
                 <Suspense fallback={<LoadingScreen />}>
                   <InterviewSession />
                 </Suspense>
@@ -134,7 +151,7 @@ export default function App() {
           <Route
             path="/learning/:slug/module/:moduleId/coding-assessment"
             element={
-              <Protected roles={["STUDENT"]}>
+              <Protected roles={["STUDENT"]} noChrome>
                 <Suspense fallback={<LoadingScreen />}>
                   <ModuleCodingAssessment />
                 </Suspense>
@@ -172,5 +189,9 @@ export default function App() {
       </BrowserRouter>
       </GamificationProvider>
     </AuthProvider>
+    </SidebarUIProvider>
+    </ConfirmProvider>
+    </ToastProvider>
+    </ThemeProvider>
   );
 }

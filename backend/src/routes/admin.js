@@ -11,6 +11,7 @@ router.get("/stats", authenticate, requireRole("ADMIN"), async (req, res) => {
     const [
       totalInstitutes, totalClasses, totalUsers, totalStudents, totalStaff,
       totalTests, totalQuestions, activeTests, scheduledTests, completedTests,
+      totalCourses, totalPracticeQuestions, certificatesIssued, interviewCertificatesIssued,
     ] = await Promise.all([
       prisma.institute.count(),
       prisma.class.count(),
@@ -22,11 +23,16 @@ router.get("/stats", authenticate, requireRole("ADMIN"), async (req, res) => {
       prisma.test.count({ where: { isPublished: true, startTime: { lte: now }, endTime: { gte: now } } }),
       prisma.test.count({ where: { isPublished: true, startTime: { gt: now } } }),
       prisma.test.count({ where: { isPublished: true, endTime: { lt: now } } }),
+      prisma.course.count(),
+      prisma.practiceQuestion.count(),
+      prisma.certificate.count(),
+      prisma.interviewCertificate.count(),
     ]);
 
     res.json({
       totalInstitutes, totalClasses, totalUsers, totalStudents, totalStaff,
       totalTests, totalQuestions, activeTests, scheduledTests, completedTests,
+      totalCourses, totalPracticeQuestions, certificatesIssued: certificatesIssued + interviewCertificatesIssued,
     });
   } catch (err) {
     console.error(err);

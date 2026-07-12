@@ -33,7 +33,26 @@
   --radius: 10px;
   --shadow-sm: 0 1px 2px rgba(28,27,24,0.06);
   --shadow-md: 0 8px 24px rgba(11,42,30,0.12);
+
+  /* Layout */
+  --sidebar-w: 240px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h: 60px;
 }
+
+/* Platform-wide dark mode — toggled via data-theme="dark" on <html> (ThemeContext).
+   Everything already reads these tokens via var(--x), inline styles included, so redefining
+   them here cascades across the whole app without touching individual pages. Cards use a
+   hardcoded `background: #fff` (theme.css line ~102) rather than a token, so that one rule
+   gets an explicit dark override below too. */
+:root[data-theme="dark"] {
+  --paper: #14231C;
+  --ink: #F2EFE6;
+  --ink-dim: #A9AB9E;
+  --line: #2C5B45;
+  --card-bg: #1B2E24;
+}
+:root:not([data-theme="dark"]) { --card-bg: #fff; }
 
 * { box-sizing: border-box; }
 
@@ -45,6 +64,15 @@ body {
   color: var(--ink);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+/* Pushed right of the fixed Sidebar for authenticated layouts (Sidebar sets this on <html> via
+   ThemeContext's companion layout state); 0 on public/pre-auth pages where no sidebar renders. */
+body.has-sidebar { padding-left: var(--sidebar-w); transition: padding-left 0.18s ease, background 0.15s ease; }
+body.has-sidebar.sidebar-collapsed { padding-left: var(--sidebar-w-collapsed); }
+@media (max-width: 860px) {
+  body.has-sidebar, body.has-sidebar.sidebar-collapsed { padding-left: 0; }
 }
 
 h1, h2, h3 {
@@ -100,7 +128,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .btn-dark:hover { background: var(--slate-800); }
 
 .card {
-  background: #fff;
+  background: var(--card-bg, #fff);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
@@ -169,3 +197,207 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--slate-700); border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ===================== Sidebar ===================== */
+.ca-sidebar {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--slate-900);
+  color: var(--chalk);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.18s ease, transform 0.18s ease;
+  overflow: hidden;
+}
+.ca-sidebar.collapsed { width: var(--sidebar-w-collapsed); }
+.ca-sidebar-group-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--chalk-dim);
+  padding: 16px 18px 6px;
+  white-space: nowrap;
+}
+.ca-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 18px;
+  color: var(--chalk-dim);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-left: 3px solid transparent;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ca-sidebar-link:hover { background: rgba(244,239,227,0.06); color: var(--chalk); }
+.ca-sidebar-link.active { background: rgba(232,163,61,0.12); color: var(--amber); border-left-color: var(--amber); font-weight: 700; }
+.ca-sidebar-link svg { flex-shrink: 0; width: 18px; height: 18px; }
+.ca-sidebar-collapse-btn {
+  margin-top: auto;
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--slate-700);
+  color: var(--chalk-dim);
+}
+.ca-sidebar-collapse-btn:hover { color: var(--chalk); background: rgba(244,239,227,0.06); }
+.ca-sidebar-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 99; display: none;
+}
+@media (max-width: 860px) {
+  .ca-sidebar { transform: translateX(-100%); width: var(--sidebar-w); }
+  .ca-sidebar.mobile-open { transform: translateX(0); }
+  .ca-sidebar.mobile-open ~ .ca-sidebar-backdrop,
+  body.sidebar-mobile-open .ca-sidebar-backdrop { display: block; }
+}
+
+/* ===================== Topbar ===================== */
+.ca-topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 24px;
+  height: var(--topbar-h);
+  background: var(--slate-900);
+  color: var(--chalk);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+.ca-topbar-search {
+  flex: 1;
+  max-width: 420px;
+  position: relative;
+}
+.ca-topbar-search input {
+  width: 100%;
+  background: rgba(244,239,227,0.08);
+  border: 1px solid var(--slate-700);
+  color: var(--chalk);
+  border-radius: 8px;
+  padding: 7px 12px 7px 34px;
+  font-size: 13px;
+  font-family: var(--font-body);
+}
+.ca-topbar-search input::placeholder { color: var(--chalk-dim); }
+.ca-topbar-search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--chalk-dim); }
+.ca-topbar-icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--chalk-dim);
+  padding: 7px;
+  border-radius: 8px;
+  display: flex;
+  position: relative;
+}
+.ca-topbar-icon-btn:hover { color: var(--chalk); background: rgba(244,239,227,0.08); }
+.ca-hamburger-btn { display: none; }
+@media (max-width: 860px) { .ca-hamburger-btn { display: flex; } }
+.ca-topbar-dot {
+  position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--rust);
+}
+.ca-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--card-bg, #fff);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  min-width: 240px;
+  max-width: 340px;
+  z-index: 60;
+  overflow: hidden;
+}
+.ca-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--ink);
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ca-dropdown-item:hover { background: rgba(28,27,24,0.05); }
+
+/* ===================== Breadcrumb ===================== */
+.ca-breadcrumb-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  flex-wrap: wrap;
+}
+.ca-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ca-back-btn:hover { background: rgba(28,27,24,0.06); }
+.ca-crumb-link { color: var(--ink-dim); text-decoration: none; }
+.ca-crumb-link:hover { text-decoration: underline; }
+.ca-crumb-current { color: var(--ink); font-weight: 600; }
+
+/* ===================== Toast ===================== */
+.ca-toast-stack {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 340px;
+}
+.ca-toast {
+  background: var(--slate-900);
+  color: var(--chalk);
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: var(--shadow-md);
+  border-left: 4px solid var(--amber);
+  animation: gami-slide-in 0.25s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ca-toast.success { border-left-color: var(--mint); }
+.ca-toast.error { border-left-color: var(--rust); }
+
+/* ===================== Confirm dialog ===================== */
+.ca-modal-overlay {
+  position: fixed; inset: 0; background: rgba(11,42,30,0.45); z-index: 400;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.ca-modal {
+  background: var(--card-bg, #fff);
+  color: var(--ink);
+  border-radius: 14px;
+  padding: 24px;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: var(--shadow-md);
+}

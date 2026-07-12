@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
+import { Building2, School, Upload, PlusCircle, Users as UsersIcon, BarChart3, FileText, Mic, Settings, Trophy } from "lucide-react";
 import api from "../api";
+import { useToast } from "../context/ToastContext";
+import { useConfirm } from "../context/ConfirmContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 
@@ -8,10 +12,14 @@ const ROLES = ["STUDENT", "STAFF", "ADMIN"];
 const emptyForm = { name: "", email: "", role: "STUDENT", instituteId: "", classId: "", rollNumber: "", department: "" };
 
 export default function AdminDashboard() {
+  const toast = useToast();
+  const confirmDialog = useConfirm();
   const [users, setUsers] = useState([]);
   const [institutes, setInstitutes] = useState([]);
   const [classes, setClasses] = useState([]);
   const [stats, setStats] = useState(null);
+  const [tests, setTests] = useState(null);
+  const [gamiStats, setGamiStats] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -30,6 +38,8 @@ export default function AdminDashboard() {
   useEffect(() => {
     load();
     api.get("/institutes").then((res) => setInstitutes(res.data));
+    api.get("/tests").then((res) => setTests(res.data)).catch(() => setTests([]));
+    api.get("/gamification/admin/stats").then((res) => setGamiStats(res.data)).catch(() => setGamiStats(null));
   }, []);
 
   useEffect(() => {
@@ -60,21 +70,24 @@ export default function AdminDashboard() {
     }
   }
 
-  async function handleDelete(id) {
+  async function handleDelete(id, name) {
+    const ok = await confirmDialog({ title: "Delete account?", message: `This permanently removes ${name}'s account. This action cannot be undone.`, confirmLabel: "Delete", danger: true });
+    if (!ok) return;
     try {
       await api.delete(`/users/${id}`);
       load();
+      toast.success("Account deleted successfully.");
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to delete account");
+      toast.error(err.response?.data?.error || "Failed to delete account");
     }
   }
 
   async function handleResetPassword(u) {
     try {
       const { data } = await api.post(`/users/${u.id}/reset-password`);
-      alert(`Password reset for ${u.name} to "${data.defaultPassword}". They'll be asked to set a new one on next login.`);
+      toast.success(`Password reset for ${u.name} to "${data.defaultPassword}". They'll be asked to set a new one on next login.`, 6000);
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to reset password");
+      toast.error(err.response?.data?.error || "Failed to reset password");
     }
   }
 
@@ -95,14 +108,15 @@ export default function AdminDashboard() {
   }
 
   async function handleAllowReattempt(a) {
-    if (!confirm("Are you sure you want to allow this student to reattempt the test? This will reset the previous attempt.")) return;
+    const ok = await confirmDialog({ title: "Allow reattempt?", message: "This resets the student's previous attempt for this test. This action cannot be undone.", confirmLabel: "Allow Reattempt", danger: true });
+    if (!ok) return;
     try {
       await api.post(`/tests/${a.test.id}/attempts/${lookupResult.id}/reattempt`);
-      alert("Reattempt has been enabled successfully for this student.");
+      toast.success("Reattempt has been enabled successfully for this student.");
       const { data } = await api.get(`/users/lookup/${encodeURIComponent(rollQuery.trim())}`);
       setLookupResult(data);
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to enable reattempt");
+      toast.error(err.response?.data?.error || "Failed to enable reattempt");
     }
   }
 
@@ -115,16 +129,16 @@ export default function AdminDashboard() {
             <h1>Admin control room</h1>
             <ChalkUnderline />
           </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <Link to="/admin/institutes" className="btn btn-ghost">Institute Management</Link>
-            <Link to="/admin/classes" className="btn btn-ghost">Class Management</Link>
-            <Link to="/admin/students" className="btn btn-ghost">Student Performance</Link>
-            <Link to="/staff/learning" className="btn btn-ghost">Learning Management</Link>
-            <Link to="/staff/gamification" className="btn btn-ghost">🏆 Gamification</Link>
-            <Link to="/staff/resumes" className="btn btn-ghost">📄 Resumes</Link>
-            <Link to="/staff/interviews" className="btn btn-ghost">🎤 Interview Prep</Link>
-            <Link to="/admin/bulk-upload" className="btn btn-primary">⬆ Bulk student upload</Link>
-            <Link to="/staff" className="btn btn-ghost">Manage tests &amp; questions →</Link>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link to="/admin/institutes" className="btn btn-ghost"><Building2 size={15} /> Create Institute</Link>
+            <Link to="/admin/classes" className="btn btn-ghost"><School size={15} /> Create Class</Link>
+            <Link to="/admin/bulk-upload" className="btn btn-primary"><Upload size={15} /> Bulk Student Upload</Link>
+            <Link to="/staff/tests/new" className="btn btn-ghost"><PlusCircle size={15} /> Create Test</Link>
+            <Link to="/admin/students" className="btn btn-ghost"><UsersIcon size={15} /> Student Performance</Link>
+            <Link to="/staff/resumes" className="btn btn-ghost"><FileText size={15} /> Resume Analytics</Link>
+            <Link to="/staff/interviews" className="btn btn-ghost"><Mic size={15} /> Mock Interviews</Link>
+            <Link to="/staff/gamification" className="btn btn-ghost"><Trophy size={15} /> Gamification</Link>
+            <Link to="/account" className="btn btn-ghost"><Settings size={15} /> Platform Settings</Link>
           </div>
         </div>
 
@@ -132,16 +146,58 @@ export default function AdminDashboard() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, marginTop: 28 }}>
             <StatCard label="Institutes" value={stats.totalInstitutes} />
             <StatCard label="Classes" value={stats.totalClasses} />
-            <StatCard label="Users" value={stats.totalUsers} />
             <StatCard label="Students" value={stats.totalStudents} />
             <StatCard label="Staff" value={stats.totalStaff} />
-            <StatCard label="Questions" value={stats.totalQuestions} />
-            <StatCard label="Tests" value={stats.totalTests} />
-            <StatCard label="Active tests" value={stats.activeTests} accent="var(--mint)" />
-            <StatCard label="Scheduled" value={stats.scheduledTests} accent="var(--amber-dark)" />
-            <StatCard label="Completed" value={stats.completedTests} accent="var(--ink-dim)" />
+            <StatCard label="Learning Modules" value={stats.totalCourses} />
+            <StatCard label="Coding Problems" value={stats.totalPracticeQuestions} />
+            <StatCard label="Certificates Issued" value={stats.certificatesIssued} accent="var(--amber-dark)" />
+            <StatCard label="Active Tests" value={stats.activeTests} accent="var(--mint)" />
+            <StatCard label="Scheduled Tests" value={stats.scheduledTests} accent="var(--amber-dark)" />
+            <StatCard label="Completed Tests" value={stats.completedTests} accent="var(--ink-dim)" />
           </div>
         )}
+
+        {/* Platform analytics — built entirely from real, currently-tracked data. Daily/Monthly
+            Active User trend charts from the spec are intentionally omitted: this platform has no
+            login/session event log to derive them from honestly, and fabricating a plausible-looking
+            trend line would be worse than not showing one. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20, marginTop: 24 }}>
+          <div>
+            <h3 style={{ fontSize: 16, marginBottom: 12 }}>Test Status Distribution</h3>
+            <div className="card" style={{ padding: 20, height: 220 }}>
+              {!tests || tests.length === 0 ? (
+                <p style={{ color: "var(--ink-dim)", fontSize: 13, textAlign: "center", paddingTop: 60 }}>No tests yet.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={adminTestStatusData(tests)}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
+                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="var(--amber)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+          <div>
+            <h3 style={{ fontSize: 16, marginBottom: 12 }}>Top Students Platform-wide (XP)</h3>
+            <div className="card" style={{ padding: 20, height: 220, overflowY: "auto" }}>
+              {!gamiStats || gamiStats.topStudents.length === 0 ? (
+                <p style={{ color: "var(--ink-dim)", fontSize: 13, textAlign: "center", paddingTop: 60 }}>Not enough activity yet.</p>
+              ) : (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {gamiStats.topStudents.slice(0, 6).map((s, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                      <span>#{i + 1} {s.name}</span>
+                      <span className="mono" style={{ color: "var(--mint)", fontWeight: 700 }}>{s.xp} XP</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
         <div className="card" style={{ padding: 24, marginTop: 32 }}>
           <h3 style={{ fontSize: 16, marginBottom: 4 }}>Check test completion by roll number, email, or student ID</h3>
@@ -302,7 +358,7 @@ export default function AdminDashboard() {
                       </button>
                     )}
                     <button
-                      onClick={() => handleDelete(u.id)}
+                      onClick={() => handleDelete(u.id, u.name)}
                       style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 13 }}
                     >
                       Delete
@@ -325,6 +381,17 @@ function StatCard({ label, value, accent }) {
       <div style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>{label}</div>
     </div>
   );
+}
+
+function adminTestStatusData(tests) {
+  const now = new Date();
+  const counts = { Draft: 0, Scheduled: 0, Active: 0, Completed: 0 };
+  for (const t of tests) {
+    const start = new Date(t.startTime), end = new Date(t.endTime);
+    const label = !t.isPublished ? "Draft" : now < start ? "Scheduled" : now > end ? "Completed" : "Active";
+    counts[label]++;
+  }
+  return Object.entries(counts).map(([name, count]) => ({ name, count }));
 }
 
 const labelStyle = { display: "block", fontSize: 13, fontWeight: 600, marginTop: 14, marginBottom: 6 };
