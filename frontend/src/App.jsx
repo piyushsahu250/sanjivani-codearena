@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { GamificationProvider } from "./context/GamificationContext";
+import LoadingScreen from "./components/LoadingScreen";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import StudentDashboard from "./pages/StudentDashboard";
@@ -87,7 +88,7 @@ export default function App() {
             path="/test/:id"
             element={
               <Protected roles={["STUDENT"]}>
-                <Suspense fallback={<div style={{ padding: 48 }} className="mono">Loading test…</div>}>
+                <Suspense fallback={<LoadingScreen label="Loading test…" />}>
                   <TestTaking />
                 </Suspense>
               </Protected>
@@ -102,7 +103,7 @@ export default function App() {
             path="/interview/session/:id"
             element={
               <Protected roles={["STUDENT"]}>
-                <Suspense fallback={<div style={{ padding: 48 }} className="mono">Loading…</div>}>
+                <Suspense fallback={<LoadingScreen />}>
                   <InterviewSession />
                 </Suspense>
               </Protected>
@@ -121,7 +122,7 @@ export default function App() {
             path="/learning/:slug/lesson/:lessonId"
             element={
               <Protected roles={["STUDENT", "ADMIN", "STAFF"]}>
-                <Suspense fallback={<div style={{ padding: 48 }} className="mono">Loading lesson…</div>}>
+                <Suspense fallback={<LoadingScreen label="Loading lesson…" />}>
                   <LessonView />
                 </Suspense>
               </Protected>
@@ -132,7 +133,7 @@ export default function App() {
             path="/learning/:slug/module/:moduleId/coding-assessment"
             element={
               <Protected roles={["STUDENT"]}>
-                <Suspense fallback={<div style={{ padding: 48 }} className="mono">Loading…</div>}>
+                <Suspense fallback={<LoadingScreen />}>
                   <ModuleCodingAssessment />
                 </Suspense>
               </Protected>

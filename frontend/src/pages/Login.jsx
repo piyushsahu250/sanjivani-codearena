@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
-import ChalkUnderline from "../components/ChalkUnderline";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -45,14 +44,10 @@ export default function Login() {
           justifyContent: "center",
         }}
       >
-        <span className="mono" style={{ color: "var(--amber)", fontSize: 13, letterSpacing: "0.08em" }}>
-          &gt;_ CODE. LEARN. ASSESS.
-        </span>
-        <h1 style={{ fontSize: 44, color: "var(--chalk)", marginTop: 10 }}>
-          CodeArena
-        </h1>
-        <ChalkUnderline width={160} />
-        <p style={{ color: "var(--chalk-dim)", maxWidth: 420, marginTop: 20, lineHeight: 1.6, fontSize: 17 }}>
+        <div style={{ background: "#fdfbf5", borderRadius: 16, padding: "20px 28px", display: "inline-flex", alignItems: "center", maxWidth: 320 }}>
+          <img src="/branding/logo.png" alt="CodeArena" style={{ width: "100%", height: "auto", display: "block" }} />
+        </div>
+        <p style={{ color: "var(--chalk-dim)", maxWidth: 420, marginTop: 24, lineHeight: 1.6, fontSize: 17 }}>
           Empowering Talent Through Smart Coding Assessments.
         </p>
       </div>

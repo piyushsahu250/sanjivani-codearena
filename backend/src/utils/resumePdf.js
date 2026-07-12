@@ -130,6 +130,9 @@ function generateResumePdf(resume, res) {
     doc.fontSize(10).fillColor("#1C1B18").text(languages.map((l) => `${l.name} (${l.proficiency})`).join(", "));
   }
 
+  doc.moveDown(1.2);
+  doc.font("Helvetica").fontSize(8).fillColor("#999999").text("Created with CodeArena", { align: "center" });
+
   doc.end();
 }
 

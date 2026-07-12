@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const prisma = require("../prisma");
-const { sendMail } = require("../utils/mailer");
+const { sendMail, wrapBranded } = require("../utils/mailer");
 
 const router = express.Router();
 
@@ -64,7 +64,7 @@ router.post("/forgot-password", async (req, res) => {
       await sendMail({
         to: user.email,
         subject: "Reset your CodeArena password",
-        html: `<p>Hi ${user.name},</p><p>Click the link below to reset your password. This link expires in 1 hour.</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
+        html: wrapBranded(`<p>Hi ${user.name},</p><p>Click the link below to reset your password. This link expires in 1 hour.</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you didn't request this, you can ignore this email.</p>`),
       });
     }
 

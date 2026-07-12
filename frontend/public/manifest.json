@@ -1,0 +1,12 @@
+{
+  "name": "CodeArena - Coding Platform",
+  "short_name": "CodeArena",
+  "description": "CodeArena - coding tests, learning modules, and skill assessments.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf7f0",
+  "theme_color": "#1b4332",
+  "icons": [
+    { "src": "/branding/logo.png", "sizes": "1254x1254", "type": "image/png", "purpose": "any" }
+  ]
+}

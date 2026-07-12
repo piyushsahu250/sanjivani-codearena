@@ -6,7 +6,7 @@ const XLSX = require("xlsx");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
-const { sendMail } = require("../utils/mailer");
+const { sendMail, wrapBranded } = require("../utils/mailer");
 const { computeStudentPerformance } = require("../utils/studentPerformance");
 const { generatePerformancePdf } = require("../utils/reportPdf");
 const { generateTempPassword } = require("../utils/password");
@@ -146,7 +146,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
     sendMail({
       to: user.email,
       subject: "Your CodeArena account",
-      html: `<p>Hi ${user.name},</p><p>Your account has been created.</p><p><strong>Login email:</strong> ${user.email}<br/><strong>Temporary password:</strong> ${generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`,
+      html: wrapBranded(`<p>Hi ${user.name},</p><p>Your account has been created.</p><p><strong>Login email:</strong> ${user.email}<br/><strong>Temporary password:</strong> ${generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
     }).catch(() => {});
 
     res.json({ ...user, generatedPassword });
@@ -296,7 +296,7 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
         sendMail({
           to: u.email,
           subject: "Your CodeArena account",
-          html: `<p>Hi ${u.name},</p><p>Your student account has been created.</p><p><strong>Login email:</strong> ${u.email}<br/><strong>Temporary password:</strong> ${u.generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`,
+          html: wrapBranded(`<p>Hi ${u.name},</p><p>Your student account has been created.</p><p><strong>Login email:</strong> ${u.email}<br/><strong>Temporary password:</strong> ${u.generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
         }).catch(() => {});
       }
     }

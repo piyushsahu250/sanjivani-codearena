@@ -1,5 +1,6 @@
 const PDFDocument = require("pdfkit");
 const QRCode = require("qrcode");
+const { drawCertificateLogo } = require("./pdfBranding");
 
 // Streams an "Interview Ready" certificate with an embedded QR code linking to the public
 // verification endpoint — same landscape layout style as the Learning Module certificate.
@@ -14,15 +15,15 @@ async function generateInterviewCertificatePdf({ studentName, averageScore, cert
   doc.lineWidth(1).strokeColor("#C7852A").rect(34, 34, width - 68, height - 68).stroke();
 
   doc.fillColor("#1C1B18");
-  doc.font("Helvetica-Bold").fontSize(14).text("CODEARENA", 0, 60, { align: "center" });
-  doc.font("Helvetica").fontSize(12).fillColor("#6B6A5F").text("Interview Preparation", 0, 80, { align: "center" });
+  drawCertificateLogo(doc, { width, y: 15, logoWidth: 90 });
+  doc.font("Helvetica").fontSize(12).fillColor("#6B6A5F").text("Interview Preparation", 0, 113, { align: "center" });
 
-  doc.font("Helvetica-Bold").fontSize(28).fillColor("#1C1B18").text("Interview Ready Certificate", 0, 130, { align: "center" });
+  doc.font("Helvetica-Bold").fontSize(26).fillColor("#1C1B18").text("Interview Ready Certificate", 0, 140, { align: "center" });
 
-  doc.font("Helvetica").fontSize(13).fillColor("#6B6A5F").text("This certifies that", 0, 190, { align: "center" });
-  doc.font("Helvetica-Bold").fontSize(26).fillColor("#4F9D6E").text(studentName, 0, 215, { align: "center" });
+  doc.font("Helvetica").fontSize(13).fillColor("#6B6A5F").text("This certifies that", 0, 196, { align: "center" });
+  doc.font("Helvetica-Bold").fontSize(24).fillColor("#4F9D6E").text(studentName, 0, 219, { align: "center" });
   doc.font("Helvetica").fontSize(13).fillColor("#6B6A5F")
-    .text(`has demonstrated interview readiness with an average score of ${averageScore}%`, 0, 258, { align: "center" });
+    .text(`has demonstrated interview readiness with an average score of ${averageScore}%`, 0, 260, { align: "center" });
 
   doc.font("Helvetica").fontSize(11).fillColor("#6B6A5F").text(`Issued: ${new Date(issuedAt).toLocaleDateString()}`, 0, 310, { align: "center" });
   doc.text(`Certificate ID: ${certificateCode}`, 0, 326, { align: "center" });

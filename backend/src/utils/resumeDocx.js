@@ -119,6 +119,12 @@ async function generateResumeDocx(resume) {
     children.push(body(languages.map((l) => `${l.name} (${l.proficiency})`).join(", ")));
   }
 
+  children.push(new Paragraph({
+    spacing: { before: 300 },
+    alignment: AlignmentType.CENTER,
+    children: [new TextRun({ text: "Created with CodeArena", size: 16, color: "999999" })],
+  }));
+
   const doc = new Document({
     sections: [{ properties: {}, children }],
   });

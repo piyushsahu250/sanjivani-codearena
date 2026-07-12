@@ -243,7 +243,10 @@ export default function ResumeBuilder() {
       <div style={{ maxWidth: 1300, margin: "0 auto", padding: "48px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
           <div>
-            <h1>Resume Builder</h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <img src="/branding/logo.png" alt="CodeArena" style={{ height: 28, width: "auto" }} />
+              <h1 style={{ margin: 0 }}>Resume Builder</h1>
+            </div>
             <ChalkUnderline />
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

@@ -1,4 +1,5 @@
 const PDFDocument = require("pdfkit");
+const { drawReportLogoBadge } = require("./pdfBranding");
 
 const CATEGORY_LABEL = { HR: "HR", TECHNICAL: "Technical", CODING: "Coding", APTITUDE: "Aptitude", SYSTEM_DESIGN: "System Design", BEHAVIORAL: "Behavioral" };
 
@@ -16,6 +17,7 @@ function sessionTitle(session) {
 function generateInterviewReportPdf({ studentName, session, questions, report }, res) {
   const doc = new PDFDocument({ margin: 40, size: "A4" });
   doc.pipe(res);
+  drawReportLogoBadge(doc);
 
   doc.font("Helvetica-Bold").fontSize(20).fillColor("#1C3D5A").text("Interview Performance Report");
   doc.font("Helvetica").fontSize(10).fillColor("#333");

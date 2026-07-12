@@ -9,6 +9,27 @@
  */
 
 const FROM = process.env.MAIL_FROM || "CodeArena <onboarding@resend.dev>";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";
+const LOGO_URL = `${FRONTEND_URL}/branding/logo.png`;
+
+// Wraps an email body with a consistent CodeArena-branded header/footer. The logo is referenced
+// by its deployed frontend URL (not embedded) since that's how email clients reliably load
+// images — inline attachments/data-URIs are stripped or degraded by most webmail providers.
+function wrapBranded(bodyHtml) {
+  return `
+    <div style="font-family: Arial, Helvetica, sans-serif; max-width: 560px; margin: 0 auto;">
+      <div style="text-align: center; padding: 24px 0 8px;">
+        <img src="${LOGO_URL}" alt="CodeArena" width="160" style="width:160px; max-width:100%; height:auto;" />
+      </div>
+      <div style="padding: 8px 24px 24px; color: #1C1B18; line-height: 1.6; font-size: 14px;">
+        ${bodyHtml}
+      </div>
+      <div style="text-align: center; padding: 16px; color: #999; font-size: 11px; border-top: 1px solid #eee;">
+        CodeArena — Code · Learn · Assess · Succeed
+      </div>
+    </div>
+  `;
+}
 
 async function sendMail({ to, subject, html }) {
   const apiKey = process.env.RESEND_API_KEY;
@@ -35,4 +56,4 @@ async function sendMail({ to, subject, html }) {
   return { ok: true };
 }
 
-module.exports = { sendMail };
+module.exports = { sendMail, wrapBranded };

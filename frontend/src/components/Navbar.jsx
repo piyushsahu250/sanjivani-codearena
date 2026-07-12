@@ -17,11 +17,8 @@ export default function Navbar() {
       }}
     >
       <Link to="/" style={{ textDecoration: "none", color: "var(--chalk)" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span className="mono" style={{ color: "var(--amber)", fontWeight: 700 }}>&gt;_</span>
-          <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18 }}>
-            CodeArena
-          </span>
+        <div style={{ background: "#fdfbf5", borderRadius: 8, padding: "3px 10px", display: "flex", alignItems: "center" }}>
+          <img src="/branding/logo.png" alt="CodeArena" style={{ height: 40, width: "auto", display: "block" }} />
         </div>
       </Link>
       {user && (

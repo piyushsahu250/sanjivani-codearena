@@ -1,4 +1,5 @@
 const PDFDocument = require("pdfkit");
+const { drawReportLogoBadge } = require("./pdfBranding");
 
 function fmtDate(d) {
   return d ? new Date(d).toLocaleDateString() : "—";
@@ -15,6 +16,7 @@ function row(doc, label, value) {
 function generatePerformancePdf(data, res) {
   const doc = new PDFDocument({ margin: 40, size: "A4" });
   doc.pipe(res);
+  drawReportLogoBadge(doc);
 
   doc.font("Helvetica-Bold").fontSize(18).text("Student Performance Report", { align: "center" });
   doc.moveDown(1);
