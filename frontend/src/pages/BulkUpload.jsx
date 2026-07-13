@@ -30,6 +30,18 @@ export default function BulkUpload() {
     }
   }
 
+  function downloadCsv(filename, headers, rows) {
+    const escape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [headers.map(escape).join(","), ...rows.map((r) => r.map(escape).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function handleUpload(e) {
     e.preventDefault();
     if (!file) return;
@@ -65,8 +77,9 @@ export default function BulkUpload() {
 
         <p style={{ color: "var(--ink-dim)", marginTop: 16, fontSize: 14 }}>
           Upload an Excel (.xlsx) or CSV file to create student accounts for an entire batch at once. Each row's
-          Institute and Class must already exist (create them first under Institute/Class Management) — the
-          password for each account is auto-generated from its institute name and must be changed on first login.
+          Institute and Class must already exist (create them first under Institute/Class Management). Every
+          account gets its own unique, randomly generated password — never shared with any other account — and
+          must be changed on first login. Download the full credentials list below after uploading.
         </p>
 
         <div className="card" style={{ padding: 24, marginTop: 24 }}>
@@ -118,9 +131,23 @@ export default function BulkUpload() {
 
             {result.created?.length > 0 && (
               <div style={{ marginTop: 16 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: "var(--mint)" }}>Created accounts &amp; passwords</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "var(--mint)" }}>Created accounts &amp; passwords</div>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => downloadCsv(
+                      "student-credentials.csv",
+                      ["Name", "Email", "Roll Number", "Temporary Password"],
+                      result.created.map((u) => [u.name, u.email, u.rollNumber, u.generatedPassword])
+                    )}
+                  >
+                    ⬇ Download Credentials (CSV)
+                  </button>
+                </div>
                 <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>
-                  Share these temporary passwords with students — they'll be asked to set a new one on first login.
+                  Each student has a unique password — download this list now, since it won't be shown again once
+                  you leave this page (passwords are never stored in plain text). They'll be asked to set a new
+                  one on first login.
                 </p>
                 <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
                   <thead>
@@ -143,6 +170,22 @@ export default function BulkUpload() {
                   </tbody>
                 </table>
               </div>
+            )}
+            {(result.duplicates.length > 0 || result.errors.length > 0) && (
+              <button
+                className="btn btn-ghost"
+                style={{ marginTop: 16 }}
+                onClick={() => downloadCsv(
+                  "bulk-upload-error-report.csv",
+                  ["Row", "Type", "Name", "Email", "Roll Number", "Reason"],
+                  [
+                    ...result.duplicates.map((r) => [r.row, "Duplicate", r.name, r.email, r.rollNumber, r.reason]),
+                    ...result.errors.map((r) => [r.row, "Error", r.name, r.email, r.rollNumber, r.reason]),
+                  ]
+                )}
+              >
+                ⬇ Download Error Report (CSV)
+              </button>
             )}
             {result.duplicates.length > 0 && (
               <ResultTable title="Duplicate records (skipped)" rows={result.duplicates} color="var(--amber-dark)" />

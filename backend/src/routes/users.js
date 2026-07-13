@@ -519,6 +519,31 @@ router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (re
   }
 });
 
+// ADMIN: reset multiple students' passwords at once — same generateTempPassword() as every other
+// reset (a unique random password per account, never a shared fixed value), returned per-student
+// so the frontend can offer a CSV download. Used from Student Management's "Regenerate Passwords"
+// bulk action.
+router.post("/bulk-regenerate-password", authenticate, requireRole("ADMIN"), async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body.studentIds) ? [...new Set(req.body.studentIds)] : [];
+    if (ids.length === 0) return res.status(400).json({ error: "No students selected" });
+
+    const users = await prisma.user.findMany({ where: { id: { in: ids } } });
+    const results = [];
+    for (const user of users) {
+      const generatedPassword = generateTempPassword();
+      const passwordHash = await bcrypt.hash(generatedPassword, 10);
+      await prisma.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: true } });
+      results.push({ id: user.id, name: user.name, email: user.email, rollNumber: user.rollNumber, generatedPassword });
+    }
+    const failedIds = ids.filter((id) => !users.some((u) => u.id === id));
+    res.json({ results, failedIds });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to regenerate passwords" });
+  }
+});
+
 // ADMIN: delete a user. Deleting a student also removes their own test attempts/submissions
 // (scoped only to that student — nothing anyone else can see is affected). Deleting a staff/
 // admin account that has created tests is blocked instead of cascading, since that would
