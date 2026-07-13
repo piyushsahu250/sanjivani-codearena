@@ -106,6 +106,7 @@ model User {
   interviewSessions    InterviewSession[]
   interviewReports     InterviewReport[]
   interviewCertificate InterviewCertificate?
+  emailLogs            EmailLog[]
 }
 
 model Test {
@@ -289,6 +290,35 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([action])
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+  RETRYING
+}
+
+// One row per outbound transactional email (welcome/password-reset), so admins can see actual
+// delivery status per student instead of trusting a fire-and-forget send. Written by
+// utils/mailer.js's sendMailLogged() helper — never inferred from "the API call didn't throw".
+model EmailLog {
+  id              String      @id @default(uuid())
+  student         User?       @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  studentId       String?
+  recipientName   String
+  recipientEmail  String
+  emailType       String // "WELCOME" | "PASSWORD_RESET"
+  status          EmailStatus @default(PENDING)
+  errorMessage    String?
+  messageId       String?
+  retryCount      Int         @default(0)
+  createdAt       DateTime    @default(now())
+  sentAt          DateTime?
+
+  @@index([status])
+  @@index([studentId])
+  @@index([createdAt])
 }
 
 // ===================================================================

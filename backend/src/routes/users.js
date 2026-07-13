@@ -6,7 +6,7 @@ const XLSX = require("xlsx");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
-const { sendMail, wrapBranded } = require("../utils/mailer");
+const { sendMailLogged, wrapBranded } = require("../utils/mailer");
 const { computeStudentPerformance } = require("../utils/studentPerformance");
 const { generatePerformancePdf } = require("../utils/reportPdf");
 const { generateTempPassword } = require("../utils/password");
@@ -153,9 +153,13 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
     });
 
     let emailSent = false;
+    let emailError = null;
     if (role === "STUDENT") {
-      const mailResult = await sendMail({
+      const mailResult = await sendMailLogged(prisma, {
         to: user.email,
+        name: user.name,
+        studentId: user.id,
+        emailType: "WELCOME",
         subject: "Welcome to CodeArena – Your Student Account Has Been Created",
         html: wrapBranded(`
           <p>Dear ${user.name},</p>
@@ -174,14 +178,20 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
           <p>If you have any questions, please contact your institute administrator.</p>
           <p>Regards,<br/>CodeArena Team</p>
         `),
-      }).catch(() => ({ ok: false }));
+      }).catch((e) => ({ ok: false, error: e.message }));
       emailSent = !!mailResult.ok;
+      emailError = mailResult.error || null;
     } else {
-      sendMail({
+      const mailResult = await sendMailLogged(prisma, {
         to: user.email,
+        name: user.name,
+        studentId: user.id,
+        emailType: "WELCOME",
         subject: "Your CodeArena account",
         html: wrapBranded(`<p>Hi ${user.name},</p><p>Your account has been created.</p><p><strong>Login email:</strong> ${user.email}<br/><strong>Temporary password:</strong> ${generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
-      }).catch(() => {});
+      }).catch((e) => ({ ok: false, error: e.message }));
+      emailSent = !!mailResult.ok;
+      emailError = mailResult.error || null;
     }
 
     const admin = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
@@ -190,11 +200,11 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
         action: "ACCOUNT_CREATED",
         adminId: req.user.id,
         adminName: admin?.name || req.user.email,
-        details: { studentId: user.id, studentName: user.name, role, email: user.email, emailSent },
+        details: { studentId: user.id, studentName: user.name, role, email: user.email, emailSent, emailError },
       },
     }).catch(() => {});
 
-    res.json({ ...user, generatedPassword, emailSent });
+    res.json({ ...user, generatedPassword, emailSent, emailError });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to create user" });
@@ -406,13 +416,21 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
       }
     }
 
+    let emailsSentCount = 0;
+    let emailsFailedCount = 0;
     if (sendCredentials && created.length > 0) {
       for (const u of created) {
-        sendMail({
+        const mailResult = await sendMailLogged(prisma, {
           to: u.email,
+          name: u.name,
+          studentId: u.id,
+          emailType: "WELCOME",
           subject: "Your CodeArena account",
           html: wrapBranded(`<p>Hi ${u.name},</p><p>Your student account has been created.</p><p><strong>Login email:</strong> ${u.email}<br/><strong>Temporary password:</strong> ${u.generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
-        }).catch(() => {});
+        }).catch((e) => ({ ok: false, error: e.message }));
+        u.emailSent = !!mailResult.ok;
+        if (mailResult.ok) emailsSentCount++;
+        else emailsFailedCount++;
       }
     }
 
@@ -421,9 +439,12 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
       createdCount: created.length,
       duplicateCount: duplicates.length,
       errorCount: errors.length,
-      created: created.map((u) => ({ name: u.name, email: u.email, rollNumber: u.rollNumber, generatedPassword: u.generatedPassword })),
+      created: created.map((u) => ({ name: u.name, email: u.email, rollNumber: u.rollNumber, generatedPassword: u.generatedPassword, emailSent: u.emailSent ?? null })),
       duplicates,
       errors,
+      sendCredentials,
+      emailsSentCount,
+      emailsFailedCount,
     });
   } catch (err) {
     console.error(err);
@@ -638,13 +659,18 @@ router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (re
       data: { passwordHash, mustChangePassword: true },
     });
     let emailSent = null; // null = not requested, true/false = requested + outcome
+    let emailError = null;
     if (req.body.sendEmail) {
-      const mailResult = await sendMail({
+      const mailResult = await sendMailLogged(prisma, {
         to: user.email,
+        name: user.name,
+        studentId: user.id,
+        emailType: "PASSWORD_RESET",
         subject: "Your CodeArena password has been reset",
         html: wrapBranded(`<p>Hi ${user.name},</p><p>Your password has been reset by an administrator.</p><p><strong>Login email:</strong> ${user.email}<br/><strong>New temporary password:</strong> ${newPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
-      }).catch(() => ({ ok: false }));
+      }).catch((e) => ({ ok: false, error: e.message }));
       emailSent = !!mailResult.ok;
+      emailError = mailResult.error || null;
     }
 
     const admin = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
@@ -653,11 +679,11 @@ router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (re
         action: "PASSWORD_RESET",
         adminId: req.user.id,
         adminName: admin?.name || req.user.email,
-        details: { studentId: user.id, studentName: user.name, emailSent },
+        details: { studentId: user.id, studentName: user.name, emailSent, emailError },
       },
     }).catch(() => {});
 
-    res.json({ success: true, defaultPassword: newPassword, emailSent });
+    res.json({ success: true, defaultPassword: newPassword, emailSent, emailError });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to reset password" });
@@ -681,16 +707,20 @@ router.post("/bulk-regenerate-password", authenticate, requireRole("ADMIN"), asy
       const generatedPassword = generateTempPassword();
       const passwordHash = await bcrypt.hash(generatedPassword, 10);
       await prisma.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: true } });
-      results.push({ id: user.id, name: user.name, email: user.email, rollNumber: user.rollNumber, generatedPassword, emailSent: null });
+      results.push({ id: user.id, name: user.name, email: user.email, rollNumber: user.rollNumber, generatedPassword, emailSent: null, emailError: null });
     }
     if (req.body.sendEmail) {
       for (const u of results) {
-        const mailResult = await sendMail({
+        const mailResult = await sendMailLogged(prisma, {
           to: u.email,
+          name: u.name,
+          studentId: u.id,
+          emailType: "PASSWORD_RESET",
           subject: "Your CodeArena password has been reset",
           html: wrapBranded(`<p>Hi ${u.name},</p><p>Your password has been reset by an administrator.</p><p><strong>Login email:</strong> ${u.email}<br/><strong>New temporary password:</strong> ${u.generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
-        }).catch(() => ({ ok: false }));
+        }).catch((e) => ({ ok: false, error: e.message }));
         u.emailSent = !!mailResult.ok;
+        u.emailError = mailResult.error || null;
       }
     }
     const failedIds = ids.filter((id) => !users.some((u) => u.id === id));

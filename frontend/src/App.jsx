@@ -55,6 +55,7 @@ import InterviewProgress from "./pages/InterviewProgress";
 import InterviewCertificate from "./pages/InterviewCertificate";
 import InterviewVerify from "./pages/InterviewVerify";
 import InterviewAdmin from "./pages/InterviewAdmin";
+import EmailLogs from "./pages/EmailLogs";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
@@ -181,6 +182,7 @@ export default function App() {
           <Route path="/admin/classes" element={<Protected roles={["ADMIN"]}><ClassManagement /></Protected>} />
           <Route path="/admin/classes/:id/students" element={<Protected roles={["ADMIN"]}><ClassStudents /></Protected>} />
           <Route path="/admin/institutes" element={<Protected roles={["ADMIN"]}><InstituteManagement /></Protected>} />
+          <Route path="/admin/email-logs" element={<Protected roles={["ADMIN"]}><EmailLogs /></Protected>} />
           <Route path="/admin/students" element={<Protected roles={["ADMIN"]}><StudentSearch basePath="/admin" /></Protected>} />
           <Route path="/admin/students/:id" element={<Protected roles={["ADMIN"]}><StudentPerformance basePath="/admin" /></Protected>} />
 

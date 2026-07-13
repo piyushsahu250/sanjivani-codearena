@@ -80,7 +80,7 @@ export default function StudentPerformance({ basePath }) {
     setCopied(false);
     try {
       const { data } = await api.post(`/users/${studentId}/reset-password`, { sendEmail: true });
-      setSentCredential({ password: data.defaultPassword, emailSent: data.emailSent });
+      setSentCredential({ password: data.defaultPassword, emailSent: data.emailSent, emailError: data.emailError });
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to reset password");
     } finally {
@@ -182,9 +182,10 @@ export default function StudentPerformance({ basePath }) {
               <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 6, fontWeight: 600 }}>✓ Welcome email sent successfully.</p>
             )}
             {sentCredential.emailSent === false && (
-              <p style={{ fontSize: 12, color: "var(--rust)", marginTop: 6, fontWeight: 600 }}>
-                ✗ Email could not be delivered. Verify the student's email address, or copy the password below to share manually.
-              </p>
+              <div style={{ marginTop: 6 }}>
+                <p style={{ fontSize: 12, color: "var(--rust)", fontWeight: 600 }}>✗ Email could not be delivered.</p>
+                <p className="mono" style={{ fontSize: 11, color: "var(--rust)", marginTop: 2 }}>Reason: {sentCredential.emailError || "Unknown error"}</p>
+              </div>
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={copySentCredential}>

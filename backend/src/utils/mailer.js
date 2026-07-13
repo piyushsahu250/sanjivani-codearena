@@ -1,11 +1,9 @@
 /**
  * Minimal email sender using the Resend REST API (https://resend.com).
  * No SDK dependency — plain fetch, since Node 18+ (and our Docker image) has
- * it globally.
- *
- * Until RESEND_API_KEY is configured, sendMail() doesn't fail — it logs the
- * would-be email (including any reset link) to the server logs, so the
- * password-reset flow is fully testable before the email service is wired up.
+ * it globally. This project has no traditional SMTP transport (no host/port/
+ * username/password/TLS config) — Resend's HTTPS API is the only transport,
+ * so "SMTP config" here means one thing: RESEND_API_KEY.
  */
 
 const FROM = process.env.MAIL_FROM || "CodeArena <onboarding@resend.dev>";
@@ -31,29 +29,82 @@ function wrapBranded(bodyHtml) {
   `;
 }
 
-async function sendMail({ to, subject, html }) {
-  const apiKey = process.env.RESEND_API_KEY;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  if (!apiKey) {
-    console.log(`[mailer] RESEND_API_KEY not set — would have sent email:\n  to: ${to}\n  subject: ${subject}\n  ${html}`);
-    return { ok: true, simulated: true };
+// Returns { ok: boolean, error?: string, messageId?: string, simulated?: true }.
+// `ok: true` is only ever returned once Resend's API has actually accepted the message —
+// there is no path that reports success without a confirmed 2xx response from the provider.
+async function sendMail({ to, subject, html }) {
+  console.log(`[mailer] Sending "${subject}" to ${to}…`);
+
+  if (!to || !EMAIL_RE.test(String(to).trim())) {
+    console.error(`[mailer] Invalid recipient email: "${to}"`);
+    return { ok: false, error: "Invalid recipient email address" };
   }
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ from: FROM, to, subject, html }),
-  });
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.error(`[mailer] RESEND_API_KEY is not set — email NOT sent (logging content only):\n  to: ${to}\n  subject: ${subject}`);
+    return { ok: false, simulated: true, error: "Email service is not configured on the server (RESEND_API_KEY is missing) — no email was actually sent." };
+  }
+
+  console.log("[mailer] Connecting to Resend API...");
+  let res;
+  try {
+    res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ from: FROM, to, subject, html }),
+    });
+  } catch (err) {
+    console.error("[mailer] Network error contacting Resend:", err.message);
+    return { ok: false, error: `Network error while contacting the email provider: ${err.message}` };
+  }
 
   if (!res.ok) {
-    const body = await res.text();
-    console.error("[mailer] Resend API error:", res.status, body);
-    return { ok: false };
+    let message = `Email provider returned HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      message = body?.message || message;
+    } catch {
+      // response wasn't JSON — keep the generic status-based message
+    }
+    console.error(`[mailer] Resend API error (${res.status}):`, message);
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: `Email provider authentication failed: ${message}` };
+    }
+    if (res.status === 429) {
+      return { ok: false, error: `Email provider rate limit exceeded: ${message}` };
+    }
+    return { ok: false, error: message };
   }
-  return { ok: true };
+
+  const data = await res.json().catch(() => ({}));
+  console.log(`[mailer] Email accepted by provider. Message ID: ${data.id || "(none returned)"} — Status: SUCCESS`);
+  return { ok: true, messageId: data.id || null };
 }
 
-module.exports = { sendMail, wrapBranded };
+// Same as sendMail(), but writes an EmailLog row so admins can see real delivery status/history
+// per student instead of a fire-and-forget send. `prisma` is passed in rather than required at
+// module load, since utils/mailer.js has no other dependency on the Prisma client.
+async function sendMailLogged(prisma, { to, name, subject, html, emailType, studentId }) {
+  const log = await prisma.emailLog.create({
+    data: { studentId: studentId || null, recipientName: name || "", recipientEmail: to || "", emailType, status: "PENDING" },
+  });
+  const result = await sendMail({ to, subject, html });
+  await prisma.emailLog.update({
+    where: { id: log.id },
+    data: {
+      status: result.ok ? "SENT" : "FAILED",
+      errorMessage: result.ok ? null : result.error || "Unknown error",
+      messageId: result.messageId || null,
+      sentAt: result.ok ? new Date() : null,
+    },
+  }).catch(() => {});
+  return result;
+}
+
+module.exports = { sendMail, sendMailLogged, wrapBranded };

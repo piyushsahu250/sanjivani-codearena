@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
-import { Building2, School, Upload, PlusCircle, Users as UsersIcon, BarChart3, FileText, Mic, Settings, Trophy } from "lucide-react";
+import { Building2, School, Upload, PlusCircle, Users as UsersIcon, BarChart3, FileText, Mic, Settings, Trophy, Mail } from "lucide-react";
 import api from "../api";
 import { useToast } from "../context/ToastContext";
 import { useConfirm } from "../context/ConfirmContext";
@@ -69,7 +69,7 @@ export default function AdminDashboard() {
     setSaving(true);
     try {
       const { data } = await api.post("/users", form);
-      setCreatedCredential({ id: data.id, name: data.name, email: data.email, password: data.generatedPassword, emailSent: data.emailSent });
+      setCreatedCredential({ id: data.id, name: data.name, email: data.email, password: data.generatedPassword, emailSent: data.emailSent, emailError: data.emailError });
       setForm({ ...emptyForm, instituteId: form.instituteId, role: form.role });
       load();
     } catch (err) {
@@ -84,8 +84,8 @@ export default function AdminDashboard() {
     setResending(true);
     try {
       const { data } = await api.post(`/users/${createdCredential.id}/reset-password`, { sendEmail: true });
-      setCreatedCredential({ ...createdCredential, password: data.defaultPassword, emailSent: data.emailSent });
-      toast[data.emailSent ? "success" : "error"](data.emailSent ? "Welcome email resent." : "Email could not be delivered.");
+      setCreatedCredential({ ...createdCredential, password: data.defaultPassword, emailSent: data.emailSent, emailError: data.emailError });
+      toast[data.emailSent ? "success" : "error"](data.emailSent ? "Welcome email resent." : `Email could not be delivered: ${data.emailError || "Unknown error"}`);
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to resend email");
     } finally {
@@ -167,6 +167,7 @@ export default function AdminDashboard() {
             <Link to="/admin/bulk-upload" className="btn btn-primary"><Upload size={15} /> Bulk Student Upload</Link>
             <Link to="/staff/tests/new" className="btn btn-ghost"><PlusCircle size={15} /> Create Test</Link>
             <Link to="/admin/students" className="btn btn-ghost"><UsersIcon size={15} /> Student Performance</Link>
+            <Link to="/admin/email-logs" className="btn btn-ghost"><Mail size={15} /> Email Logs</Link>
             <Link to="/staff/resumes" className="btn btn-ghost"><FileText size={15} /> Resume Analytics</Link>
             <Link to="/staff/interviews" className="btn btn-ghost"><Mic size={15} /> Mock Interviews</Link>
             <Link to="/staff/gamification" className="btn btn-ghost"><Trophy size={15} /> Gamification</Link>
@@ -397,9 +398,10 @@ export default function AdminDashboard() {
                       <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 6, fontWeight: 600 }}>✓ Welcome email sent successfully.</p>
                     )}
                     {createdCredential.emailSent === false && (
-                      <p style={{ fontSize: 12, color: "var(--rust)", marginTop: 6, fontWeight: 600 }}>
-                        ✗ Email could not be delivered. Please verify the student's email address or resend below.
-                      </p>
+                      <div style={{ marginTop: 6 }}>
+                        <p style={{ fontSize: 12, color: "var(--rust)", fontWeight: 600 }}>✗ Welcome email could not be sent.</p>
+                        <p className="mono" style={{ fontSize: 11, color: "var(--rust)", marginTop: 2 }}>Reason: {createdCredential.emailError || "Unknown error"}</p>
+                      </div>
                     )}
                     <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                       <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={copyCredentials}>

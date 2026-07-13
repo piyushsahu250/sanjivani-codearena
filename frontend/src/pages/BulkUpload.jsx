@@ -127,6 +127,16 @@ export default function BulkUpload() {
                 {result.duplicateCount > 0 && ` ${result.duplicateCount} skipped as duplicates.`}
                 {result.errorCount > 0 && ` ${result.errorCount} failed validation.`}
               </p>
+              {result.sendCredentials && (
+                <p style={{ fontSize: 13, marginTop: 8 }}>
+                  {result.emailsSentCount > 0 && <span style={{ color: "var(--mint)", fontWeight: 600 }}>✓ {result.emailsSentCount} welcome email{result.emailsSentCount === 1 ? "" : "s"} sent successfully. </span>}
+                  {result.emailsFailedCount > 0 && (
+                    <span style={{ color: "var(--rust)", fontWeight: 600 }}>
+                      ✗ {result.emailsFailedCount} email{result.emailsFailedCount === 1 ? "" : "s"} could not be delivered — see <Link to="/admin/email-logs">Email Logs</Link> for details and retry.
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
 
             {result.created?.length > 0 && (
