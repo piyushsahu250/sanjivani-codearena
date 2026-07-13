@@ -26,6 +26,7 @@ router.post("/login", async (req, res) => {
     const { email, password } = req.body;
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return res.status(401).json({ error: "Email not found." });
+    if (!user.isActive) return res.status(403).json({ error: "This account has been deactivated. Contact your administrator." });
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) return res.status(401).json({ error: "Incorrect password." });

@@ -16,10 +16,11 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MOBILE_RE = /^\+?[0-9]{10,15}$/;
 
 const SELECT_FIELDS = {
-  id: true, name: true, email: true, role: true, rollNumber: true, department: true,
-  mobile: true, program: true, batchYear: true, section: true, createdAt: true,
+  id: true, name: true, email: true, role: true, rollNumber: true, registrationNumber: true, department: true,
+  mobile: true, program: true, batchYear: true, section: true, isActive: true, profilePhotoUrl: true, createdAt: true,
   mustChangePassword: true,
   institute: { select: { id: true, name: true } },
   class: { select: { id: true, name: true, batchYear: true } },
@@ -153,6 +154,76 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to create user" });
+  }
+});
+
+// ADMIN: edit an existing student's (or any user's) profile fields. Unlike account creation,
+// this never touches the password — email uniqueness and mobile format are the only validated
+// fields, everything else is free-text/FK. Every change is written to AuditLog so there's a
+// record of who edited what and when.
+const EDITABLE_FIELDS = [
+  "name", "email", "mobile", "rollNumber", "registrationNumber", "department", "program",
+  "batchYear", "section", "instituteId", "classId", "isActive", "profilePhotoUrl",
+];
+router.patch("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
+  try {
+    const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "User not found" });
+
+    const data = {};
+    for (const field of EDITABLE_FIELDS) {
+      if (req.body[field] !== undefined) data[field] = req.body[field];
+    }
+
+    if (data.email !== undefined) {
+      const email = String(data.email).trim();
+      if (!EMAIL_RE.test(email)) return res.status(400).json({ error: "Invalid email address" });
+      if (email !== existing.email) {
+        const dup = await prisma.user.findUnique({ where: { email } });
+        if (dup) return res.status(409).json({ error: "Email already registered to another account" });
+      }
+      data.email = email;
+    }
+    if (data.mobile !== undefined && data.mobile !== null && data.mobile !== "") {
+      if (!MOBILE_RE.test(String(data.mobile).trim())) return res.status(400).json({ error: "Invalid mobile number" });
+    }
+    if (data.instituteId) {
+      const institute = await prisma.institute.findUnique({ where: { id: data.instituteId } });
+      if (!institute) return res.status(404).json({ error: "Institute not found" });
+    }
+    if (data.classId) {
+      const cls = await prisma.class.findUnique({ where: { id: data.classId } });
+      if (!cls) return res.status(404).json({ error: "Class not found" });
+      if ((data.instituteId || existing.instituteId) && cls.instituteId !== (data.instituteId || existing.instituteId)) {
+        return res.status(400).json({ error: "Selected class does not belong to the selected institute" });
+      }
+    }
+
+    const changedFields = Object.keys(data).filter((f) => String(existing[f] ?? "") !== String(data[f] ?? ""));
+    const admin = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
+
+    const [updated] = await prisma.$transaction([
+      prisma.user.update({ where: { id: existing.id }, data, select: SELECT_FIELDS }),
+      prisma.auditLog.create({
+        data: {
+          action: "STUDENT_PROFILE_UPDATED",
+          adminId: req.user.id,
+          adminName: admin?.name || req.user.email,
+          details: {
+            studentId: existing.id,
+            studentName: existing.name,
+            changedFields,
+            before: Object.fromEntries(changedFields.map((f) => [f, existing[f]])),
+            after: Object.fromEntries(changedFields.map((f) => [f, data[f]])),
+          },
+        },
+      }),
+    ]);
+
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update user" });
   }
 });
 
@@ -409,6 +480,16 @@ async function authorizeStudentPerformanceAccess(req, res) {
   }
   return target;
 }
+
+// ADMIN: fetch a single user's full editable profile (institute/class as {id,name} for
+// populating dropdowns, plus fields not exposed by the search/performance endpoints). Placed
+// after every literal-segment GET route (bulk-template, lookup/:query, search) so this catch-all
+// "/:id" can never shadow them — Express matches routes in registration order.
+router.get("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.params.id }, select: SELECT_FIELDS });
+  if (!user) return res.status(404).json({ error: "User not found" });
+  res.json(user);
+});
 
 // ADMIN/STAFF/STUDENT(self): full performance dashboard — summary stats, test history, and
 // chart-ready analytics. A student's own view masks scores for any test whose results aren't

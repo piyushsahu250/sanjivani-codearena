@@ -4,6 +4,7 @@ import Editor from "@monaco-editor/react";
 import api from "../api";
 import { useGamification } from "../context/GamificationContext";
 import { useProctoring } from "../hooks/useProctoring";
+import useIsMobile from "../hooks/useIsMobile";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 
@@ -32,11 +33,13 @@ const VIOLATION_LABEL = {
   MULTIPLE_FACES: "multiple faces being detected in the camera frame",
   CAMERA_DROPPED: "your camera being turned off or disconnected",
   MIC_DROPPED: "your microphone being turned off or disconnected",
+  BROWSER_SHORTCUT: "using a restricted keyboard shortcut",
 };
 
 export default function ModuleCodingAssessment() {
   const { slug, moduleId } = useParams();
   const { notify } = useGamification();
+  const isMobile = useIsMobile();
 
   const [status, setStatus] = useState(null); // GET /module-coding/module/:moduleId response
   const [error, setError] = useState("");
@@ -373,7 +376,8 @@ export default function ModuleCodingAssessment() {
         <Navbar />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div className="card" style={{ padding: 32, maxWidth: 560, marginTop: 24 }}>
-            <h2>{t.title}</h2>
+            <span className="badge" style={{ background: "var(--amber)" }}>📝 Official Test — graded{t.maxAttempts != null ? `, ${t.maxAttempts} attempt${t.maxAttempts === 1 ? "" : "s"} allowed` : ""}</span>
+            <h2 style={{ marginTop: 10 }}>{t.title}</h2>
             <ChalkUnderline />
             {t.instructions && <p style={{ color: "var(--ink-dim)", marginTop: 10 }}>{t.instructions}</p>}
 
@@ -439,14 +443,16 @@ export default function ModuleCodingAssessment() {
   // phase === "active"
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-      <div style={{ background: "var(--slate-900)", color: "var(--chalk)", padding: "12px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <strong>{status.test.title}</strong>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      <div style={{ background: "var(--slate-900)", color: "var(--chalk)", padding: isMobile ? "10px 12px" : "12px 24px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <strong style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: isMobile ? "1 1 100%" : "0 1 auto" }}>{status.test.title}</strong>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <span className="mono" style={{ fontSize: 12, color: violationCount > 0 ? "var(--rust)" : "var(--ink-dim)" }}>
             ⚠ Violations: {violationCount}/{status.test.maxViolations}
           </span>
-          <span className="mono" style={{ fontSize: 11, opacity: 0.7 }}>{lastSavedAt ? `● Saved ${lastSavedAt.toLocaleTimeString()}` : "● Auto-save every 10s"}</span>
-          <div className="mono" style={{ fontSize: 20, color: secondsLeft < 120 ? "var(--rust)" : "var(--amber)" }}>{timeLabel}</div>
+          {!isMobile && (
+            <span className="mono" style={{ fontSize: 11, opacity: 0.7 }}>{lastSavedAt ? `● Saved ${lastSavedAt.toLocaleTimeString()}` : "● Auto-save every 10s"}</span>
+          )}
+          <div className="mono" style={{ fontSize: isMobile ? 16 : 20, color: secondsLeft < 120 ? "var(--rust)" : "var(--amber)" }}>{timeLabel}</div>
         </div>
         <button className="btn btn-primary" onClick={() => finalize(null)}>Submit Assessment</button>
       </div>
@@ -462,7 +468,7 @@ export default function ModuleCodingAssessment() {
 
       {status.test.requireWebcam && (
         <video ref={proctor.videoRef} autoPlay muted playsInline style={{
-          position: "fixed", bottom: 16, right: 16, width: 140, height: 105, borderRadius: 8,
+          position: "fixed", bottom: 16, right: 16, width: isMobile ? 84 : 140, height: isMobile ? 63 : 105, borderRadius: 8,
           objectFit: "cover", background: "#000", zIndex: 50,
           border: proctor.faceStatus !== "OK" ? "3px solid var(--rust)" : "2px solid var(--amber)",
         }} />
@@ -484,15 +490,25 @@ export default function ModuleCodingAssessment() {
         </div>
       )}
 
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        <div style={{ width: 200, borderRight: "1px solid var(--line)", padding: 16, overflowY: "auto" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)", marginBottom: 10 }}>QUESTIONS</div>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", flex: 1, overflow: isMobile ? "auto" : "hidden" }}>
+        <div
+          style={
+            isMobile
+              ? { width: "100%", borderBottom: "1px solid var(--line)", padding: "10px 12px", display: "flex", gap: 8, overflowX: "auto", flexShrink: 0 }
+              : { width: 200, borderRight: "1px solid var(--line)", padding: 16, overflowY: "auto" }
+          }
+        >
+          {!isMobile && <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)", marginBottom: 10 }}>QUESTIONS</div>}
           {questions.map((q, idx) => (
             <button
               key={q.id}
               onClick={() => setActiveIdx(idx)}
               style={{
-                display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 6, borderRadius: 8,
+                display: isMobile ? "inline-block" : "block",
+                width: isMobile ? "auto" : "100%",
+                minWidth: isMobile ? 150 : undefined,
+                flexShrink: isMobile ? 0 : undefined,
+                textAlign: "left", padding: "10px 12px", marginBottom: isMobile ? 0 : 6, borderRadius: 8,
                 border: idx === activeIdx ? "1px solid var(--amber)" : "1px solid var(--line)",
                 background: idx === activeIdx ? "#FCEFD9" : "#fff", fontSize: 13,
               }}
@@ -502,7 +518,7 @@ export default function ModuleCodingAssessment() {
           ))}
         </div>
 
-        <div style={{ width: 380, padding: 24, overflowY: "auto", flexShrink: 0, borderRight: "1px solid var(--line)" }}>
+        <div style={{ width: isMobile ? "100%" : 380, padding: isMobile ? 16 : 24, overflowY: "auto", flexShrink: 0, borderRight: isMobile ? "none" : "1px solid var(--line)", borderBottom: isMobile ? "1px solid var(--line)" : "none" }}>
           {current && (
             <>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -527,7 +543,7 @@ export default function ModuleCodingAssessment() {
         </div>
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-          <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <select value={answer?.language || allowedLanguages[0]} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
               {ALL_LANGUAGES.filter((l) => allowedLanguages.includes(l.id)).map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
@@ -537,7 +553,7 @@ export default function ModuleCodingAssessment() {
             Your code is auto-saved every 10 seconds. "Run sample" checks against sample cases only — your saved code
             is graded against all (including hidden) test cases when you submit.
           </p>
-          <div style={{ height: editorHeight, minHeight: 0, flexShrink: 0 }}>
+          <div style={{ height: isMobile ? Math.min(editorHeight, 320) : editorHeight, minHeight: 0, flexShrink: 0 }}>
             <Editor
               height="100%"
               language={ALL_LANGUAGES.find((l) => l.id === answer?.language)?.monaco}
@@ -548,7 +564,7 @@ export default function ModuleCodingAssessment() {
             />
           </div>
           <div
-            onMouseDown={startResize}
+            onMouseDown={isMobile ? undefined : startResize}
             title="Drag to resize editor"
             style={{ height: 9, cursor: "row-resize", background: "var(--line)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
           >

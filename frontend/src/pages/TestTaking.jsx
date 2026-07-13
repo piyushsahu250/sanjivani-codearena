@@ -5,6 +5,7 @@ import * as tf from "@tensorflow/tfjs";
 import * as blazeface from "@tensorflow-models/blazeface";
 import api from "../api";
 import { useGamification } from "../context/GamificationContext";
+import useIsMobile from "../hooks/useIsMobile";
 
 const FACE_CHECK_INTERVAL_MS = 2000;
 const FACE_CONFIDENCE_THRESHOLD = 0.7;
@@ -23,6 +24,7 @@ export default function TestTaking() {
   const { id: testId } = useParams();
   const navigate = useNavigate();
   const { notify } = useGamification();
+  const isMobile = useIsMobile();
 
   const [testMeta, setTestMeta] = useState(null);
   const [metaError, setMetaError] = useState(null);
@@ -95,7 +97,10 @@ export default function TestTaking() {
     setRequestingMedia(true);
     setMediaError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: !!testMeta?.requireWebcam,
+        audio: !!testMeta?.requireMicrophone,
+      });
       mediaStreamRef.current = stream;
       setMediaGranted(true);
     } catch (err) {
@@ -174,7 +179,7 @@ export default function TestTaking() {
   // is a *state*, not a one-off event: the warning must stay up the whole time no face is
   // detected, and it should count as a single warning per disappearance — not once per poll.
   useEffect(() => {
-    if (!started) return;
+    if (!started || !testMeta?.requireWebcam) return;
     const video = liveVideoRef.current;
     if (!video) return;
 
@@ -207,7 +212,7 @@ export default function TestTaking() {
   // violation, never touches the 3-strike counter, and never blocks the candidate. Just a
   // courtesy nudge if the mic picks up sustained loud audio (conversation, TV, etc.).
   useEffect(() => {
-    if (!started) return;
+    if (!started || !testMeta?.requireMicrophone) return;
     const stream = mediaStreamRef.current;
     if (!stream || stream.getAudioTracks().length === 0) return;
 
@@ -306,10 +311,12 @@ export default function TestTaking() {
   async function beginTest() {
     setStarting(true);
     // Request fullscreen synchronously in response to the click, before any awaits.
-    try {
-      await document.documentElement.requestFullscreen?.();
-    } catch {
-      // Fullscreen can be denied/unsupported — proceed with the test regardless.
+    if (testMeta?.requireFullscreen !== false) {
+      try {
+        await document.documentElement.requestFullscreen?.();
+      } catch {
+        // Fullscreen can be denied/unsupported — proceed with the test regardless.
+      }
     }
     try {
       const startRes = await api.post(`/tests/${testId}/start`);
@@ -444,14 +451,16 @@ export default function TestTaking() {
       .catch(() => {});
   }
 
-  // Tab-switch / focus-loss detection — also auto re-requests fullscreen the moment the
-  // tab regains focus, so the candidate is dropped straight back into the locked-down view.
+  // Tab-switch / focus-loss detection. Reporting is unconditional regardless of this test's
+  // proctoring configuration — switching tabs always counts as a violation. Only the "snap back
+  // into fullscreen on refocus" behavior is gated, since a test with requireFullscreen=false
+  // never entered fullscreen at all.
   useEffect(() => {
     if (!started) return;
     function handleVisibilityChange() {
       if (document.hidden) {
         reportViolation("switching tabs during a test is not allowed");
-      } else if (!finalizedRef.current && !document.fullscreenElement) {
+      } else if (testMeta?.requireFullscreen !== false && !finalizedRef.current && !document.fullscreenElement) {
         document.documentElement.requestFullscreen?.().catch(() => {});
       }
     }
@@ -462,8 +471,9 @@ export default function TestTaking() {
   // Fullscreen-exit detection — immediately attempts to force back into fullscreen. Browsers
   // that block programmatic re-entry without a fresh user gesture will silently no-op the
   // request; the warning banner's "Resume fullscreen" button is the fallback for that case.
+  // Skipped entirely when this test doesn't require fullscreen.
   useEffect(() => {
-    if (!started) return;
+    if (!started || testMeta?.requireFullscreen === false) return;
     function handleFullscreenChange() {
       if (!document.fullscreenElement && !finalizedRef.current) {
         reportViolation("exiting fullscreen during a test is not allowed");
@@ -475,6 +485,48 @@ export default function TestTaking() {
     }
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, [started]);
+
+  // Block clipboard/context-menu/browser-chrome shortcuts for the duration of the test. This is
+  // always on, independent of the webcam/mic/fullscreen proctoring flags — same treatment as
+  // tab-switch detection above. Browsers reserve some of these (Ctrl+T/N/W/Tab, Print Screen) and
+  // won't let a page preventDefault() them; those are blocked where the browser allows it and
+  // otherwise just can't be intercepted from JS at all.
+  useEffect(() => {
+    if (!started) return;
+    function blockContextMenu(e) {
+      e.preventDefault();
+    }
+    function blockClipboard(e) {
+      e.preventDefault();
+    }
+    function blockKeys(e) {
+      const k = e.key?.toLowerCase();
+      const blockedWithCtrl = ["s", "p", "u", "w", "n", "t", "r", "tab"];
+      if ((e.ctrlKey || e.metaKey) && blockedWithCtrl.includes(k)) {
+        e.preventDefault();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && ["t", "i", "j", "c"].includes(k)) {
+        e.preventDefault();
+        return;
+      }
+      if (k === "f5" || k === "f11" || k === "f12") {
+        e.preventDefault();
+      }
+    }
+    document.addEventListener("contextmenu", blockContextMenu);
+    document.addEventListener("copy", blockClipboard);
+    document.addEventListener("paste", blockClipboard);
+    document.addEventListener("cut", blockClipboard);
+    document.addEventListener("keydown", blockKeys);
+    return () => {
+      document.removeEventListener("contextmenu", blockContextMenu);
+      document.removeEventListener("copy", blockClipboard);
+      document.removeEventListener("paste", blockClipboard);
+      document.removeEventListener("cut", blockClipboard);
+      document.removeEventListener("keydown", blockKeys);
+    };
   }, [started]);
 
   const answer = current ? answers[current.id] : null;
@@ -722,55 +774,67 @@ export default function TestTaking() {
 
   if (!started) {
     if (!testMeta) return <div style={{ padding: 48 }} className="mono">Loading test…</div>;
+    const needsWebcam = !!testMeta.requireWebcam;
+    const needsMic = !!testMeta.requireMicrophone;
+    const needsMedia = needsWebcam || needsMic;
+    const needsFullscreen = testMeta.requireFullscreen !== false;
+    const mediaLabel = needsWebcam && needsMic ? "camera and microphone" : needsWebcam ? "camera" : "microphone";
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
         <div className="card" style={{ padding: 32, maxWidth: 480, textAlign: "center" }}>
-          <h2>{testMeta.title}</h2>
+          <span className="badge" style={{ background: "var(--amber)" }}>📝 Official Test — graded, one attempt unless permitted by admin/staff</span>
+          <h2 style={{ marginTop: 10 }}>{testMeta.title}</h2>
           {testMeta.description && <p style={{ color: "var(--ink-dim)", marginTop: 8 }}>{testMeta.description}</p>}
           <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 16 }}>
             {testMeta.questions?.length || 0} questions · {testMeta.durationMin} minutes
           </p>
           <p style={{ fontSize: 13, marginTop: 20 }}>
-            This test runs in fullscreen with your camera and microphone on for the full duration, and your face
-            must stay visible in frame. Switching tabs, exiting fullscreen, disabling your camera/mic, or moving out
-            of camera view is tracked and will auto-submit your test after {MAX_TAB_VIOLATIONS} violations. You get
+            {needsFullscreen && `This test runs in fullscreen${needsMedia ? ` with your ${mediaLabel} on for the full duration` : ""}. `}
+            {needsWebcam && "Your face must stay visible in frame. "}
+            Switching tabs{needsFullscreen ? ", exiting fullscreen," : ""}
+            {needsMedia ? ` disabling your ${mediaLabel},` : ""}
+            {needsWebcam ? " or moving out of camera view" : ""} is tracked and will auto-submit your test after {MAX_TAB_VIOLATIONS} violations. You get
             one continuous {testMeta.durationMin}-minute timer for the whole test — answer any question in any
             order, and change your answers freely until you submit or time runs out.
           </p>
 
-          <div style={{ marginTop: 20, padding: 16, border: "1px solid var(--line)", borderRadius: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>Camera &amp; microphone check</div>
-            {mediaGranted ? (
-              <>
-                <video
-                  ref={preflightVideoRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  style={{ width: 160, height: 120, borderRadius: 8, marginTop: 10, background: "#000", objectFit: "cover" }}
-                />
-                <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 8, fontWeight: 600 }}>✓ Camera and microphone are ready</p>
-              </>
-            ) : (
-              <>
-                <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 6 }}>
-                  Both are required before you can begin — they stay on for the whole test.
-                </p>
-                <button className="btn btn-dark" style={{ marginTop: 10 }} onClick={requestMedia} disabled={requestingMedia}>
-                  {requestingMedia ? "Requesting access…" : "Grant camera & microphone access"}
-                </button>
-                {mediaError && <p style={{ fontSize: 12, color: "var(--rust)", marginTop: 8 }}>{mediaError}</p>}
-              </>
-            )}
-          </div>
+          {needsMedia && (
+            <div style={{ marginTop: 20, padding: 16, border: "1px solid var(--line)", borderRadius: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{needsWebcam && needsMic ? "Camera & microphone check" : needsWebcam ? "Camera check" : "Microphone check"}</div>
+              {mediaGranted ? (
+                <>
+                  {needsWebcam && (
+                    <video
+                      ref={preflightVideoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      style={{ width: 160, height: 120, borderRadius: 8, marginTop: 10, background: "#000", objectFit: "cover" }}
+                    />
+                  )}
+                  <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 8, fontWeight: 600 }}>✓ {needsWebcam && needsMic ? "Camera and microphone are" : "Ready"} ready</p>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 6 }}>
+                    Required before you can begin — it stays on for the whole test.
+                  </p>
+                  <button className="btn btn-dark" style={{ marginTop: 10 }} onClick={requestMedia} disabled={requestingMedia}>
+                    {requestingMedia ? "Requesting access…" : `Grant ${mediaLabel} access`}
+                  </button>
+                  {mediaError && <p style={{ fontSize: 12, color: "var(--rust)", marginTop: 8 }}>{mediaError}</p>}
+                </>
+              )}
+            </div>
+          )}
 
           <button
             className="btn btn-primary"
-            style={{ marginTop: 20, padding: "12px 24px", opacity: mediaGranted ? 1 : 0.4 }}
+            style={{ marginTop: 20, padding: "12px 24px", opacity: (!needsMedia || mediaGranted) ? 1 : 0.4 }}
             onClick={beginTest}
-            disabled={starting || !mediaGranted}
+            disabled={starting || (needsMedia && !mediaGranted)}
           >
-            {starting ? "Starting…" : "Begin Test (Fullscreen)"}
+            {starting ? "Starting…" : needsFullscreen ? "Begin Test (Fullscreen)" : "Begin Test"}
           </button>
         </div>
       </div>
@@ -782,38 +846,44 @@ export default function TestTaking() {
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
       {/* Top bar */}
-      <div style={{ background: "var(--slate-900)", color: "var(--chalk)", padding: "12px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
+      <div style={{ background: "var(--slate-900)", color: "var(--chalk)", padding: isMobile ? "10px 12px" : "12px 24px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: isMobile ? "1 1 100%" : "0 1 auto" }}>
           <strong>{test.title}</strong>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setShowQuestionPanel((v) => !v)}>
-            {showQuestionPanel ? "Hide questions" : "Show questions"}
-          </button>
-          <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setShowResultsPanel((v) => !v)}>
-            {showResultsPanel ? "Hide results" : "Show results"}
-          </button>
-          <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={toggleMaximizeEditor}>
-            {!showQuestionPanel && !showResultsPanel ? "⛶ Restore layout" : "⛶ Maximize editor"}
-          </button>
-          <div className="mono" style={{ fontSize: 20, color: secondsLeft < 300 ? "var(--rust)" : "var(--amber)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {!isMobile && (
+            <>
+              <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setShowQuestionPanel((v) => !v)}>
+                {showQuestionPanel ? "Hide questions" : "Show questions"}
+              </button>
+              <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setShowResultsPanel((v) => !v)}>
+                {showResultsPanel ? "Hide results" : "Show results"}
+              </button>
+              <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={toggleMaximizeEditor}>
+                {!showQuestionPanel && !showResultsPanel ? "⛶ Restore layout" : "⛶ Maximize editor"}
+              </button>
+            </>
+          )}
+          <div className="mono" style={{ fontSize: isMobile ? 16 : 20, color: secondsLeft < 300 ? "var(--rust)" : "var(--amber)" }}>
             {timeLabel} <span style={{ opacity: 0.6 }}>▊</span>
           </div>
         </div>
         <button className="btn btn-primary" onClick={() => finalizeAndExit(false)}>Submit Test</button>
       </div>
 
-      <video
-        ref={liveVideoRef}
-        autoPlay
-        muted
-        playsInline
-        style={{
-          position: "fixed", bottom: 16, right: 16, width: 140, height: 105, borderRadius: 8,
-          objectFit: "cover", background: "#000", zIndex: 50,
-          border: faceMissing ? "3px solid var(--rust)" : "2px solid var(--amber)",
-        }}
-      />
+      {test.requireWebcam && (
+        <video
+          ref={liveVideoRef}
+          autoPlay
+          muted
+          playsInline
+          style={{
+            position: "fixed", bottom: 16, right: 16, width: isMobile ? 84 : 140, height: isMobile ? 63 : 105, borderRadius: 8,
+            objectFit: "cover", background: "#000", zIndex: 50,
+            border: faceMissing ? "3px solid var(--rust)" : "2px solid var(--amber)",
+          }}
+        />
+      )}
 
       {noiseWarning && (
         <div
@@ -850,7 +920,7 @@ export default function TestTaking() {
           className="mono"
         >
           <span>⚠ {tabWarning}</span>
-          {!document.fullscreenElement && (
+          {test.requireFullscreen && !document.fullscreenElement && (
             <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px", background: "#fff" }} onClick={resumeFullscreen}>
               Resume fullscreen
             </button>
@@ -858,10 +928,16 @@ export default function TestTaking() {
         </div>
       )}
 
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", flex: 1, overflow: isMobile ? "auto" : "hidden" }}>
         {/* Question navigator */}
-        <div style={{ width: 220, borderRight: "1px solid var(--line)", padding: 16, overflowY: "auto" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)", marginBottom: 10 }}>QUESTIONS</div>
+        <div
+          style={
+            isMobile
+              ? { width: "100%", borderBottom: "1px solid var(--line)", padding: "10px 12px", display: "flex", gap: 8, overflowX: "auto", flexShrink: 0 }
+              : { width: 220, borderRight: "1px solid var(--line)", padding: 16, overflowY: "auto" }
+          }
+        >
+          {!isMobile && <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)", marginBottom: 10 }}>QUESTIONS</div>}
           {questions.map((tq, idx) => {
             const q = tq.question;
             const a = answers[q.id];
@@ -881,11 +957,13 @@ export default function TestTaking() {
                 key={tq.id}
                 onClick={() => setActiveIdx(idx)}
                 style={{
-                  display: "block",
-                  width: "100%",
+                  display: isMobile ? "inline-block" : "block",
+                  width: isMobile ? "auto" : "100%",
+                  minWidth: isMobile ? 150 : undefined,
+                  flexShrink: isMobile ? 0 : undefined,
                   textAlign: "left",
                   padding: "10px 12px",
-                  marginBottom: 6,
+                  marginBottom: isMobile ? 0 : 6,
                   borderRadius: 8,
                   border: idx === activeIdx ? "1px solid var(--amber)" : "1px solid var(--line)",
                   background: idx === activeIdx ? "#FCEFD9" : "#fff",
@@ -904,7 +982,7 @@ export default function TestTaking() {
         {/* Question description */}
         {showQuestionPanel && (
         <>
-        <div style={{ width: questionPanelWidth, padding: 24, overflowY: "auto", flexShrink: 0 }}>
+        <div style={{ width: isMobile ? "100%" : questionPanelWidth, padding: isMobile ? 16 : 24, overflowY: "auto", flexShrink: 0 }}>
           {current && (
             <>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -928,11 +1006,13 @@ export default function TestTaking() {
             </>
           )}
         </div>
-        <div
-          onMouseDown={startResize("question")}
-          style={{ width: 6, cursor: "col-resize", background: "var(--line)", flexShrink: 0 }}
-          title="Drag to resize"
-        />
+        {!isMobile && (
+          <div
+            onMouseDown={startResize("question")}
+            style={{ width: 6, cursor: "col-resize", background: "var(--line)", flexShrink: 0 }}
+            title="Drag to resize"
+          />
+        )}
         </>
         )}
 
@@ -940,19 +1020,21 @@ export default function TestTaking() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
           {isQuiz ? (
             <>
-              <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => goToQuestion(-1)} disabled={activeIdx === 0}>
                     ◀ Previous
                   </button>
                   <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => goToQuestion(1)} disabled={activeIdx === questions.length - 1}>
                     Next ▶
                   </button>
-                  <span className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
-                    {isMulti ? "Select all that apply" : "Select one answer"}
-                  </span>
+                  {!isMobile && (
+                    <span className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
+                      {isMulti ? "Select all that apply" : "Select one answer"}
+                    </span>
+                  )}
                 </div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <span className="mono" style={{ fontSize: 12, color: savingAnswer ? "var(--amber-dark)" : "var(--mint)", minWidth: 90, textAlign: "right" }}>
                     {savingAnswer ? "Saving…" : justSaved ? "✓ Saved" : ""}
                   </span>
@@ -988,8 +1070,8 @@ export default function TestTaking() {
             </>
           ) : (
             <>
-              <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => goToQuestion(-1)} disabled={activeIdx === 0}>
                     ◀ Previous
                   </button>
@@ -1000,7 +1082,7 @@ export default function TestTaking() {
                     {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
                   </select>
                 </div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <span className="mono" style={{ fontSize: 12, color: savingAnswer ? "var(--amber-dark)" : "var(--mint)", minWidth: 90, textAlign: "right" }}>
                     {savingAnswer ? "Saving…" : justSaved ? "✓ Saved" : ""}
                   </span>
@@ -1034,8 +1116,10 @@ export default function TestTaking() {
 
           {showResultsPanel && (
           <>
-          <div onMouseDown={startResize("results")} style={{ height: 6, cursor: "row-resize", background: "var(--line)", flexShrink: 0 }} title="Drag to resize" />
-          <div style={{ height: resultsPanelHeight, overflowY: "auto", padding: 16, background: "#FBF9F4", flexShrink: 0 }}>
+          {!isMobile && (
+            <div onMouseDown={startResize("results")} style={{ height: 6, cursor: "row-resize", background: "var(--line)", flexShrink: 0 }} title="Drag to resize" />
+          )}
+          <div style={{ height: isMobile ? Math.min(resultsPanelHeight, 220) : resultsPanelHeight, overflowY: "auto", padding: 16, background: "#FBF9F4", flexShrink: 0 }}>
             {running && (
               <p className="mono" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>
                 ⏳ Compiling and running your {answer?.language || ""} code

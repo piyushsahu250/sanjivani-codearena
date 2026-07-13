@@ -16,8 +16,8 @@ async function computeStudentPerformance(studentId, { maskUnpublished = false } 
   const student = await prisma.user.findUnique({
     where: { id: studentId },
     select: {
-      id: true, name: true, email: true, rollNumber: true, mobile: true,
-      department: true, batchYear: true,
+      id: true, name: true, email: true, rollNumber: true, registrationNumber: true, mobile: true,
+      department: true, program: true, batchYear: true, section: true, isActive: true, profilePhotoUrl: true,
       institute: { select: { id: true, name: true } },
       class: { select: { id: true, name: true, batchYear: true } },
     },

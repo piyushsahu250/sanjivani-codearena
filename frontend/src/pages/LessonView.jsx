@@ -113,6 +113,12 @@ export default function LessonView() {
             </div>
             <h1 style={{ marginTop: 6 }}>{lesson.isModuleTest && "📝 "}{lesson.title}</h1>
             <ChalkUnderline />
+            <span
+              className="badge"
+              style={{ marginTop: 8, display: "inline-block", background: lesson.isModuleTest ? "var(--amber)" : "var(--mint-light, #E7F3EB)" }}
+            >
+              {lesson.isModuleTest ? "📝 Official Test — one graded attempt" : "🧪 Practice Module — unlimited attempts"}
+            </span>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <Link to={`/learning/${slug}`} className="btn btn-ghost">← Course</Link>
@@ -334,6 +340,13 @@ function PracticeQuestionCard({ question }) {
   const [code, setCode] = useState(question.starterCode || "");
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(false);
+  const [history, setHistory] = useState(null); // { totalAttempts, solved, latestVerdict }
+
+  function loadHistory() {
+    if (question.type !== "CODING") return;
+    api.get(`/learning/practice/${question.id}/history`).then((res) => setHistory(res.data)).catch(() => {});
+  }
+  useEffect(loadHistory, [question.id]);
 
   async function checkAnswer() {
     setChecking(true);
@@ -355,6 +368,7 @@ function PracticeQuestionCard({ question }) {
       const { data } = await api.post(`/learning/practice/${question.id}/run`, { language, code });
       setRunResult(data);
       notify(data.gamification);
+      loadHistory();
     } catch (err) {
       alert(err.response?.data?.error || "Execution failed");
     } finally {
@@ -371,6 +385,12 @@ function PracticeQuestionCard({ question }) {
 
       {question.type === "CODING" ? (
         <>
+          {history && history.totalAttempts > 0 && (
+            <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 8 }}>
+              Total attempts: {history.totalAttempts} · Best: {history.solved ? "✓ Solved" : "Not solved yet"} · Latest: {history.latestVerdict}
+              {" · "}unlimited attempts — practice as many times as you like
+            </p>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
             <select value={language} onChange={(e) => setLanguage(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)" }}>
               {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}

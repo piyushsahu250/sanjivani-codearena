@@ -35,6 +35,7 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
     const {
       title, code, description, instructions, durationMin, passingMarks, showResults,
       startTime, endTime, questionIds, questionTimeLimits, classIds,
+      requireFullscreen, requireWebcam, requireMicrophone,
     } = req.body;
     const test = await prisma.test.create({
       data: {
@@ -47,6 +48,9 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
         showResults: showResults === undefined ? true : !!showResults,
         startTime: new Date(startTime),
         endTime: new Date(endTime),
+        requireFullscreen: requireFullscreen === undefined ? true : !!requireFullscreen,
+        requireWebcam: !!requireWebcam,
+        requireMicrophone: !!requireMicrophone,
         createdById: req.user.id,
         questions: { create: questionCreateData(questionIds, questionTimeLimits) },
         classes: { create: (classIds || []).map((classId) => ({ classId })) },
@@ -69,6 +73,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
     const {
       title, code, description, instructions, durationMin, passingMarks, showResults,
       startTime, endTime, questionIds, questionTimeLimits, classIds,
+      requireFullscreen, requireWebcam, requireMicrophone,
     } = req.body;
 
     const data = {
@@ -81,6 +86,9 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
       showResults: showResults === undefined ? existing.showResults : !!showResults,
       startTime: startTime ? new Date(startTime) : existing.startTime,
       endTime: endTime ? new Date(endTime) : existing.endTime,
+      requireFullscreen: requireFullscreen === undefined ? existing.requireFullscreen : !!requireFullscreen,
+      requireWebcam: requireWebcam === undefined ? existing.requireWebcam : !!requireWebcam,
+      requireMicrophone: requireMicrophone === undefined ? existing.requireMicrophone : !!requireMicrophone,
     };
 
     await prisma.$transaction(async (tx) => {
@@ -349,7 +357,7 @@ router.post("/attempts/:attemptId/violation", authenticate, requireRole("STUDENT
 // --- ADMIN: grant an individual student a reattempt on a test they've already completed.
 // Deletes their existing attempt (submissions cascade with it), so their next POST /:id/start
 // creates a fresh one — scoped to this one student only, nothing else about the test changes. ---
-router.post("/:testId/attempts/:studentId/reattempt", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
+router.post("/:testId/attempts/:studentId/reattempt", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   try {
     const { testId, studentId } = req.params;
     const [test, student, attempt] = await Promise.all([

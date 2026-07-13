@@ -68,11 +68,14 @@ model User {
   passwordHash String
   role         Role     @default(STUDENT)
   rollNumber   String?  // students only — a.k.a. College/Institute ID
+  registrationNumber String? // students only — separate from rollNumber, e.g. university enrollment no.
   department   String?
   mobile       String?
   program      String?  // free-text fallback if no Class relation is set
   batchYear    String?
   section      String?
+  isActive     Boolean  @default(true) // false = account is deactivated; blocked at login
+  profilePhotoUrl String? // optional; stored as a data URL, no external file storage in use
   mustChangePassword Boolean @default(false)
   createdAt    DateTime @default(now())
 
@@ -116,6 +119,9 @@ model Test {
   startTime    DateTime
   endTime      DateTime
   isPublished  Boolean  @default(false)
+  requireFullscreen Boolean @default(true)
+  requireWebcam     Boolean @default(false) // best-effort face presence check, mirrors ModuleCodingTest
+  requireMicrophone Boolean @default(false) // mic-drop is monitored/warned but never blocks Submit
   createdBy    User     @relation("TestCreator", fields: [createdById], references: [id])
   createdById  String
   createdAt    DateTime @default(now())

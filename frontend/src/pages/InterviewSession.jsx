@@ -18,6 +18,7 @@ const VIOLATION_LABEL = {
   FULLSCREEN_EXIT: "exiting fullscreen",
   CAMERA_DROPPED: "your camera being turned off or disconnected",
   MIC_DROPPED: "your microphone being turned off or disconnected",
+  BROWSER_SHORTCUT: "using a restricted keyboard shortcut",
 };
 
 export default function InterviewSession() {

@@ -334,6 +334,28 @@ router.post("/practice/:id/check", authenticate, requireRole("STUDENT"), async (
   }
 });
 
+// STUDENT: this student's attempt history on one coding practice question — unlimited attempts
+// by design (practice, not an exam), so this is purely informational: how many times they've
+// tried, whether they've ever solved it, and their most recent verdict.
+router.get("/practice/:id/history", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const [totalAttempts, solvedCount, latest] = await Promise.all([
+      prisma.practiceRunLog.count({ where: { studentId: req.user.id, questionId: req.params.id } }),
+      prisma.practiceRunLog.count({ where: { studentId: req.user.id, questionId: req.params.id, verdict: "ACCEPTED" } }),
+      prisma.practiceRunLog.findFirst({ where: { studentId: req.user.id, questionId: req.params.id }, orderBy: { createdAt: "desc" } }),
+    ]);
+    res.json({
+      totalAttempts,
+      solved: solvedCount > 0,
+      latestVerdict: latest?.verdict || null,
+      latestAt: latest?.createdAt || null,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load attempt history" });
+  }
+});
+
 // STUDENT: run a coding practice question against its test cases. Full pass/fail detail is
 // returned — this is a learning aid, not a proctored exam, so there's no reason to hide it.
 // Every run (any verdict) is logged to PracticeRunLog — the streak/badge signal. Solving a

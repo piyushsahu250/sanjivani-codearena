@@ -97,9 +97,11 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
     return () => document.removeEventListener("contextmenu", onContextMenu);
   }, [active, report]);
 
-  // F12 / devtools shortcuts / view-source — blocked where preventDefault actually works.
-  // PrintScreen can be logged but never blocked (the OS captures it before JS sees the event) —
-  // a real browser limitation, not a gap in this implementation.
+  // F12 / devtools shortcuts / view-source / browser-chrome shortcuts — blocked where
+  // preventDefault actually works. PrintScreen can be logged but never blocked (the OS captures
+  // it before JS sees the event) — a real browser limitation, not a gap in this implementation.
+  // Some of these (Ctrl+T/N/W/Tab, Alt+Tab) are reserved by the browser/OS and won't actually be
+  // preventable even with preventDefault() — they're still listed here so the attempt is logged.
   useEffect(() => {
     if (!active) return;
     function onKeyDown(e) {
@@ -108,13 +110,19 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
         report("PRINT_SCREEN_ATTEMPT");
         return;
       }
-      const blocked =
+      const isDevtools =
         key === "F12" ||
         (e.ctrlKey && e.shiftKey && ["I", "J", "C", "i", "j", "c"].includes(key)) ||
         (e.ctrlKey && ["u", "U"].includes(key));
-      if (blocked) {
+      const isBrowserChrome =
+        (e.ctrlKey && ["s", "S", "p", "p", "w", "W", "n", "N", "t", "T", "r", "R", "l", "L"].includes(key)) ||
+        (e.ctrlKey && key === "Tab") ||
+        (e.ctrlKey && e.shiftKey && ["t", "T"].includes(key)) ||
+        key === "F5" ||
+        key === "F11";
+      if (isDevtools || isBrowserChrome) {
         e.preventDefault();
-        report("DEVTOOLS");
+        report(isDevtools ? "DEVTOOLS" : "BROWSER_SHORTCUT");
       }
     }
     document.addEventListener("keydown", onKeyDown);

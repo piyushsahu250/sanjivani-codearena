@@ -5,7 +5,10 @@ import Navbar from "../components/Navbar";
 
 const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "True/False", MULTISELECT: "Multiple Select" };
 
-const emptyForm = { title: "", code: "", description: "", instructions: "", durationMin: 60, passingMarks: "", showResults: true, startTime: "", endTime: "" };
+const emptyForm = {
+  title: "", code: "", description: "", instructions: "", durationMin: 60, passingMarks: "", showResults: true, startTime: "", endTime: "",
+  requireFullscreen: true, requireWebcam: false, requireMicrophone: false,
+};
 
 function toLocalInputValue(iso) {
   if (!iso) return "";
@@ -46,6 +49,7 @@ export default function CreateTest() {
         title: t.title || "", code: t.code || "", description: t.description || "",
         instructions: t.instructions || "", durationMin: t.durationMin, passingMarks: t.passingMarks ?? "",
         showResults: t.showResults, startTime: toLocalInputValue(t.startTime), endTime: toLocalInputValue(t.endTime),
+        requireFullscreen: t.requireFullscreen !== false, requireWebcam: !!t.requireWebcam, requireMicrophone: !!t.requireMicrophone,
       });
       setClassIds((t.classes || []).map((c) => c.classId));
       const qIds = t.questions.map((tq) => tq.question.id);
@@ -161,6 +165,22 @@ export default function CreateTest() {
                 Show results to students after submission
               </label>
             </div>
+          </div>
+
+          <div style={{ marginTop: 20, fontWeight: 700, fontSize: 14 }}>Proctoring Settings</div>
+          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>
+            Tab switching is always tracked and disabled for every test, regardless of these settings.
+          </p>
+          <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <input type="checkbox" checked={form.requireFullscreen} onChange={(e) => setForm({ ...form, requireFullscreen: e.target.checked })} /> Require full screen
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <input type="checkbox" checked={form.requireWebcam} onChange={(e) => setForm({ ...form, requireWebcam: e.target.checked })} /> Enable webcam monitoring (face detection)
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <input type="checkbox" checked={form.requireMicrophone} onChange={(e) => setForm({ ...form, requireMicrophone: e.target.checked })} /> Enable microphone monitoring
+            </label>
           </div>
 
           <div style={{ marginTop: 20, fontWeight: 700, fontSize: 14 }}>Assign to classes</div>
