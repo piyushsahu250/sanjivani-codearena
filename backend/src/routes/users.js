@@ -20,7 +20,7 @@ const MOBILE_RE = /^\+?[0-9]{10,15}$/;
 
 const SELECT_FIELDS = {
   id: true, name: true, email: true, role: true, rollNumber: true, registrationNumber: true, department: true,
-  mobile: true, program: true, batchYear: true, section: true, isActive: true, profilePhotoUrl: true, createdAt: true,
+  mobile: true, gender: true, program: true, batchYear: true, section: true, isActive: true, profilePhotoUrl: true, createdAt: true,
   mustChangePassword: true,
   institute: { select: { id: true, name: true } },
   class: { select: { id: true, name: true, batchYear: true } },
@@ -111,21 +111,29 @@ router.get("/", authenticate, requireRole("ADMIN"), async (req, res) => {
 // account is flagged to force a password change on first login.
 router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
   try {
-    const { name, email, role, rollNumber, department, mobile, program, batchYear, section, instituteId, classId } = req.body;
+    const {
+      name, email, role, rollNumber, registrationNumber, department, mobile, gender, program,
+      batchYear, section, instituteId, classId,
+    } = req.body;
     if (!name || !email || !role) {
       return res.status(400).json({ error: "name, email, and role are required" });
     }
+    if (!EMAIL_RE.test(String(email).trim())) return res.status(400).json({ error: "Invalid email address" });
     if (!["STUDENT", "STAFF", "ADMIN"].includes(role)) {
       return res.status(400).json({ error: "role must be STUDENT, STAFF, or ADMIN" });
     }
     if (!instituteId) return res.status(400).json({ error: "An institute is required" });
     if (role === "STUDENT" && !classId) return res.status(400).json({ error: "A class is required for students" });
+    if (role === "STUDENT" && !String(mobile || "").trim()) return res.status(400).json({ error: "A mobile number is required for students" });
+    if (role === "STUDENT" && !String(batchYear || "").trim()) return res.status(400).json({ error: "A batch is required for students" });
+    if (mobile && !MOBILE_RE.test(String(mobile).trim())) return res.status(400).json({ error: "Invalid mobile number" });
 
     const institute = await prisma.institute.findUnique({ where: { id: instituteId } });
     if (!institute) return res.status(404).json({ error: "Institute not found" });
 
+    let cls = null;
     if (classId) {
-      const cls = await prisma.class.findUnique({ where: { id: classId } });
+      cls = await prisma.class.findUnique({ where: { id: classId } });
       if (!cls || cls.instituteId !== instituteId) {
         return res.status(400).json({ error: "Selected class does not belong to the selected institute" });
       }
@@ -138,19 +146,55 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
     const passwordHash = await bcrypt.hash(generatedPassword, 10);
     const user = await prisma.user.create({
       data: {
-        name, email, passwordHash, role, rollNumber, department, mobile, program, batchYear, section,
-        instituteId, classId: classId || null, mustChangePassword: true,
+        name, email, passwordHash, role, rollNumber, registrationNumber, department, mobile, gender,
+        program, batchYear, section, instituteId, classId: classId || null, mustChangePassword: true,
       },
       select: SELECT_FIELDS,
     });
 
-    sendMail({
-      to: user.email,
-      subject: "Your CodeArena account",
-      html: wrapBranded(`<p>Hi ${user.name},</p><p>Your account has been created.</p><p><strong>Login email:</strong> ${user.email}<br/><strong>Temporary password:</strong> ${generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
+    let emailSent = false;
+    if (role === "STUDENT") {
+      const mailResult = await sendMail({
+        to: user.email,
+        subject: "Welcome to CodeArena – Your Student Account Has Been Created",
+        html: wrapBranded(`
+          <p>Dear ${user.name},</p>
+          <p>Welcome to CodeArena! Your student account has been created successfully.</p>
+          <p><strong>Login Details</strong></p>
+          <p>
+            Name: ${user.name}<br/>
+            Institute: ${institute.name}<br/>
+            ${cls ? `Class: ${cls.name}<br/>` : ""}
+            ${batchYear ? `Batch: ${batchYear}<br/>` : ""}
+            Email: ${user.email}<br/>
+            Temporary Password: <strong>${generatedPassword}</strong>
+          </p>
+          <p>Login URL: <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a></p>
+          <p>For security reasons, you will be required to change your password during your first login.</p>
+          <p>If you have any questions, please contact your institute administrator.</p>
+          <p>Regards,<br/>CodeArena Team</p>
+        `),
+      }).catch(() => ({ ok: false }));
+      emailSent = !!mailResult.ok;
+    } else {
+      sendMail({
+        to: user.email,
+        subject: "Your CodeArena account",
+        html: wrapBranded(`<p>Hi ${user.name},</p><p>Your account has been created.</p><p><strong>Login email:</strong> ${user.email}<br/><strong>Temporary password:</strong> ${generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
+      }).catch(() => {});
+    }
+
+    const admin = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
+    await prisma.auditLog.create({
+      data: {
+        action: "ACCOUNT_CREATED",
+        adminId: req.user.id,
+        adminName: admin?.name || req.user.email,
+        details: { studentId: user.id, studentName: user.name, role, email: user.email, emailSent },
+      },
     }).catch(() => {});
 
-    res.json({ ...user, generatedPassword });
+    res.json({ ...user, generatedPassword, emailSent });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to create user" });
@@ -162,7 +206,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
 // fields, everything else is free-text/FK. Every change is written to AuditLog so there's a
 // record of who edited what and when.
 const EDITABLE_FIELDS = [
-  "name", "email", "mobile", "rollNumber", "registrationNumber", "department", "program",
+  "name", "email", "mobile", "gender", "rollNumber", "registrationNumber", "department", "program",
   "batchYear", "section", "instituteId", "classId", "isActive", "profilePhotoUrl",
 ];
 router.patch("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
@@ -593,14 +637,27 @@ router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (re
       where: { id: req.params.id },
       data: { passwordHash, mustChangePassword: true },
     });
+    let emailSent = null; // null = not requested, true/false = requested + outcome
     if (req.body.sendEmail) {
-      sendMail({
+      const mailResult = await sendMail({
         to: user.email,
         subject: "Your CodeArena password has been reset",
         html: wrapBranded(`<p>Hi ${user.name},</p><p>Your password has been reset by an administrator.</p><p><strong>Login email:</strong> ${user.email}<br/><strong>New temporary password:</strong> ${newPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
-      }).catch(() => {});
+      }).catch(() => ({ ok: false }));
+      emailSent = !!mailResult.ok;
     }
-    res.json({ success: true, defaultPassword: newPassword });
+
+    const admin = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
+    await prisma.auditLog.create({
+      data: {
+        action: "PASSWORD_RESET",
+        adminId: req.user.id,
+        adminName: admin?.name || req.user.email,
+        details: { studentId: user.id, studentName: user.name, emailSent },
+      },
+    }).catch(() => {});
+
+    res.json({ success: true, defaultPassword: newPassword, emailSent });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to reset password" });
@@ -624,18 +681,30 @@ router.post("/bulk-regenerate-password", authenticate, requireRole("ADMIN"), asy
       const generatedPassword = generateTempPassword();
       const passwordHash = await bcrypt.hash(generatedPassword, 10);
       await prisma.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: true } });
-      results.push({ id: user.id, name: user.name, email: user.email, rollNumber: user.rollNumber, generatedPassword });
+      results.push({ id: user.id, name: user.name, email: user.email, rollNumber: user.rollNumber, generatedPassword, emailSent: null });
     }
     if (req.body.sendEmail) {
       for (const u of results) {
-        sendMail({
+        const mailResult = await sendMail({
           to: u.email,
           subject: "Your CodeArena password has been reset",
           html: wrapBranded(`<p>Hi ${u.name},</p><p>Your password has been reset by an administrator.</p><p><strong>Login email:</strong> ${u.email}<br/><strong>New temporary password:</strong> ${u.generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
-        }).catch(() => {});
+        }).catch(() => ({ ok: false }));
+        u.emailSent = !!mailResult.ok;
       }
     }
     const failedIds = ids.filter((id) => !users.some((u) => u.id === id));
+
+    const admin = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
+    await prisma.auditLog.create({
+      data: {
+        action: "PASSWORD_RESET",
+        adminId: req.user.id,
+        adminName: admin?.name || req.user.email,
+        details: { bulk: true, count: results.length, studentIds: results.map((u) => u.id), sendEmail: !!req.body.sendEmail },
+      },
+    }).catch(() => {});
+
     res.json({ results, failedIds });
   } catch (err) {
     console.error(err);

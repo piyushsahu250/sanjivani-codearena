@@ -71,6 +71,7 @@ model User {
   registrationNumber String? // students only — separate from rollNumber, e.g. university enrollment no.
   department   String?
   mobile       String?
+  gender       String?  // optional, free-text
   program      String?  // free-text fallback if no Class relation is set
   batchYear    String?
   section      String?

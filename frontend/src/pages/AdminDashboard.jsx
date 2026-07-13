@@ -9,7 +9,11 @@ import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 
 const ROLES = ["STUDENT", "STAFF", "ADMIN"];
-const emptyForm = { name: "", email: "", role: "STUDENT", instituteId: "", classId: "", rollNumber: "", department: "" };
+const emptyForm = {
+  name: "", email: "", role: "STUDENT", instituteId: "", classId: "",
+  rollNumber: "", registrationNumber: "", department: "", mobile: "", gender: "",
+  program: "", batchYear: "", section: "",
+};
 
 export default function AdminDashboard() {
   const toast = useToast();
@@ -24,6 +28,8 @@ export default function AdminDashboard() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [createdCredential, setCreatedCredential] = useState(null);
+  const [resending, setResending] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [rollQuery, setRollQuery] = useState("");
   const [lookupResult, setLookupResult] = useState(null);
@@ -55,12 +61,15 @@ export default function AdminDashboard() {
     e.preventDefault();
     setError("");
     setCreatedCredential(null);
+    setCopied(false);
     if (!form.instituteId) return setError("Please choose an institute");
     if (form.role === "STUDENT" && !form.classId) return setError("Please choose a class for this student");
+    if (form.role === "STUDENT" && !form.mobile.trim()) return setError("Mobile number is required for students");
+    if (form.role === "STUDENT" && !form.batchYear.trim()) return setError("Batch is required for students");
     setSaving(true);
     try {
       const { data } = await api.post("/users", form);
-      setCreatedCredential({ name: data.name, email: data.email, password: data.generatedPassword });
+      setCreatedCredential({ id: data.id, name: data.name, email: data.email, password: data.generatedPassword, emailSent: data.emailSent });
       setForm({ ...emptyForm, instituteId: form.instituteId, role: form.role });
       load();
     } catch (err) {
@@ -68,6 +77,29 @@ export default function AdminDashboard() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function resendWelcomeEmail() {
+    if (!createdCredential) return;
+    setResending(true);
+    try {
+      const { data } = await api.post(`/users/${createdCredential.id}/reset-password`, { sendEmail: true });
+      setCreatedCredential({ ...createdCredential, password: data.defaultPassword, emailSent: data.emailSent });
+      toast[data.emailSent ? "success" : "error"](data.emailSent ? "Welcome email resent." : "Email could not be delivered.");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to resend email");
+    } finally {
+      setResending(false);
+    }
+  }
+
+  function copyCredentials() {
+    if (!createdCredential) return;
+    const text = `Email: ${createdCredential.email}\nPassword: ${createdCredential.password}\nLogin: ${window.location.origin}/login`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   }
 
   async function handleDelete(id, name) {
@@ -306,6 +338,43 @@ export default function AdminDashboard() {
                   <>
                     <label style={labelStyle}>Roll number</label>
                     <input style={inputStyle} value={form.rollNumber} onChange={updateField("rollNumber")} />
+
+                    <label style={labelStyle}>Registration number (optional)</label>
+                    <input style={inputStyle} value={form.registrationNumber} onChange={updateField("registrationNumber")} />
+
+                    <label style={labelStyle}>Mobile number</label>
+                    <input style={inputStyle} required value={form.mobile} onChange={updateField("mobile")} placeholder="9876543210" />
+
+                    <label style={labelStyle}>Gender (optional)</label>
+                    <select style={inputStyle} value={form.gender} onChange={updateField("gender")}>
+                      <option value="">— Not specified —</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                      <option value="Prefer not to say">Prefer not to say</option>
+                    </select>
+
+                    <label style={labelStyle}>Course (optional)</label>
+                    <input style={inputStyle} value={form.program} onChange={updateField("program")} placeholder="e.g. MCA" />
+
+                    <label style={labelStyle}>Batch</label>
+                    <input
+                      style={inputStyle}
+                      required
+                      list="batch-options"
+                      value={form.batchYear}
+                      onChange={updateField("batchYear")}
+                      placeholder="e.g. 2025–2027"
+                    />
+                    <datalist id="batch-options">
+                      {[...new Set(classes.map((c) => c.batchYear).filter(Boolean))].map((b) => <option key={b} value={b} />)}
+                    </datalist>
+                    <p style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 2 }}>
+                      Pick an existing batch or type a new one — it'll be available for future students once saved.
+                    </p>
+
+                    <label style={labelStyle}>Section (optional)</label>
+                    <input style={inputStyle} value={form.section} onChange={updateField("section")} />
                   </>
                 )}
 
@@ -313,16 +382,34 @@ export default function AdminDashboard() {
                 <input style={inputStyle} value={form.department} onChange={updateField("department")} />
 
                 <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 12 }}>
-                  A password is generated automatically from the institute name. The account must change it on first login.
+                  A unique, randomly generated password is created automatically for this account — never a shared or predictable one. The account must change it on first login.
                 </p>
 
                 {error && <p style={{ color: "var(--rust)", fontSize: 13, marginTop: 8 }}>{error}</p>}
 
                 {createdCredential && (
                   <div className="card" style={{ padding: 12, marginTop: 12, background: "var(--mint-bg, rgba(76,175,80,0.08))" }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>Account created for {createdCredential.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>Student Account Created Successfully</div>
                     <div className="mono" style={{ fontSize: 12, marginTop: 4 }}>
                       {createdCredential.email} — password: <strong>{createdCredential.password}</strong>
+                    </div>
+                    {createdCredential.emailSent === true && (
+                      <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 6, fontWeight: 600 }}>✓ Welcome email sent successfully.</p>
+                    )}
+                    {createdCredential.emailSent === false && (
+                      <p style={{ fontSize: 12, color: "var(--rust)", marginTop: 6, fontWeight: 600 }}>
+                        ✗ Email could not be delivered. Please verify the student's email address or resend below.
+                      </p>
+                    )}
+                    <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                      <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={copyCredentials}>
+                        {copied ? "✓ Copied" : "📋 Copy Login Credentials"}
+                      </button>
+                      {createdCredential.emailSent === false && (
+                        <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={resendWelcomeEmail} disabled={resending}>
+                          {resending ? "Resending…" : "✉ Resend Welcome Email"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

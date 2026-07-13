@@ -32,6 +32,8 @@ export default function StudentPerformance({ basePath }) {
   const [downloading, setDownloading] = useState(null);
   const [reattempting, setReattempting] = useState(null);
   const [showEdit, setShowEdit] = useState(false);
+  const [sentCredential, setSentCredential] = useState(null); // { password, emailSent }
+  const [copied, setCopied] = useState(false);
 
   function load() {
     api.get(`/users/${studentId}/performance`)
@@ -75,14 +77,24 @@ export default function StudentPerformance({ basePath }) {
 
   async function resetPassword() {
     setResetting(true);
+    setCopied(false);
     try {
       const { data } = await api.post(`/users/${studentId}/reset-password`, { sendEmail: true });
-      alert(`Password reset for ${perf.student.name} to "${data.defaultPassword}" and emailed to them. They'll be asked to set a new one on next login.`);
+      setSentCredential({ password: data.defaultPassword, emailSent: data.emailSent });
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to reset password");
+      toast.error(err.response?.data?.error || "Failed to reset password");
     } finally {
       setResetting(false);
     }
+  }
+
+  function copySentCredential() {
+    if (!sentCredential) return;
+    const text = `Email: ${perf.student.email}\nPassword: ${sentCredential.password}\nLogin: ${window.location.origin}/login`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   }
 
   async function grantReattempt(testId, testName) {
@@ -144,8 +156,8 @@ export default function StudentPerformance({ basePath }) {
               {downloading === "xlsx" ? "Preparing…" : "Download Excel"}
             </button>
             {isManager && (
-              <button className="btn btn-ghost" onClick={resetPassword} disabled={resetting}>
-                {resetting ? "Resetting…" : "Reset Password"}
+              <button className="btn btn-ghost" onClick={resetPassword} disabled={resetting} title="Generates a new unique password and emails it to the student">
+                {resetting ? "Sending…" : "Send Credentials"}
               </button>
             )}
             {canEditProfile && (
@@ -158,6 +170,32 @@ export default function StudentPerformance({ basePath }) {
           <p className="mono" style={{ color: "var(--rust)", fontSize: 13, marginTop: 12, fontWeight: 700 }}>
             ⚠ This account is deactivated — the student cannot log in.
           </p>
+        )}
+
+        {sentCredential && (
+          <div className="card" style={{ padding: 16, marginTop: 16, background: "var(--mint-bg, rgba(76,175,80,0.08))" }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>New credentials generated for {student.name}</div>
+            <div className="mono" style={{ fontSize: 12, marginTop: 4 }}>
+              {student.email} — password: <strong>{sentCredential.password}</strong>
+            </div>
+            {sentCredential.emailSent === true && (
+              <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 6, fontWeight: 600 }}>✓ Welcome email sent successfully.</p>
+            )}
+            {sentCredential.emailSent === false && (
+              <p style={{ fontSize: 12, color: "var(--rust)", marginTop: 6, fontWeight: 600 }}>
+                ✗ Email could not be delivered. Verify the student's email address, or copy the password below to share manually.
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={copySentCredential}>
+                {copied ? "✓ Copied" : "📋 Copy Login Credentials"}
+              </button>
+              <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={resetPassword} disabled={resetting}>
+                {resetting ? "Resending…" : "✉ Resend Welcome Email"}
+              </button>
+              <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => setSentCredential(null)}>Dismiss</button>
+            </div>
+          </div>
         )}
 
         {/* Student info */}
@@ -348,7 +386,7 @@ function EditProfileModal({ studentId, onClose, onSaved }) {
     api.get(`/users/${studentId}`).then((res) => {
       const u = res.data;
       setForm({
-        name: u.name || "", email: u.email || "", mobile: u.mobile || "",
+        name: u.name || "", email: u.email || "", mobile: u.mobile || "", gender: u.gender || "",
         rollNumber: u.rollNumber || "", registrationNumber: u.registrationNumber || "",
         instituteId: u.institute?.id || "", classId: u.class?.id || "",
         department: u.department || "", program: u.program || "",
@@ -417,6 +455,16 @@ function EditProfileModal({ studentId, onClose, onSaved }) {
               <div>
                 <label style={labelStyle}>Mobile Number</label>
                 <input style={inputStyle} value={form.mobile} onChange={updateField("mobile")} placeholder="9876543210" />
+              </div>
+              <div>
+                <label style={labelStyle}>Gender (optional)</label>
+                <select style={inputStyle} value={form.gender} onChange={updateField("gender")}>
+                  <option value="">— Not specified —</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                  <option value="Prefer not to say">Prefer not to say</option>
+                </select>
               </div>
               <div>
                 <label style={labelStyle}>Roll Number</label>
