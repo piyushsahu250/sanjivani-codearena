@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
+import FolderPicker from "../components/FolderPicker";
 
 const QUESTION_TYPES = [
   { value: "CODING", label: "Coding" },
@@ -25,6 +26,7 @@ export default function CreateQuestion() {
   const [testCases, setTestCases] = useState([{ input: "", expected: "", isHidden: false }]);
   const [options, setOptions] = useState(["", ""]);
   const [correctIndices, setCorrectIndices] = useState([]);
+  const [folderId, setFolderId] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
 
@@ -44,6 +46,7 @@ export default function CreateQuestion() {
         setOptions(q.options?.length ? q.options : ["", ""]);
         setCorrectIndices(q.correctAnswer || []);
       }
+      setFolderId(q.folderId || "");
       setLoading(false);
     });
   }, [id, isEdit]);
@@ -105,6 +108,7 @@ export default function CreateQuestion() {
         ...form,
         points: Number(form.points),
         timeLimitMs: Number(form.timeLimitMs),
+        folderId: folderId || null,
       };
       if (form.questionType === "CODING") {
         payload.testCases = testCases;
@@ -251,6 +255,14 @@ export default function CreateQuestion() {
               <textarea style={{ ...inputStyle, minHeight: 60 }} value={form.explanation} onChange={updateField("explanation")} placeholder="Shown to staff for review; not shown to students during the test." />
             </>
           )}
+
+          <div style={{ marginTop: 24, fontWeight: 700, fontSize: 14 }}>Question Bank</div>
+          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>
+            File this question into a bank so it's easy to find and reuse later, or leave it uncategorized.
+          </p>
+          <div style={{ marginTop: 10 }}>
+            <FolderPicker value={folderId} onChange={setFolderId} />
+          </div>
 
           <button className="btn btn-primary" style={{ marginTop: 24 }} disabled={saving}>
             {saving ? "Saving…" : isEdit ? "Save changes" : "Save question"}
