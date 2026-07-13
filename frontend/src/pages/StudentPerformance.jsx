@@ -76,8 +76,8 @@ export default function StudentPerformance({ basePath }) {
   async function resetPassword() {
     setResetting(true);
     try {
-      const { data } = await api.post(`/users/${studentId}/reset-password`);
-      alert(`Password reset for ${perf.student.name} to "${data.defaultPassword}". They'll be asked to set a new one on next login.`);
+      const { data } = await api.post(`/users/${studentId}/reset-password`, { sendEmail: true });
+      alert(`Password reset for ${perf.student.name} to "${data.defaultPassword}" and emailed to them. They'll be asked to set a new one on next login.`);
     } catch (err) {
       alert(err.response?.data?.error || "Failed to reset password");
     } finally {

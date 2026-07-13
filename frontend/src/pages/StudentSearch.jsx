@@ -32,6 +32,7 @@ export default function StudentSearch({ basePath }) {
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState([]);
   const [regenerating, setRegenerating] = useState(false);
+  const [emailCredentials, setEmailCredentials] = useState(true);
 
   async function handleSearch(e) {
     e.preventDefault();
@@ -64,20 +65,22 @@ export default function StudentSearch({ basePath }) {
   async function regeneratePasswords() {
     const ok = await confirmDialog({
       title: `Regenerate ${selected.length} password${selected.length === 1 ? "" : "s"}?`,
-      message: "Each selected student gets a new, unique temporary password and will be asked to set their own on next login. This action cannot be undone.",
+      message: `Each selected student gets a new, unique temporary password and will be asked to set their own on next login.${emailCredentials ? " Each student will also be emailed their new password directly." : ""} This action cannot be undone.`,
       confirmLabel: "Regenerate",
       danger: true,
     });
     if (!ok) return;
     setRegenerating(true);
     try {
-      const { data } = await api.post("/users/bulk-regenerate-password", { studentIds: selected });
+      const { data } = await api.post("/users/bulk-regenerate-password", { studentIds: selected, sendEmail: emailCredentials });
       downloadCsv(
         "regenerated-passwords.csv",
         ["Name", "Email", "Roll Number", "New Temporary Password"],
         data.results.map((u) => [u.name, u.email, u.rollNumber, u.generatedPassword])
       );
-      toast.success(`${data.results.length} password${data.results.length === 1 ? "" : "s"} regenerated — CSV downloaded.`);
+      toast.success(
+        `${data.results.length} password${data.results.length === 1 ? "" : "s"} regenerated — CSV downloaded${emailCredentials ? " and emails sent" : ""}.`
+      );
       setSelected([]);
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to regenerate passwords");
@@ -118,9 +121,15 @@ export default function StudentSearch({ basePath }) {
               <input type="checkbox" checked={selected.length === results.length} onChange={toggleAll} />
               Select all ({selected.length} selected)
             </label>
-            <button className="btn btn-ghost" style={{ color: "var(--rust)", borderColor: "var(--rust)" }} onClick={regeneratePasswords} disabled={selected.length === 0 || regenerating}>
-              {regenerating ? "Regenerating…" : `Regenerate Passwords${selected.length ? ` (${selected.length})` : ""}`}
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--ink-dim)" }}>
+                <input type="checkbox" checked={emailCredentials} onChange={(e) => setEmailCredentials(e.target.checked)} />
+                ✉ Email new passwords to students
+              </label>
+              <button className="btn btn-ghost" style={{ color: "var(--rust)", borderColor: "var(--rust)" }} onClick={regeneratePasswords} disabled={selected.length === 0 || regenerating}>
+                {regenerating ? "Regenerating…" : `Regenerate Passwords${selected.length ? ` (${selected.length})` : ""}`}
+              </button>
+            </div>
           </div>
         )}
 

@@ -6,7 +6,7 @@ import ChalkUnderline from "../components/ChalkUnderline";
 
 export default function BulkUpload() {
   const [file, setFile] = useState(null);
-  const [sendCredentials, setSendCredentials] = useState(false);
+  const [sendCredentials, setSendCredentials] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [result, setResult] = useState(null);

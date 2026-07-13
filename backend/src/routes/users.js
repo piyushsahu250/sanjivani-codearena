@@ -593,6 +593,13 @@ router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (re
       where: { id: req.params.id },
       data: { passwordHash, mustChangePassword: true },
     });
+    if (req.body.sendEmail) {
+      sendMail({
+        to: user.email,
+        subject: "Your CodeArena password has been reset",
+        html: wrapBranded(`<p>Hi ${user.name},</p><p>Your password has been reset by an administrator.</p><p><strong>Login email:</strong> ${user.email}<br/><strong>New temporary password:</strong> ${newPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
+      }).catch(() => {});
+    }
     res.json({ success: true, defaultPassword: newPassword });
   } catch (err) {
     console.error(err);
@@ -603,7 +610,9 @@ router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (re
 // ADMIN: reset multiple students' passwords at once — same generateTempPassword() as every other
 // reset (a unique random password per account, never a shared fixed value), returned per-student
 // so the frontend can offer a CSV download. Used from Student Management's "Regenerate Passwords"
-// bulk action.
+// bulk action. Optional `sendEmail: true` also emails each student their own new password
+// directly (best-effort — a failed send for one student doesn't affect the others, and the CSV
+// download stays available regardless as the reliable fallback).
 router.post("/bulk-regenerate-password", authenticate, requireRole("ADMIN"), async (req, res) => {
   try {
     const ids = Array.isArray(req.body.studentIds) ? [...new Set(req.body.studentIds)] : [];
@@ -616,6 +625,15 @@ router.post("/bulk-regenerate-password", authenticate, requireRole("ADMIN"), asy
       const passwordHash = await bcrypt.hash(generatedPassword, 10);
       await prisma.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: true } });
       results.push({ id: user.id, name: user.name, email: user.email, rollNumber: user.rollNumber, generatedPassword });
+    }
+    if (req.body.sendEmail) {
+      for (const u of results) {
+        sendMail({
+          to: u.email,
+          subject: "Your CodeArena password has been reset",
+          html: wrapBranded(`<p>Hi ${u.name},</p><p>Your password has been reset by an administrator.</p><p><strong>Login email:</strong> ${u.email}<br/><strong>New temporary password:</strong> ${u.generatedPassword}</p><p>Sign in at <a href="${FRONTEND_URL}/login">${FRONTEND_URL}/login</a> — you'll be asked to set a new password on first login.</p>`),
+        }).catch(() => {});
+      }
     }
     const failedIds = ids.filter((id) => !users.some((u) => u.id === id));
     res.json({ results, failedIds });
