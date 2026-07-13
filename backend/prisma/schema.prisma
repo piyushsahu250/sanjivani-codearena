@@ -37,8 +37,10 @@ model Institute {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  classes Class[]
-  users   User[]
+  classes         Class[]
+  users           User[]
+  questions       Question[]
+  questionFolders QuestionFolder[]
 }
 
 model Class {
@@ -164,10 +166,38 @@ model Question {
   moduleCodingTestId String?
   moduleAttemptLinks ModuleCodingAttemptQuestion[]
 
+  // Institute-private question banks. Nullable, and deliberately NOT backfilled on migration —
+  // every question created before this feature stays instituteId: null, which the visibility
+  // rule (see questions.js's instituteVisibilityWhere) treats as "shared legacy bank, visible to
+  // every institute" rather than "belongs to nobody." That's what keeps existing question banks
+  // from silently disappearing for every institute's staff the moment this ships. Only questions
+  // created going forward get scoped to their creator's institute and become genuinely private.
+  institute   Institute? @relation(fields: [instituteId], references: [id], onDelete: SetNull)
+  instituteId String?
+  folder      QuestionFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folderId    String?
+
   @@index([subject])
   @@index([topic])
   @@index([questionType])
   @@index([moduleCodingTestId])
+  @@index([instituteId])
+  @@index([folderId])
+}
+
+// A named grouping within an institute's question bank (e.g. "Java", "DBMS Midterm"). Deleting a
+// folder un-files its questions (folderId -> null) rather than deleting them — folders are pure
+// organization, not ownership.
+model QuestionFolder {
+  id          String   @id @default(uuid())
+  name        String
+  institute   Institute? @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  instituteId String?    // null = platform-level folder, visible to every institute (Super Admin created)
+  createdAt   DateTime @default(now())
+
+  questions Question[]
+
+  @@index([instituteId])
 }
 
 model TestCase {

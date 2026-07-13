@@ -3,9 +3,26 @@ const multer = require("multer");
 const XLSX = require("xlsx");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
+const { attachRequesterInstitute } = require("../middleware/institute");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+// null requesterInstituteId (the seeded platform-level Super Admin) sees every institute's
+// questions/folders unfiltered. An institute-scoped requester sees their own institute's rows
+// PLUS legacy/shared rows (instituteId: null) — see the schema comment on Question.instituteId
+// for why nulls stay visible rather than becoming invisible to everyone but the Super Admin.
+function instituteVisibilityWhere(requesterInstituteId) {
+  return requesterInstituteId ? { OR: [{ instituteId: requesterInstituteId }, { instituteId: null }] } : {};
+}
+
+// Ownership check for writes: a null requesterInstituteId (Super Admin) may edit anything; an
+// institute-scoped requester may only touch rows already scoped to their own institute (not even
+// legacy null-instituteId rows — editing/deleting shared legacy content is Super Admin-only, to
+// avoid one institute silently mutating content every other institute currently sees).
+function ownsRow(requesterInstituteId, row) {
+  return !requesterInstituteId || row.instituteId === requesterInstituteId;
+}
 
 const QUESTION_TYPES = ["CODING", "MCQ", "TRUE_FALSE", "MULTISELECT"];
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
@@ -68,33 +85,44 @@ function normalizeCorrectIndices(raw, options, isMulti) {
   return isMulti ? unique : unique.slice(0, 1);
 }
 
-function buildWhere(query) {
-  const where = {};
+function buildWhere(query, requesterInstituteId) {
+  const where = { AND: [instituteVisibilityWhere(requesterInstituteId)] };
   if (query.subject) where.subject = query.subject;
   if (query.topic) where.topic = query.topic;
   if (query.difficulty && DIFFICULTIES.includes(query.difficulty)) where.difficulty = query.difficulty;
   if (query.questionType && QUESTION_TYPES.includes(query.questionType)) where.questionType = query.questionType;
+  if (query.folderId === "__none__") where.folderId = null;
+  else if (query.folderId) where.folderId = query.folderId;
   if (query.q) {
-    where.OR = [
-      { title: { contains: query.q, mode: "insensitive" } },
-      { description: { contains: query.q, mode: "insensitive" } },
-      { subject: { contains: query.q, mode: "insensitive" } },
-      { topic: { contains: query.q, mode: "insensitive" } },
-    ];
+    where.AND.push({
+      OR: [
+        { title: { contains: query.q, mode: "insensitive" } },
+        { description: { contains: query.q, mode: "insensitive" } },
+        { subject: { contains: query.q, mode: "insensitive" } },
+        { topic: { contains: query.q, mode: "insensitive" } },
+      ],
+    });
   }
   return where;
 }
 
 // Create a question (any type)
-router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   try {
     const {
       title, description, subject, topic, questionType, difficulty, points, explanation,
-      timeLimitMs, starterCode, testCases, options, correctAnswer,
+      timeLimitMs, starterCode, testCases, options, correctAnswer, folderId,
     } = req.body;
 
     if (!description) return res.status(400).json({ error: "Question text is required" });
     const type = QUESTION_TYPES.includes(questionType) ? questionType : "CODING";
+
+    if (folderId) {
+      const folder = await prisma.questionFolder.findUnique({ where: { id: folderId } });
+      if (!folder || !ownsRow(req.requesterInstituteId, folder)) {
+        return res.status(403).json({ error: "That folder isn't in your institute's question bank" });
+      }
+    }
 
     const data = {
       title: title || null,
@@ -105,6 +133,8 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
       difficulty: difficulty || "EASY",
       points: points ?? 10,
       explanation: explanation || null,
+      instituteId: req.requesterInstituteId,
+      folderId: folderId || null,
     };
 
     if (type === "CODING") {
@@ -132,25 +162,78 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
 });
 
 // Question Bank: list with search + filters
-router.get("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+router.get("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   const questions = await prisma.question.findMany({
-    where: buildWhere(req.query),
+    where: buildWhere(req.query, req.requesterInstituteId),
     include: { _count: { select: { testCases: true } } },
     orderBy: { createdAt: "desc" },
   });
   res.json(questions);
 });
 
-// Distinct subjects/topics — powers the filter dropdowns
-router.get("/meta/filters", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+// Distinct subjects/topics — powers the filter dropdowns. Scoped the same way the list is, so
+// the dropdowns never surface a subject/topic value that only exists in another institute's bank.
+router.get("/meta/filters", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  const visible = instituteVisibilityWhere(req.requesterInstituteId);
   const [subjects, topics] = await Promise.all([
-    prisma.question.findMany({ where: { subject: { not: null } }, select: { subject: true }, distinct: ["subject"] }),
-    prisma.question.findMany({ where: { topic: { not: null } }, select: { topic: true }, distinct: ["topic"] }),
+    prisma.question.findMany({ where: { ...visible, subject: { not: null } }, select: { subject: true }, distinct: ["subject"] }),
+    prisma.question.findMany({ where: { ...visible, topic: { not: null } }, select: { topic: true }, distinct: ["topic"] }),
   ]);
   res.json({
     subjects: subjects.map((s) => s.subject).filter(Boolean).sort(),
     topics: topics.map((t) => t.topic).filter(Boolean).sort(),
   });
+});
+
+// =========================== Question Bank folders ===========================
+// Defined before the generic "/:id" route below so Express doesn't match "/folders" as an id.
+
+router.get("/folders", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  const folders = await prisma.questionFolder.findMany({
+    where: instituteVisibilityWhere(req.requesterInstituteId),
+    include: { _count: { select: { questions: true } } },
+    orderBy: { name: "asc" },
+  });
+  res.json(folders);
+});
+
+router.post("/folders", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  const name = String(req.body.name || "").trim();
+  if (!name) return res.status(400).json({ error: "Folder name is required" });
+  try {
+    const folder = await prisma.questionFolder.create({ data: { name, instituteId: req.requesterInstituteId } });
+    res.json(folder);
+  } catch (err) {
+    if (err.code === "P2002") return res.status(409).json({ error: "A folder with this name already exists" });
+    console.error(err);
+    res.status(500).json({ error: "Failed to create folder" });
+  }
+});
+
+router.patch("/folders/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  const folder = await prisma.questionFolder.findUnique({ where: { id: req.params.id } });
+  if (!folder) return res.status(404).json({ error: "Folder not found" });
+  if (!ownsRow(req.requesterInstituteId, folder)) return res.status(403).json({ error: "Not your institute's folder" });
+  const name = String(req.body.name || "").trim();
+  if (!name) return res.status(400).json({ error: "Folder name is required" });
+  try {
+    const updated = await prisma.questionFolder.update({ where: { id: folder.id }, data: { name } });
+    res.json(updated);
+  } catch (err) {
+    if (err.code === "P2002") return res.status(409).json({ error: "A folder with this name already exists" });
+    console.error(err);
+    res.status(500).json({ error: "Failed to rename folder" });
+  }
+});
+
+// Un-files (not deletes) every question inside — folders are pure organization, never ownership.
+router.delete("/folders/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  const folder = await prisma.questionFolder.findUnique({ where: { id: req.params.id } });
+  if (!folder) return res.status(404).json({ error: "Folder not found" });
+  if (!ownsRow(req.requesterInstituteId, folder)) return res.status(403).json({ error: "Not your institute's folder" });
+  await prisma.question.updateMany({ where: { folderId: folder.id }, data: { folderId: null } });
+  await prisma.questionFolder.delete({ where: { id: folder.id } });
+  res.json({ success: true });
 });
 
 // Download a sample .xlsx template for bulk question import (quiz types only)
@@ -171,8 +254,8 @@ router.get("/bulk-template", authenticate, requireRole("ADMIN", "STAFF"), (req, 
 });
 
 // Export the current (optionally filtered) question bank to .xlsx
-router.get("/export", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
-  const questions = await prisma.question.findMany({ where: buildWhere(req.query), orderBy: { questionNumber: "asc" } });
+router.get("/export", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  const questions = await prisma.question.findMany({ where: buildWhere(req.query, req.requesterInstituteId), orderBy: { questionNumber: "asc" } });
 
   const rows = questions.map((q) => {
     const options = Array.isArray(q.options) ? q.options : [];
@@ -243,9 +326,22 @@ function buildHeaderMap(headers) {
 // Bulk-import quiz questions (MCQ / True-False / Multiple Select) from .xlsx/.csv.
 // Coding questions aren't supported via spreadsheet import — their test cases
 // don't map cleanly to flat rows — use the question form for those.
-router.post("/bulk-import", authenticate, requireRole("ADMIN", "STAFF"), upload.single("file"), async (req, res) => {
+//
+// Optional `folderId` in the request body files every created question into that folder (the
+// "Save uploaded questions to Question Bank" checkbox on the test-creation page) — the questions
+// are always persisted as real rows either way (they have to exist to be attachable to a test),
+// omitting folderId just leaves them unfiled rather than skipping creation.
+router.post("/bulk-import", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    const folderId = req.body.folderId || null;
+    if (folderId) {
+      const folder = await prisma.questionFolder.findUnique({ where: { id: folderId } });
+      if (!folder || !ownsRow(req.requesterInstituteId, folder)) {
+        return res.status(403).json({ error: "That folder isn't in your institute's question bank" });
+      }
+    }
 
     let workbook;
     try {
@@ -312,6 +408,8 @@ router.post("/bulk-import", authenticate, requireRole("ADMIN", "STAFF"), upload.
             explanation: explanation || null,
             options: normalized.options,
             correctAnswer: normalized.correctAnswer,
+            instituteId: req.requesterInstituteId,
+            folderId,
           },
         });
         created.push(question);
@@ -320,32 +418,41 @@ router.post("/bulk-import", authenticate, requireRole("ADMIN", "STAFF"), upload.
       }
     }
 
-    res.json({ total: rows.length, createdCount: created.length, errorCount: errors.length, errors });
+    res.json({ total: rows.length, createdCount: created.length, errorCount: errors.length, errors, created });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Bulk import failed" });
   }
 });
 
-router.get("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+router.get("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   const question = await prisma.question.findUnique({
     where: { id: req.params.id },
     include: { testCases: true },
   });
-  if (!question) return res.status(404).json({ error: "Question not found" });
+  // 404 (not 403) on a cross-institute id — doesn't confirm whether the id exists at all,
+  // consistent with how the list endpoint already just omits rows it can't show.
+  if (!question || !ownsRow(req.requesterInstituteId, question)) return res.status(404).json({ error: "Question not found" });
   res.json(question);
 });
 
 // Edit a question (any type)
-router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   try {
     const existing = await prisma.question.findUnique({ where: { id: req.params.id } });
-    if (!existing) return res.status(404).json({ error: "Question not found" });
+    if (!existing || !ownsRow(req.requesterInstituteId, existing)) return res.status(404).json({ error: "Question not found" });
 
     const {
       title, description, subject, topic, questionType, difficulty, points, explanation,
-      timeLimitMs, starterCode, testCases, options, correctAnswer,
+      timeLimitMs, starterCode, testCases, options, correctAnswer, folderId,
     } = req.body;
+
+    if (folderId !== undefined && folderId !== null && folderId !== existing.folderId) {
+      const folder = await prisma.questionFolder.findUnique({ where: { id: folderId } });
+      if (!folder || !ownsRow(req.requesterInstituteId, folder)) {
+        return res.status(403).json({ error: "That folder isn't in your institute's question bank" });
+      }
+    }
 
     const type = QUESTION_TYPES.includes(questionType) ? questionType : existing.questionType;
 
@@ -358,6 +465,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
       difficulty: difficulty || existing.difficulty,
       points: points ?? existing.points,
       explanation: explanation ?? existing.explanation,
+      folderId: folderId !== undefined ? folderId : existing.folderId,
     };
 
     if (type === "CODING") {
@@ -385,8 +493,10 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
   }
 });
 
-router.delete("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
+router.delete("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   try {
+    const existing = await prisma.question.findUnique({ where: { id: req.params.id } });
+    if (!existing || !ownsRow(req.requesterInstituteId, existing)) return res.status(404).json({ error: "Question not found" });
     await prisma.question.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch (err) {
