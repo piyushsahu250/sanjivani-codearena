@@ -36,6 +36,22 @@ const KEYWORDS = [
 
 const WEAK_PHRASES = ["worked on", "helped with", "was responsible for", "did", "handled", "involved in"];
 
+const STRONG_ACTION_VERBS = [
+  "developed", "built", "designed", "implemented", "created", "led", "managed", "optimized",
+  "improved", "reduced", "increased", "automated", "architected", "launched", "deployed",
+  "engineered", "streamlined", "spearheaded", "delivered", "collaborated", "integrated",
+  "resolved", "achieved", "coordinated", "analyzed", "researched", "mentored", "established",
+];
+
+// Transparency detail, not a separately-scored category (the 100-point breakdown below already
+// folds weak phrasing into "Readability" — this just surfaces exactly which strong verbs were
+// found vs which weak phrases were flagged, so the suggestion isn't a black box).
+function computeActionVerbUsage(text) {
+  const strongVerbsFound = STRONG_ACTION_VERBS.filter((v) => new RegExp(`\\b${v}\\b`, "i").test(text));
+  const weakPhrasesFound = WEAK_PHRASES.filter((p) => text.includes(p));
+  return { strongCount: strongVerbsFound.length, weakCount: weakPhrasesFound.length, strongVerbsFound, weakPhrasesFound };
+}
+
 function collectSearchableText(resume) {
   const parts = [resume.summary || ""];
   for (const s of arr(resume.skills)) parts.push(s.name || "");
@@ -109,6 +125,7 @@ function computeAtsScore(resume) {
   const formattingScore = Math.round((completionPercent / 100) * 5);
 
   const readability = computeReadability(resume);
+  const actionVerbUsage = computeActionVerbUsage(text);
 
   const breakdown = [
     { key: "contact", label: "Contact Information", score: contactScore, max: 10 },
@@ -142,12 +159,21 @@ function computeAtsScore(resume) {
   if (experienceCount === 0) suggestions.push({ issue: "No experience listed.", recommendation: "Add internship, freelance, or research experience if available — even short-term roles count." });
   if (certCount === 0) suggestions.push({ issue: "No certifications listed.", recommendation: "Add relevant certifications to strengthen your credentials." });
   if (matchedKeywords.length < 8) suggestions.push({ issue: "Resume is missing common industry keywords.", recommendation: "Include more role-relevant terms (e.g. Data Structures, REST APIs, Git, Cloud, Testing) naturally in your descriptions." });
-  const weakPhraseHit = WEAK_PHRASES.find((p) => text.includes(p));
-  if (weakPhraseHit) suggestions.push({ issue: `Weak phrasing found ("${weakPhraseHit}").`, recommendation: 'Replace with a strong action verb and a specific outcome — e.g. "Developed a Java-based inventory system that streamlined manual tracking."' });
+  if (actionVerbUsage.weakCount > 0) {
+    suggestions.push({
+      issue: `Weak phrasing found (${actionVerbUsage.weakPhrasesFound.map((p) => `"${p}"`).join(", ")}).`,
+      recommendation: 'Replace with a strong action verb and a specific outcome — e.g. "Developed a Java-based inventory system that streamlined manual tracking."',
+    });
+  } else if (actionVerbUsage.strongCount < 3 && (projects.length > 0 || experienceCount > 0)) {
+    suggestions.push({
+      issue: `Only ${actionVerbUsage.strongCount} strong action verb${actionVerbUsage.strongCount === 1 ? "" : "s"} found across project/experience descriptions.`,
+      recommendation: "Start each bullet with a strong action verb — Developed, Built, Designed, Implemented, Optimized, Led — instead of describing what you were assigned.",
+    });
+  }
   if (readability.passivePercent > 30) suggestions.push({ issue: "Descriptions read as passive voice.", recommendation: "Rewrite in active voice, starting each bullet with an action verb (Built, Designed, Implemented, Optimized)." });
   if (!/\d/.test(text)) suggestions.push({ issue: "Missing measurable achievements.", recommendation: 'Quantify impact where you genuinely can — e.g. "reduced load time by 30%" or "supported 500+ users" — only using real numbers, never invented ones.' });
 
-  return { score, status, breakdown, matchedKeywords, suggestions: suggestions.slice(0, 10) };
+  return { score, status, breakdown, matchedKeywords, actionVerbUsage, suggestions: suggestions.slice(0, 10) };
 }
 
 module.exports = { SECTION_DEFS, computeCompletion, computeAtsScore };

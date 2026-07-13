@@ -191,6 +191,7 @@ router.post(
         resume, completion: computeCompletion(resume, config.mandatorySections), atsScore,
         parsedFieldsCount: extractedCount,
         confidence: parsed.confidence, lowConfidenceFields: parsed.lowConfidenceFields,
+        rawText: parsed.rawText,
         previousVersionId,
       });
     } catch (err) {

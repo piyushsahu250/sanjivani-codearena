@@ -236,10 +236,12 @@ function parseEducationSection(lines) {
 
 const SKILL_CATEGORIES = {
   "Programming Languages": ["java", "python", "c++", "c#", "javascript", "typescript", "golang", "go", "ruby", "php", "kotlin", "swift", "rust", "scala", "r", "matlab", "dart", "c"],
-  "Frameworks": ["react", "react.js", "angular", "vue", "vue.js", "spring", "spring boot", "django", "flask", "express", "express.js", "node.js", "node", "next.js", "laravel", ".net", "asp.net", "bootstrap", "tailwind", "tailwindcss", "jquery", "hibernate", "fastapi"],
+  "Frameworks": ["react", "react.js", "angular", "vue", "vue.js", "spring", "spring boot", "django", "flask", "express", "express.js", "node.js", "node", "next.js", "laravel", ".net", "asp.net", "bootstrap", "tailwind", "tailwindcss", "hibernate", "fastapi"],
   "Databases": ["mysql", "postgresql", "postgres", "mongodb", "sqlite", "oracle", "redis", "cassandra", "dynamodb", "firebase", "mssql", "sql server", "sql"],
-  "Cloud": ["aws", "azure", "gcp", "google cloud", "heroku", "vercel", "netlify", "docker", "kubernetes", "terraform", "jenkins", "ci/cd"],
+  "Cloud": ["aws", "azure", "gcp", "google cloud", "google cloud platform", "heroku", "vercel", "netlify", "aws lambda", "amazon web services"],
+  "DevOps": ["docker", "kubernetes", "terraform", "jenkins", "ci/cd", "ansible", "github actions", "gitlab ci", "circleci"],
   "Tools": ["git", "github", "gitlab", "postman", "jira", "figma", "vs code", "intellij", "eclipse", "linux", "bash", "webpack", "npm", "maven", "gradle", "excel"],
+  "Libraries": ["jquery", "numpy", "pandas", "matplotlib", "scikit-learn", "sklearn", "tensorflow", "pytorch", "keras", "opencv", "seaborn", "redux", "axios", "lodash", "plotly"],
   "Soft Skills": ["communication", "teamwork", "leadership", "problem solving", "problem-solving", "time management", "adaptability", "collaboration", "critical thinking", "public speaking"],
 };
 
@@ -586,7 +588,12 @@ async function parseResumeFile(buffer, mimetype, filename) {
   const parsed = { ...personal, summary, education, skills, projects, experience, certifications, achievements, languages };
   const confidence = computeConfidence(parsed, sections);
 
-  return { ...parsed, confidence: confidence.scores, lowConfidenceFields: confidence.lowConfidenceFields };
+  // Raw extracted text, capped to a sane size — used only for the frontend's "original vs
+  // parsed" side-by-side review view. Never persisted (no original file is stored either), just
+  // passed through this one response so students can sanity-check the parse against the source.
+  const rawText = text.trim().slice(0, 20000);
+
+  return { ...parsed, confidence: confidence.scores, lowConfidenceFields: confidence.lowConfidenceFields, rawText };
 }
 
 module.exports = { parseResumeFile, extractTextFromFile };
