@@ -23,8 +23,18 @@ async function extractTextFromFile(buffer, mimetype, filename) {
     mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     ext === "docx"
   ) {
-    const result = await mammoth.extractRawText({ buffer });
-    return result.value;
+    // extractRawText() only returns visible text — a "LinkedIn"/"GitHub" icon or label
+    // hyperlinked to the actual profile URL (a very common resume pattern) has no visible URL
+    // text at all, so the link target would otherwise vanish entirely. convertToHtml() preserves
+    // <a href="..."> targets; appending them lets the existing email/LinkedIn/GitHub/portfolio
+    // regexes (which already scan the whole extracted text, not just specific lines) pick them
+    // up for free, with no other changes needed.
+    const [textResult, htmlResult] = await Promise.all([
+      mammoth.extractRawText({ buffer }),
+      mammoth.convertToHtml({ buffer }).catch(() => ({ value: "" })),
+    ]);
+    const hrefs = [...(htmlResult.value || "").matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
+    return hrefs.length ? `${textResult.value}\n${hrefs.join("\n")}` : textResult.value;
   }
   if (ext === "doc") {
     throw new Error("Legacy .doc files aren't supported. Please save your resume as .docx or .pdf and try again.");
@@ -36,7 +46,7 @@ async function extractTextFromFile(buffer, mimetype, filename) {
 const SECTION_SYNONYMS = {
   summary: ["professional summary", "summary", "objective", "career objective", "about me", "profile", "professional profile", "personal summary"],
   education: ["education", "academic background", "academic qualifications", "educational qualifications", "qualifications", "academics"],
-  skills: ["technical skills", "skills", "core skills", "competencies", "key skills", "skill set", "technical proficiencies", "areas of expertise"],
+  skills: ["technical skills", "skills", "core skills", "competencies", "key skills", "skill set", "technical proficiencies", "areas of expertise", "technology stack", "tech stack"],
   projects: ["projects", "academic projects", "personal projects", "key projects", "project experience", "major projects"],
   experience: ["experience", "work experience", "professional experience", "employment history", "internship experience", "internships", "work history"],
   certifications: ["certifications", "certificates", "licenses & certifications", "courses & certifications", "certifications & courses"],
@@ -127,6 +137,7 @@ const DATE_RANGE_RE = new RegExp(`(${DATE_TOKEN})\\s*(?:[-–—]|to)\\s*(${DATE
 const YEAR_RE = /\b(19|20)\d{2}\b/;
 const BULLET_RE = /^[•\-*▪‣●○◦]\s*/;
 const TECH_LINE_RE = /^(tech(nologies)?( used)?|tools|stack)\s*[:\-]\s*(.+)/i;
+const ROLE_LINE_RE = /^(role|position|my\s*role)\s*[:\-]\s*(.+)/i;
 
 function extractPersonalDetails(headerLines, wholeText) {
   const details = { fullName: "", email: "", mobile: "", linkedin: "", github: "", portfolio: "", address: "" };
@@ -381,14 +392,16 @@ function parseProjectBlock(lines) {
     const line = raw.replace(BULLET_RE, "").trim();
     const githubMatch = line.match(GITHUB_RE);
     const techMatch = line.match(TECH_LINE_RE);
+    const roleMatch = line.match(ROLE_LINE_RE);
     const dateMatch = line.match(DATE_RANGE_RE);
-    if (!titleSet && !isBullet && line.length < 80 && !githubMatch && !techMatch && !dateMatch) {
+    if (!titleSet && !isBullet && line.length < 80 && !githubMatch && !techMatch && !roleMatch && !dateMatch) {
       p.title = line;
       titleSet = true;
       continue;
     }
     if (githubMatch) { p.githubUrl = githubMatch[0]; continue; }
     if (techMatch) { p.technologies = techMatch[4]; continue; }
+    if (roleMatch) { p.role = roleMatch[2]; continue; }
     if (dateMatch && !p.duration) { p.duration = dateMatch[0]; continue; }
     const liveMatch = line.match(GENERIC_URL_RE);
     if (liveMatch && !GITHUB_RE.test(line) && !p.liveUrl) { p.liveUrl = liveMatch[0]; continue; }
@@ -412,6 +425,7 @@ function parseExperienceBlock(lines) {
   const e = { company: "", title: "", employmentType: "Internship", startDate: "", endDate: "", responsibilities: "", technologies: "" };
   const descLines = [];
   let headerSet = false;
+  let companySet = false;
   for (const raw of lines) {
     const isBullet = BULLET_RE.test(raw);
     const line = raw.replace(BULLET_RE, "").trim();
@@ -422,19 +436,32 @@ function parseExperienceBlock(lines) {
       if (sep.length >= 2) {
         e.title = sep[0].trim();
         e.company = sep.slice(1).join(" ").trim();
+        companySet = true;
       } else {
         e.title = line;
       }
       headerSet = true;
       continue;
     }
+    // The company name very often sits on its own line right after the title, before any
+    // bullets/dates ("Software Engineer" / "ABC Company" as two separate lines) — without this,
+    // that line was silently falling through to `responsibilities` and the Company field stayed
+    // blank. Guarded to short, non-sentence-like lines so real bulletless description text (long,
+    // ends in punctuation) doesn't get misread as a company name.
+    if (headerSet && !companySet && !isBullet && !techMatch && !dateMatch && line.length < 60 && line.split(/\s+/).length <= 6 && !/[.!?]$/.test(line)) {
+      e.company = line;
+      companySet = true;
+      continue;
+    }
     if (techMatch) { e.technologies = techMatch[4]; continue; }
     if (dateMatch) {
+      companySet = true; // a date line always ends the header block either way
       const parts = dateMatch[0].split(/[-–—]|(?:\bto\b)/i).map((s) => s.trim()).filter(Boolean);
       e.startDate = parts[0] || "";
       e.endDate = parts[1] || "";
       continue;
     }
+    companySet = true; // first real description line also ends the header block
     descLines.push(line);
   }
   if (!headerSet && descLines.length > 0) {
