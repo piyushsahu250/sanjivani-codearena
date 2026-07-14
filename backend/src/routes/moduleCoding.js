@@ -245,17 +245,13 @@ router.post("/attempts/:attemptId/autosave", authenticate, requireRole("STUDENT"
     if (Date.now() > deadlineOf(attempt)) return res.status(403).json({ error: "Time is up for this assessment" });
 
     const { questionId, language, code } = req.body;
-    const existing = await prisma.moduleCodingSubmission.findFirst({ where: { attemptId: attempt.id, questionId } });
-    if (existing) {
-      await prisma.moduleCodingSubmission.update({
-        where: { id: existing.id },
-        data: { language: language || "", code: code || "", verdict: "PENDING", passedCases: 0, totalCases: 0 },
-      });
-    } else {
-      await prisma.moduleCodingSubmission.create({
-        data: { attemptId: attempt.id, questionId, studentId: req.user.id, language: language || "", code: code || "", verdict: "PENDING" },
-      });
-    }
+    // Atomic upsert on the (attemptId, questionId) unique constraint — see submissions.js's
+    // /autosave for why a findFirst-then-create/update pattern here is a real race hazard.
+    await prisma.moduleCodingSubmission.upsert({
+      where: { attemptId_questionId: { attemptId: attempt.id, questionId } },
+      update: { language: language || "", code: code || "", verdict: "PENDING", passedCases: 0, totalCases: 0, timeMs: null, memoryKb: null },
+      create: { attemptId: attempt.id, questionId, studentId: req.user.id, language: language || "", code: code || "", verdict: "PENDING" },
+    });
     res.json({ status: "SAVED" });
   } catch (err) {
     console.error(err);
@@ -320,7 +316,7 @@ router.post("/attempts/:attemptId/finalize", authenticate, requireRole("STUDENT"
       }
     }
 
-    res.json({ score: updated.score, passed: updated.passed, status: updated.status, gamification });
+    res.json({ score: updated.score, passed: updated.passed, status: updated.status, submittedAt: updated.submittedAt, questionBreakdown: updated.questionBreakdown, gamification });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to finalize assessment" });

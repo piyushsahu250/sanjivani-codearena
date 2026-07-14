@@ -14,18 +14,31 @@ async function gradePendingCodingSubmissions(attemptId) {
 
   await Promise.all(
     pending.map(async (sub) => {
+      // Final grading is scored against hidden test cases ONLY — the visible sample cases the
+      // student already saw and tested against via /run don't count toward the score, per the
+      // platform-wide compiler spec's "final marks based solely on hidden test case results."
+      // Falls back to the full test case set for any legacy question created before the admin
+      // CMS started requiring >=2 hidden cases (questions.js) — otherwise a pre-existing
+      // all-visible question would silently start scoring 0 for everyone.
       const question = await prisma.question.findUnique({ where: { id: sub.questionId }, include: { testCases: true } });
       if (!question) return;
+      const hiddenCases = question.testCases.filter((tc) => tc.isHidden);
+      const gradingCases = hiddenCases.length > 0 ? hiddenCases : question.testCases;
       const result = await runQueued(() =>
-        judgeSubmission({ language: sub.language, code: sub.code, testCases: question.testCases, timeLimitMs: question.timeLimitMs })
+        judgeSubmission({ language: sub.language, code: sub.code, testCases: gradingCases, timeLimitMs: question.timeLimitMs })
       );
       const score =
-        result.verdict === "ACCEPTED"
+        result.totalCases === 0
+          ? 0
+          : result.verdict === "ACCEPTED"
           ? question.points
           : Math.round((result.passedCases / result.totalCases) * question.points);
       await prisma.submission.update({
         where: { id: sub.id },
-        data: { score, passedCases: result.passedCases, totalCases: result.totalCases, verdict: result.verdict },
+        data: {
+          score, passedCases: result.passedCases, totalCases: result.totalCases, verdict: result.verdict,
+          timeMs: result.maxTimeMs ?? null, memoryKb: result.maxMemoryKb ?? null,
+        },
       });
     })
   );

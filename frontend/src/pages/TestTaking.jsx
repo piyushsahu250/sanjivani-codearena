@@ -631,6 +631,58 @@ export default function TestTaking() {
     justSavedTimeoutRef.current = setTimeout(() => setJustSaved(false), 1500);
   }
 
+  // Best-effort save fired from beforeunload/pagehide — a normal axios POST can be aborted
+  // mid-flight when the page is actually torn down, so this uses fetch's `keepalive` flag
+  // (designed exactly for "send this request even though the page is unloading"; unlike
+  // navigator.sendBeacon, it still supports the Authorization header this API requires).
+  function keepaliveSave(path, body) {
+    try {
+      const token = localStorage.getItem("token");
+      const base = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+      fetch(`${base}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      // best-effort only — nothing to recover here, the 1s/600ms debounce already minimizes
+      // how much could possibly be unsaved at the moment of unload
+    }
+  }
+
+  // Spec: "never lose work" on page refresh/close or a temporary network drop. The 600ms/1000ms
+  // debounced autosaves above already cover typing/switching questions; these two effects cover
+  // the two gaps that were previously unhandled — closing/refreshing the tab, and a save that
+  // failed while offline getting retried the moment connectivity returns.
+  useEffect(() => {
+    function flushOnUnload() {
+      if (finalizedRef.current || !attemptId) return;
+      if (pendingAutoSaveRef.current) {
+        keepaliveSave("/submissions/submit", { attemptId, questionId: pendingAutoSaveRef.current.questionId, selectedOptions: pendingAutoSaveRef.current.selected });
+      }
+      if (pendingCodeAutoSaveRef.current) {
+        keepaliveSave("/submissions/autosave", { attemptId, questionId: pendingCodeAutoSaveRef.current.questionId, language: pendingCodeAutoSaveRef.current.language, code: pendingCodeAutoSaveRef.current.code });
+      }
+    }
+    window.addEventListener("beforeunload", flushOnUnload);
+    window.addEventListener("pagehide", flushOnUnload);
+    return () => {
+      window.removeEventListener("beforeunload", flushOnUnload);
+      window.removeEventListener("pagehide", flushOnUnload);
+    };
+  }, [attemptId]);
+
+  useEffect(() => {
+    function onOnline() {
+      if (finalizedRef.current) return;
+      if (pendingAutoSaveRef.current) flushAutoSave();
+      if (pendingCodeAutoSaveRef.current) flushCodeAutoSave();
+    }
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, []);
+
   function toggleMarkForReview() {
     if (!current || !attemptId) return;
     setMarkedForReview((prev) => {
@@ -1157,6 +1209,9 @@ function ResultBlock({ title, result }) {
         </div>
         {result.errorSummary.message && (
           <div className="mono" style={{ fontSize: 12, marginTop: 6, whiteSpace: "pre-wrap" }}>{result.errorSummary.message}</div>
+        )}
+        {result.errorSummary.hint && (
+          <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-dim)" }}>💡 Suggested fix: {result.errorSummary.hint}</div>
         )}
       </div>
     );

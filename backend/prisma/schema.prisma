@@ -274,8 +274,15 @@ model Submission {
   passedCases  Int         @default(0)
   totalCases   Int         @default(0)
   verdict      String      @default("PENDING") // ACCEPTED, PARTIAL, WRONG_ANSWER, TLE, RUNTIME_ERROR, COMPILE_ERROR, PENDING
+  timeMs       Int? // max execution time across judged test cases (coding only)
+  memoryKb     Int? // max memory usage across judged test cases (coding only)
   createdAt    DateTime    @default(now())
 
+  // One row per attempt+question — enforced at the DB level so autosave's upsert can never
+  // race into two rows for the same question (which previously risked the grader picking the
+  // wrong one). MCQ/TRUE_FALSE/MULTISELECT still get a fresh row per answer-change via
+  // deleteMany+create, which also respects this constraint (at most one row survives).
+  @@unique([attemptId, questionId])
   @@index([attemptId])
   @@index([questionId])
 }
@@ -556,9 +563,15 @@ model ModuleCodingSubmission {
   passedCases Int      @default(0)
   totalCases  Int      @default(0)
   verdict     String   @default("PENDING") // ACCEPTED, PARTIAL, WRONG_ANSWER, TLE, RUNTIME_ERROR, COMPILE_ERROR, PENDING
+  timeMs      Int? // max execution time across judged test cases
+  memoryKb    Int? // max memory usage across judged test cases
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // One row per attempt+question — same race-proofing as Submission above; autosave's upsert
+  // relies on this so two near-simultaneous saves for the same question can never create
+  // duplicate rows that the grader might then pick between arbitrarily.
+  @@unique([attemptId, questionId])
   @@index([attemptId])
   @@index([questionId])
 }

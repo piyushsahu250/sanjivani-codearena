@@ -140,10 +140,21 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterIns
     };
 
     if (type === "CODING") {
+      const cases = testCases || [];
+      // Every coding question needs both — visible samples for the student-facing Run button,
+      // and hidden cases the final Submit score is actually based on (see gradeAttempt.js /
+      // gradeModuleCodingAttempt.js). Mirrors the same requirement already enforced on
+      // Module Coding Test questions in moduleCoding.js.
+      if (cases.filter((tc) => !tc.isHidden).length < 2) {
+        return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
+      }
+      if (cases.filter((tc) => tc.isHidden).length < 2) {
+        return res.status(400).json({ error: "Each coding question needs at least 2 hidden test cases for final evaluation" });
+      }
       data.timeLimitMs = timeLimitMs ?? 2000;
       data.starterCode = starterCode || "";
       data.testCases = {
-        create: (testCases || []).map((tc) => ({
+        create: cases.map((tc) => ({
           input: tc.input,
           expected: tc.expected,
           isHidden: tc.isHidden ?? true,
@@ -552,6 +563,12 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
       data.options = null;
       data.correctAnswer = null;
       if (testCases) {
+        if (testCases.filter((tc) => !tc.isHidden).length < 2) {
+          return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
+        }
+        if (testCases.filter((tc) => tc.isHidden).length < 2) {
+          return res.status(400).json({ error: "Each coding question needs at least 2 hidden test cases for final evaluation" });
+        }
         await prisma.testCase.deleteMany({ where: { questionId: existing.id } });
         data.testCases = {
           create: testCases.map((tc) => ({ input: tc.input, expected: tc.expected, isHidden: tc.isHidden ?? true })),

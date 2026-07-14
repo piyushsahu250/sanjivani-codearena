@@ -56,12 +56,24 @@ export default function StudentTestResult() {
             </div>
 
             <div style={{ marginTop: 20, display: "grid", gap: 8 }}>
-              {result.submissions.map((s) => (
-                <div key={s.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                  <span className="mono">{s.verdict}</span>
-                  <span className="mono">{s.score} pts</span>
-                </div>
-              ))}
+              {result.submissions.map((s, i) => {
+                const isCoding = s.totalCases > 0 || s.timeMs != null;
+                return (
+                  <div key={s.id} className="card" style={{ padding: 12, fontSize: 13 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span className="mono">{isCoding ? `Question ${i + 1}` : s.verdict}</span>
+                      <span className="mono" style={{ fontWeight: 700 }}>{s.score} pts</span>
+                    </div>
+                    {isCoding && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: "var(--ink-dim)" }} className="mono">
+                        {s.verdict} — {s.passedCases}/{s.totalCases} hidden test case{s.totalCases === 1 ? "" : "s"} passed
+                        {s.timeMs != null && ` · ⏱ ${s.timeMs} ms`}
+                        {s.memoryKb != null && ` · 💾 ${(s.memoryKb / 1024).toFixed(1)} MB`}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

@@ -106,17 +106,15 @@ router.post("/autosave", authenticate, requireRole("STUDENT"), async (req, res) 
       return res.status(400).json({ error: "Autosave is only for coding questions" });
     }
 
-    const existing = await prisma.submission.findFirst({ where: { attemptId, questionId } });
-    if (existing) {
-      await prisma.submission.update({
-        where: { id: existing.id },
-        data: { language: language || "", code: code || "", verdict: "PENDING", score: 0, passedCases: 0, totalCases: 0 },
-      });
-    } else {
-      await prisma.submission.create({
-        data: { attemptId, questionId, studentId: req.user.id, language: language || "", code: code || "", verdict: "PENDING" },
-      });
-    }
+    // Atomic upsert on the (attemptId, questionId) unique constraint — a plain findFirst-then-
+    // create/update here would race under concurrent autosave triggers (10s interval tick vs.
+    // question-switch flush vs. beforeunload flush all firing close together) and could create
+    // two rows for the same question, leaving grading to pick between them arbitrarily.
+    await prisma.submission.upsert({
+      where: { attemptId_questionId: { attemptId, questionId } },
+      update: { language: language || "", code: code || "", verdict: "PENDING", score: 0, passedCases: 0, totalCases: 0, timeMs: null, memoryKb: null },
+      create: { attemptId, questionId, studentId: req.user.id, language: language || "", code: code || "", verdict: "PENDING" },
+    });
 
     res.json({ status: "SAVED" });
   } catch (err) {

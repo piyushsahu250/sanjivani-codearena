@@ -207,6 +207,55 @@ export default function ModuleCodingAssessment() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIdx]);
 
+  // Best-effort save fired from beforeunload/pagehide — a normal axios POST can be aborted
+  // mid-flight when the page is actually torn down, so this uses fetch's `keepalive` flag
+  // (unlike navigator.sendBeacon, it still supports the Authorization header this API requires).
+  function keepaliveSave(path, body) {
+    try {
+      const token = localStorage.getItem("token");
+      const base = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+      fetch(`${base}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      // best-effort only
+    }
+  }
+
+  // Spec: "never lose work" on page refresh/close or a temporary network drop. The 10s interval
+  // + question-switch flush above already cover typing/switching questions; these two effects
+  // cover closing/refreshing the tab, and retrying a save that failed while offline the moment
+  // connectivity returns.
+  useEffect(() => {
+    function flushOnUnload() {
+      if (finalizedRef.current || !attemptIdRef.current) return;
+      for (const q of questionsRef.current) {
+        const a = answersRef.current[q.id];
+        if (!a) continue;
+        const key = `${a.language}:${a.code}`;
+        if (lastSavedCodeRef.current[q.id] === key) continue;
+        keepaliveSave(`/module-coding/attempts/${attemptIdRef.current}/autosave`, { questionId: q.id, language: a.language, code: a.code });
+      }
+    }
+    window.addEventListener("beforeunload", flushOnUnload);
+    window.addEventListener("pagehide", flushOnUnload);
+    return () => {
+      window.removeEventListener("beforeunload", flushOnUnload);
+      window.removeEventListener("pagehide", flushOnUnload);
+    };
+  }, []);
+
+  useEffect(() => {
+    function onOnline() {
+      if (phase === "active") flushAutosave();
+    }
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [phase]);
+
   // Resizable editor — drag the handle between editor and results panel. Height persists across
   // questions (it's a single piece of state, never reset by activeIdx) and across sessions via
   // localStorage. Min/max clamp keeps the editor from being dragged unusably small or off-screen.
@@ -325,7 +374,7 @@ export default function ModuleCodingAssessment() {
     return (
       <div>
         <Navbar />
-        <div style={{ maxWidth: 560, margin: "80px auto", padding: 24 }}>
+        <div style={{ maxWidth: 640, margin: "80px auto", padding: 24 }}>
           <div className="card" style={{ padding: 32, textAlign: "center" }}>
             {autoSubmitted ? (
               <>
@@ -348,6 +397,29 @@ export default function ModuleCodingAssessment() {
                     ? "The next module is now unlocked."
                     : `You need ${status.test.passingPercent}% to pass. You can retry once your attempts/cooldown allow.`}
                 </p>
+                {result?.submittedAt && (
+                  <p style={{ marginTop: 4, fontSize: 12, color: "var(--ink-dim)" }}>Submitted {new Date(result.submittedAt).toLocaleString()}</p>
+                )}
+                {Array.isArray(result?.questionBreakdown) && result.questionBreakdown.length > 0 && (
+                  <div style={{ marginTop: 24, textAlign: "left" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Per-Question Result</div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {result.questionBreakdown.map((q, i) => (
+                        <div key={q.questionId} className="card" style={{ padding: 12, fontSize: 13 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between" }}>
+                            <span className="mono">{q.title || `Question ${i + 1}`}</span>
+                            <span className="mono" style={{ fontWeight: 700 }}>{q.score}%</span>
+                          </div>
+                          <div style={{ marginTop: 6, fontSize: 12, color: "var(--ink-dim)" }} className="mono">
+                            {q.verdict} — {q.passedCases}/{q.totalCases} hidden test case{q.totalCases === 1 ? "" : "s"} passed
+                            {q.timeMs != null && ` · ⏱ ${q.timeMs} ms`}
+                            {q.memoryKb != null && ` · 💾 ${(q.memoryKb / 1024).toFixed(1)} MB`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
             <Link to={`/learning/${slug}`} className="btn btn-primary" style={{ marginTop: 20, display: "inline-block" }}>
@@ -606,6 +678,9 @@ function ResultBlock({ result }) {
           {result.errorSummary.type}{result.errorSummary.line ? ` (line ${result.errorSummary.line})` : ""}
         </div>
         {result.errorSummary.message && <div className="mono" style={{ fontSize: 12, marginTop: 6, whiteSpace: "pre-wrap" }}>{result.errorSummary.message}</div>}
+        {result.errorSummary.hint && (
+          <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-dim)" }}>💡 Suggested fix: {result.errorSummary.hint}</div>
+        )}
       </div>
     );
   }

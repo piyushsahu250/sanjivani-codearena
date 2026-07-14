@@ -98,6 +98,82 @@ function summarizeError(language, rawMessage) {
   return { line, message: summary };
 }
 
+// Common compile-error signatures mapped to a one-line, deterministic hint — pattern matching
+// against known compiler wording, not an analysis of the student's actual logic (same "rule-
+// based, not real AI" honesty as the rest of this platform's grading/suggestions).
+const COMPILE_ERROR_HINTS = [
+  [/cannot find symbol/i, "Check for a typo in a variable/method/class name, or a missing declaration/import."],
+  [/reached end of file while parsing/i, "You're likely missing a closing brace '}' somewhere."],
+  [/';' expected/i, "You're likely missing a semicolon on the previous line."],
+  [/expected ';' before/i, "You're likely missing a semicolon on the previous line."],
+  [/undeclared \(first use/i, "Check for a typo, or a missing variable declaration."],
+  [/implicit declaration of function/i, "Check that the function is declared before use, or that the right header is included."],
+  [/expected '\)'|expected '\('/i, "Check for a missing or extra parenthesis."],
+  [/unexpected EOF while parsing|invalid syntax/i, "Check for a missing colon, bracket, or parenthesis."],
+  [/IndentationError/i, "Check your indentation — Python requires consistent spacing for blocks."],
+  [/Unexpected token/i, "Check for a missing bracket, parenthesis, brace, or comma."],
+  [/is not defined/i, "Check for a typo, or a variable/function used before it was declared."],
+];
+function findCompileHint(message) {
+  const text = String(message || "");
+  for (const [pattern, hint] of COMPILE_ERROR_HINTS) {
+    if (pattern.test(text)) return hint;
+  }
+  return null;
+}
+
+// Runtime exception/crash signatures worth naming specifically instead of a generic "Runtime
+// Error" — matched against raw stderr, most-specific pattern first per language. Same
+// deterministic pattern-matching approach as COMPILE_ERROR_HINTS above.
+const RUNTIME_ERROR_PATTERNS = {
+  java: [
+    [/StackOverflowError/, "Stack Overflow", "Your program recursed too deeply — check for a recursive function missing its base case."],
+    [/OutOfMemoryError/, "Out of Memory", "Your program tried to allocate more memory than available — check for unbounded loops building up data."],
+    [/NullPointerException/, "Null Pointer Exception", "Your code tried to use an object reference that was null — check for unhandled null values before calling methods on them."],
+    [/ArrayIndexOutOfBoundsException/, "Array Index Out of Bounds", "Your code accessed an array index outside its valid range — check your loop bounds and array sizes."],
+    [/StringIndexOutOfBoundsException/, "String Index Out of Bounds", "Your code accessed a string index outside its valid range."],
+    [/ArithmeticException.*by zero/i, "Division by Zero", "Your code divided by zero — check that a divisor can't be 0 before dividing."],
+    [/ClassCastException/, "Class Cast Exception", "Your code tried to cast an object to an incompatible type."],
+    [/NumberFormatException/, "Number Format Exception", "Your code tried to parse text that isn't a valid number."],
+  ],
+  c: [
+    [/[Ss]egmentation fault/, "Segmentation Fault", "Your program accessed memory it shouldn't have — check for out-of-bounds array access, a null/uninitialized pointer, or too-deep recursion."],
+    [/stack smashing detected|stack overflow/i, "Stack Overflow", "Your program's call stack grew too large — check for infinite or too-deep recursion."],
+    [/[Ff]loating point exception/, "Division by Zero", "Your program divided by zero (or used an invalid modulo) — check your divisor before dividing."],
+    [/double free|free\(\): invalid/, "Memory Error", "Your program freed memory incorrectly — check for a duplicate or invalid free() call."],
+    [/[Aa]borted/, "Aborted", "Your program called abort() or hit a runtime-checked failure — check assertions and error-handling paths."],
+  ],
+  python: [
+    [/ZeroDivisionError/, "Division by Zero", "Your code divided by zero — check your divisor before dividing."],
+    [/IndexError/, "Index Error", "Your code accessed a list/string index outside its valid range."],
+    [/KeyError/, "Key Error", "Your code accessed a dictionary key that doesn't exist — check the key exists first."],
+    [/TypeError/, "Type Error", "Your code used a value of the wrong type — check the types being combined or passed to a function."],
+    [/AttributeError/, "Attribute Error", "Your code called a method/attribute that doesn't exist on that object."],
+    [/RecursionError/, "Recursion Error", "Your code recursed too deeply — check for a recursive function missing its base case."],
+    [/NameError/, "Name Error", "Your code referenced a variable that hasn't been defined."],
+    [/ValueError/, "Value Error", "Your code passed a value of the right type but an invalid value (e.g. a bad conversion)."],
+  ],
+  javascript: [
+    [/RangeError.*call stack/i, "Stack Overflow", "Your function recursed too deeply — check for a recursive function missing its base case."],
+    [/TypeError: Cannot read propert(y|ies) .* of (null|undefined)/, "Null/Undefined Reference", "Your code tried to access a property on null or undefined — check the value exists first."],
+    [/TypeError/, "Type Error", "Your code called something that isn't a function, or used a value of the wrong type."],
+    [/ReferenceError/, "Reference Error", "Your code referenced a variable that hasn't been defined."],
+    [/RangeError/, "Range Error", "Your code used a value outside its valid range (e.g. an invalid array length)."],
+  ],
+};
+RUNTIME_ERROR_PATTERNS.cpp = [
+  ...RUNTIME_ERROR_PATTERNS.c,
+  [/std::out_of_range/, "Out of Range", "Your code accessed a container (vector/string/map) at an invalid index or key."],
+  [/std::bad_alloc/, "Out of Memory", "Your program tried to allocate more memory than available."],
+];
+function classifyRuntimeError(language, rawMessage) {
+  const message = String(rawMessage || "");
+  for (const [pattern, type, hint] of RUNTIME_ERROR_PATTERNS[language] || []) {
+    if (pattern.test(message)) return { type, hint };
+  }
+  return null;
+}
+
 // Runs `cmd args...` under a virtual-memory ulimit (real OS-level enforcement — a process that
 // exceeds it gets allocation failures, not just a number we report after the fact) and under
 // `/usr/bin/time -v`, which writes real peak-RSS to a separate file (statsFile) so its report
@@ -220,7 +296,7 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }
       totalCases: testCases.length,
       verdict: "COMPILE_ERROR",
       details,
-      errorSummary: { type: "Compilation Error", ...summarizeError(language, prepared.error) },
+      errorSummary: { type: "Compilation Error", ...summarizeError(language, prepared.error), hint: findCompileHint(prepared.error) },
     };
   }
 
@@ -277,12 +353,18 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }
   let errorSummary = null;
   if (passed === 0) {
     if (verdict === "TLE") {
-      errorSummary = { type: "Time Limit Exceeded", line: null, message: "Your program took too long to produce output — the algorithm is likely too slow for the input size; try a more efficient approach." };
+      errorSummary = { type: "Time Limit Exceeded", line: null, message: "Your program took too long to produce output — the algorithm is likely too slow for the input size; try a more efficient approach.", hint: null };
     } else if (verdict === "MLE") {
-      errorSummary = { type: "Memory Limit Exceeded", line: null, message: "Your program used more memory than allowed — check for unbounded data structures, infinite recursion, or unnecessarily large allocations." };
+      errorSummary = { type: "Memory Limit Exceeded", line: null, message: "Your program used more memory than allowed — check for unbounded data structures, infinite recursion, or unnecessarily large allocations.", hint: null };
     } else {
       const errored = details.find((d) => d.verdict === "RUNTIME_ERROR");
-      if (errored) errorSummary = { type: "Runtime Error", ...summarizeError(language, errored.error) };
+      if (errored) {
+        const base = summarizeError(language, errored.error);
+        const classified = classifyRuntimeError(language, errored.error);
+        errorSummary = classified
+          ? { type: classified.type, line: base.line, message: base.message, hint: classified.hint }
+          : { type: "Runtime Error", ...base, hint: null };
+      }
     }
   }
 
