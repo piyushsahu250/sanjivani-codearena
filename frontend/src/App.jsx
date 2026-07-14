@@ -55,6 +55,8 @@ import InterviewProgress from "./pages/InterviewProgress";
 import InterviewCertificate from "./pages/InterviewCertificate";
 import InterviewVerify from "./pages/InterviewVerify";
 import InterviewAdmin from "./pages/InterviewAdmin";
+import InterviewReports from "./pages/InterviewReports";
+import InterviewReportDetail from "./pages/InterviewReportDetail";
 import EmailLogs from "./pages/EmailLogs";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
@@ -166,6 +168,8 @@ export default function App() {
           <Route path="/staff/gamification" element={<Protected roles={["ADMIN", "STAFF"]}><GamificationManagement /></Protected>} />
           <Route path="/staff/resumes" element={<Protected roles={["ADMIN", "STAFF"]}><ResumeAdmin /></Protected>} />
           <Route path="/staff/interviews" element={<Protected roles={["ADMIN", "STAFF"]}><InterviewAdmin /></Protected>} />
+          <Route path="/staff/interview-reports" element={<Protected roles={["ADMIN", "STAFF"]}><InterviewReports /></Protected>} />
+          <Route path="/staff/interview-reports/:sessionId" element={<Protected roles={["ADMIN", "STAFF"]}><InterviewReportDetail /></Protected>} />
           <Route path="/staff/questions" element={<Protected roles={["ADMIN", "STAFF"]}><QuestionBank /></Protected>} />
           <Route path="/staff/questions/new" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />
           <Route path="/staff/questions/:id/edit" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />

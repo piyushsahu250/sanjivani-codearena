@@ -12,6 +12,7 @@ const { buildRecommendations } = require("../utils/interviewRecommendations");
 const { generateResumeQuestions } = require("../utils/resumeInterviewQuestions");
 const { generateInterviewCertificatePdf } = require("../utils/interviewCertificatePdf");
 const { generateInterviewReportPdf } = require("../utils/interviewReportPdf");
+const { sendMailLogged, wrapBranded } = require("../utils/mailer");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -26,6 +27,14 @@ const VALID_CATEGORIES = ["HR", "TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIG
 // Free-text categories (as opposed to APTITUDE's MCQ or CODING's editor) — these get voice
 // input and the short-answer depth-probe follow-up.
 const FREE_TEXT_CATEGORIES = ["HR", "TECHNICAL", "SYSTEM_DESIGN", "BEHAVIORAL", "MANAGERIAL"];
+const CATEGORY_LABEL = { HR: "HR", TECHNICAL: "Technical", CODING: "Coding", APTITUDE: "Aptitude", SYSTEM_DESIGN: "System Design", BEHAVIORAL: "Behavioral", MANAGERIAL: "Managerial" };
+
+function sessionTypeLabel(s) {
+  if (s.isMock) return "Mock Interview";
+  if (s.isResumeBased) return "Resume-Based";
+  if (s.isCompanyRound) return "Company Round";
+  return CATEGORY_LABEL[s.category] || s.category || "—";
+}
 
 function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
@@ -339,6 +348,30 @@ async function finalizeSession(session, { status = "COMPLETED", terminationReaso
       where: { sessionId: session.id }, update: built, create: { sessionId: session.id, studentId: session.studentId, ...built },
     }),
   ]);
+
+  // Notify the student their report is ready — scoped to Mock/Company Round sessions only
+  // (the "full interview experience" types), not every quick single-category practice drill,
+  // so students doing rapid-fire aptitude/HR practice reps aren't emailed on every submission.
+  // Fire-and-forget: never blocks the finalize response; delivery status is still visible to
+  // admins via the existing Email Logs page (sendMailLogged always writes an EmailLog row).
+  if (updated.isMock || updated.isCompanyRound) {
+    prisma.user.findUnique({ where: { id: session.studentId }, select: { name: true, email: true } }).then((student) => {
+      if (!student?.email) return;
+      sendMailLogged(prisma, {
+        to: student.email, name: student.name, studentId: session.studentId,
+        emailType: "INTERVIEW_REPORT_READY",
+        subject: "Your AI Mock Interview Report is Ready",
+        html: wrapBranded(`
+          <p>Hi ${student.name},</p>
+          <p>Your ${sessionTypeLabel(updated)} interview has been evaluated.</p>
+          <p><strong>Overall Score: ${report.overallScore}%</strong></p>
+          <p>Log in to view your full report, question-by-question feedback, and improvement suggestions at <a href="${FRONTEND_URL}/interview/report/${updated.id}">${FRONTEND_URL}</a>.</p>
+          <p>Regards,<br/>CodeArena Team</p>
+        `),
+      }).catch(() => {});
+    }).catch(() => {});
+  }
+
   return { session: updated, report };
 }
 
@@ -823,6 +856,286 @@ router.get("/admin/sessions/:sessionId/violations", authenticate, requireRole("A
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load violation log" });
+  }
+});
+
+// =========================== Admin/Staff: interview reports & analytics ===========================
+
+// Shared filter-building for the sessions list, analytics, and Excel export routes below, so
+// the dashboard's charts/cards and its table always reflect the exact same filtered set the
+// user has selected. Institute scoping (Staff = own institute only, Admin = unscoped) rides on
+// the same attachRequesterInstitute pattern used by /admin/stats etc. above.
+function buildAdminSessionWhere(req) {
+  const studentWhere = { role: "STUDENT" };
+  if (req.requesterInstituteId) studentWhere.instituteId = req.requesterInstituteId;
+  if (req.query.classId) studentWhere.classId = req.query.classId;
+  if (req.query.batchYear) studentWhere.batchYear = req.query.batchYear;
+  if (req.query.department) studentWhere.department = req.query.department;
+  if (req.query.search) {
+    const q = String(req.query.search).trim();
+    if (q) {
+      studentWhere.OR = [
+        { name: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+        { rollNumber: { contains: q, mode: "insensitive" } },
+        { registrationNumber: { contains: q, mode: "insensitive" } },
+      ];
+    }
+  }
+
+  const where = { status: { in: ["COMPLETED", "TERMINATED"] }, student: studentWhere };
+  if (req.query.status && ["COMPLETED", "TERMINATED"].includes(req.query.status)) where.status = req.query.status;
+
+  if (req.query.type) {
+    const t = String(req.query.type).toUpperCase();
+    if (t === "MOCK") where.isMock = true;
+    else if (t === "COMPANY_ROUND") where.isCompanyRound = true;
+    else if (t === "RESUME_BASED") where.isResumeBased = true;
+    else if (VALID_CATEGORIES.includes(t)) { where.category = t; where.isMock = false; where.isResumeBased = false; where.isCompanyRound = false; }
+  }
+  if (req.query.company) where.config = { path: ["company"], equals: req.query.company };
+
+  if (req.query.dateFrom || req.query.dateTo) {
+    where.submittedAt = {};
+    if (req.query.dateFrom) where.submittedAt.gte = new Date(`${req.query.dateFrom}T00:00:00`);
+    if (req.query.dateTo) where.submittedAt.lte = new Date(`${req.query.dateTo}T23:59:59`);
+  }
+  if (req.query.scoreMin || req.query.scoreMax) {
+    where.report = {};
+    if (req.query.scoreMin) where.report.overallScore = { gte: Number(req.query.scoreMin) };
+    if (req.query.scoreMax) where.report.overallScore = { ...(where.report.overallScore || {}), lte: Number(req.query.scoreMax) };
+  }
+  return where;
+}
+
+const STUDENT_JOIN_SELECT = {
+  id: true, name: true, email: true, rollNumber: true, registrationNumber: true, department: true, batchYear: true, section: true,
+  institute: { select: { name: true } },
+  class: { select: { name: true, batchYear: true } },
+};
+
+function toReportRow(s) {
+  return {
+    sessionId: s.id,
+    studentId: s.student.id,
+    studentName: s.student.name,
+    email: s.student.email,
+    rollNumber: s.student.rollNumber,
+    registrationNumber: s.student.registrationNumber,
+    institute: s.student.institute?.name || null,
+    className: s.student.class?.name || null,
+    batchYear: s.student.batchYear || s.student.class?.batchYear || null,
+    department: s.student.department,
+    type: sessionTypeLabel(s),
+    company: s.config?.company || null,
+    date: s.submittedAt,
+    score: s.report?.overallScore ?? null,
+    status: s.status,
+  };
+}
+
+// STAFF/ADMIN: paginated, filterable list of every completed/terminated interview across
+// students (institute-scoped for Staff) — the "Student List" / results table the per-student-
+// summary /admin/students endpoint above doesn't provide (that one aggregates one row per
+// student, not one row per attempt).
+router.get("/admin/sessions", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const where = buildAdminSessionWhere(req);
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+    const [sessions, total] = await Promise.all([
+      prisma.interviewSession.findMany({
+        where,
+        include: { student: { select: STUDENT_JOIN_SELECT }, report: { select: { overallScore: true } } },
+        orderBy: { submittedAt: "desc" },
+        skip: (page - 1) * pageSize, take: pageSize,
+      }),
+      prisma.interviewSession.count({ where }),
+    ]);
+    res.json({ rows: sessions.map(toReportRow), page, pageSize, total, totalPages: Math.ceil(total / pageSize) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load interview reports" });
+  }
+});
+
+// STAFF/ADMIN: dashboard summary cards + chart data, computed over the same filtered set as
+// /admin/sessions above (so selecting a filter updates both the table and the charts).
+router.get("/admin/analytics", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const where = buildAdminSessionWhere(req);
+    const sessions = await prisma.interviewSession.findMany({
+      where,
+      include: {
+        student: { select: { batchYear: true, department: true, class: { select: { name: true } } } },
+        report: { select: { overallScore: true } },
+      },
+    });
+
+    const withScore = sessions.filter((s) => s.report);
+    const scores = withScore.map((s) => s.report.overallScore);
+    const totalInterviews = sessions.length;
+    const completedCount = sessions.filter((s) => s.status === "COMPLETED").length;
+    const averageScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    const highestScore = scores.length ? Math.max(...scores) : 0;
+    const lowestScore = scores.length ? Math.min(...scores) : 0;
+
+    const now = Date.now();
+    const weekMs = 7 * 24 * 60 * 60 * 1000, monthMs = 30 * 24 * 60 * 60 * 1000;
+    const thisWeekCount = sessions.filter((s) => s.submittedAt && now - new Date(s.submittedAt).getTime() <= weekMs).length;
+    const thisMonthCount = sessions.filter((s) => s.submittedAt && now - new Date(s.submittedAt).getTime() <= monthMs).length;
+
+    function groupAvg(keyFn) {
+      const sums = new Map(), counts = new Map();
+      for (const s of withScore) {
+        const key = keyFn(s);
+        if (!key) continue;
+        sums.set(key, (sums.get(key) || 0) + s.report.overallScore);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      return [...sums.entries()]
+        .map(([key, sum]) => ({ key, count: counts.get(key), averageScore: Math.round(sum / counts.get(key)) }))
+        .sort((a, b) => b.count - a.count);
+    }
+
+    const companyWise = groupAvg((s) => s.config?.company || null);
+    const byClass = groupAvg((s) => s.student.class?.name || null);
+    const byBatch = groupAvg((s) => s.student.batchYear || null);
+    const byType = groupAvg((s) => sessionTypeLabel(s));
+
+    const weekly = new Map(), monthly = new Map();
+    for (const s of withScore) {
+      if (!s.submittedAt) continue;
+      const d = new Date(s.submittedAt);
+      const weekKey = `${d.getFullYear()}-W${String(Math.ceil(d.getDate() / 7)).padStart(2, "0")}-${d.getMonth() + 1}`;
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      for (const [map, key] of [[weekly, weekKey], [monthly, monthKey]]) {
+        if (!map.has(key)) map.set(key, { sum: 0, count: 0 });
+        const cur = map.get(key);
+        cur.sum += s.report.overallScore; cur.count++;
+      }
+    }
+    const toSeries = (map) => [...map.entries()].map(([period, { sum, count }]) => ({ period, averageScore: Math.round(sum / count), count }));
+
+    // Placement-readiness is a rule-based score bucket (>=75 Ready, 50-74 Needs Improvement,
+    // <50 Not Ready) for a quick-glance distribution chart — a heuristic threshold, not a
+    // predictive model, same spirit as the rest of this platform's "no real AI" scoring.
+    const placementReadiness = { ready: 0, needsImprovement: 0, notReady: 0 };
+    for (const sc of scores) {
+      if (sc >= 75) placementReadiness.ready++;
+      else if (sc >= 50) placementReadiness.needsImprovement++;
+      else placementReadiness.notReady++;
+    }
+
+    res.json({
+      totalInterviews, completedCount, averageScore, highestScore, lowestScore, thisWeekCount, thisMonthCount,
+      companyWise, byClass, byBatch, byType,
+      weeklyTrend: toSeries(weekly), monthlyTrend: toSeries(monthly),
+      placementReadiness,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load interview analytics" });
+  }
+});
+
+// STAFF/ADMIN: full detail for one student's interview — session + report + every question with
+// the student's answer/code and per-question score, plus a proctoring summary (violation counts
+// by type, not just the raw log /admin/sessions/:sessionId/violations already exposes).
+router.get("/admin/sessions/:sessionId/report", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const session = await prisma.interviewSession.findUnique({
+      where: { id: req.params.sessionId },
+      include: {
+        student: { select: STUDENT_JOIN_SELECT },
+        answers: { orderBy: { createdAt: "asc" } },
+        report: true,
+        violations: { orderBy: { createdAt: "asc" } },
+      },
+    });
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const target = await prisma.user.findUnique({ where: { id: session.studentId }, select: { instituteId: true } });
+    if (req.requesterInstituteId && target.instituteId !== req.requesterInstituteId) {
+      return res.status(403).json({ error: "You can only view students under your own institute" });
+    }
+
+    const questions = await prisma.interviewQuestion.findMany({ where: { id: { in: session.answers.map((a) => a.questionId) } } });
+    const ordered = session.answers.map((a) => ({ ...sanitizeQuestion(questions.find((q) => q.id === a.questionId) || {}), answer: a }));
+
+    const violationsByType = {};
+    for (const v of session.violations) violationsByType[v.type] = (violationsByType[v.type] || 0) + 1;
+
+    res.json({
+      session, student: session.student, questions: ordered, report: session.report,
+      proctoring: {
+        violationCount: session.violationCount,
+        terminationReason: session.terminationReason,
+        byType: violationsByType,
+        events: session.violations,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load interview report" });
+  }
+});
+
+// STAFF/ADMIN: PDF download for any (institute-scoped) student's report — same generator as the
+// student's own self-service download, just fetched by sessionId instead of the requester's own id.
+router.get("/admin/sessions/:sessionId/report/pdf", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const session = await prisma.interviewSession.findUnique({
+      where: { id: req.params.sessionId },
+      include: { student: { select: { name: true, instituteId: true } }, answers: { orderBy: { createdAt: "asc" } }, report: true },
+    });
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (req.requesterInstituteId && session.student.instituteId !== req.requesterInstituteId) {
+      return res.status(403).json({ error: "You can only view students under your own institute" });
+    }
+    if (!session.report) return res.status(400).json({ error: "This interview hasn't been submitted yet" });
+
+    const questions = await prisma.interviewQuestion.findMany({ where: { id: { in: session.answers.map((a) => a.questionId) } } });
+    const ordered = session.answers.map((a) => ({ ...sanitizeQuestion(questions.find((q) => q.id === a.questionId) || {}), answer: a }));
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="interview-report-${session.student.name.replace(/\s+/g, "-")}-${session.id.slice(0, 8)}.pdf"`);
+    generateInterviewReportPdf({ studentName: session.student.name, session, questions: ordered, report: session.report }, res);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to generate report PDF" });
+  }
+});
+
+// STAFF/ADMIN: Excel summary export of the filtered session list (same filters as /admin/sessions,
+// unpaginated) — one row per interview attempt.
+router.get("/admin/sessions/export", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const where = buildAdminSessionWhere(req);
+    const sessions = await prisma.interviewSession.findMany({
+      where,
+      include: { student: { select: STUDENT_JOIN_SELECT }, report: { select: { overallScore: true } } },
+      orderBy: { submittedAt: "desc" },
+      take: 5000,
+    });
+    const rows = sessions.map((s) => {
+      const r = toReportRow(s);
+      return {
+        "Student Name": r.studentName, "Roll Number": r.rollNumber || "", "Registration Number": r.registrationNumber || "",
+        "Institute": r.institute || "", "Class": r.className || "", "Batch": r.batchYear || "", "Department": r.department || "",
+        "Interview Type": r.type, "Company": r.company || "", "Date": r.date ? new Date(r.date).toLocaleString() : "",
+        "Score (%)": r.score ?? "", "Status": r.status,
+      };
+    });
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Interview Reports");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="interview-reports.xlsx"');
+    res.send(buffer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to export interview reports" });
   }
 });
 
