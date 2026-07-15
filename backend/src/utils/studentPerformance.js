@@ -24,43 +24,45 @@ async function computeStudentPerformance(studentId, { maskUnpublished = false } 
   });
   if (!student || student.id !== studentId) return null;
 
-  const assignedTests = await prisma.test.findMany({
-    where: {
-      isPublished: true,
-      OR: [
-        { classes: { none: {} } },
-        ...(student.class?.id ? [{ classes: { some: { classId: student.class.id } } }] : []),
-      ],
-    },
-    select: { id: true },
-  });
+  const [assignedTests, attempts] = await Promise.all([
+    prisma.test.findMany({
+      where: {
+        isPublished: true,
+        OR: [
+          { classes: { none: {} } },
+          ...(student.class?.id ? [{ classes: { some: { classId: student.class.id } } }] : []),
+        ],
+      },
+      select: { id: true },
+    }),
+    prisma.testAttempt.findMany({
+      where: { studentId },
+      include: { submissions: true },
+      orderBy: { startedAt: "desc" },
+    }),
+  ]);
   const assignedTestIds = new Set(assignedTests.map((t) => t.id));
 
-  const attempts = await prisma.testAttempt.findMany({
-    where: { studentId },
-    include: { submissions: true },
-    orderBy: { startedAt: "desc" },
-  });
-
   const testIds = [...new Set(attempts.map((a) => a.testId))];
-  const testsRaw = testIds.length
-    ? await prisma.test.findMany({
-        where: { id: { in: testIds } },
-        select: {
-          id: true, title: true, showResults: true,
-          questions: { select: { question: { select: { points: true } } } },
-        },
-      })
-    : [];
-  const testMap = new Map(testsRaw.map((t) => [t.id, t]));
-
   const allQuestionIds = [...new Set(attempts.flatMap((a) => a.submissions.map((s) => s.questionId)))];
-  const questions = allQuestionIds.length
-    ? await prisma.question.findMany({
-        where: { id: { in: allQuestionIds } },
-        select: { id: true, questionType: true, subject: true },
-      })
-    : [];
+  const [testsRaw, questions] = await Promise.all([
+    testIds.length
+      ? prisma.test.findMany({
+          where: { id: { in: testIds } },
+          select: {
+            id: true, title: true, showResults: true,
+            questions: { select: { question: { select: { points: true } } } },
+          },
+        })
+      : Promise.resolve([]),
+    allQuestionIds.length
+      ? prisma.question.findMany({
+          where: { id: { in: allQuestionIds } },
+          select: { id: true, questionType: true, subject: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  const testMap = new Map(testsRaw.map((t) => [t.id, t]));
   const questionMap = new Map(questions.map((q) => [q.id, q]));
 
   const testHistory = attempts.map((a) => {

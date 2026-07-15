@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BookOpen, BarChart3, Mic, FileText, History, Award, Trophy, Settings,
   Users, FileQuestion, Building2, School, Upload, ChevronLeft, ChevronRight, ClipboardList,
+  Mail, Activity,
 } from "lucide-react";
 import { useSidebarUI } from "../context/SidebarContext";
 
@@ -55,6 +56,10 @@ const MENU = {
       { label: "Resumes", to: "/staff/resumes", icon: FileText },
       { label: "Mock Interviews", to: "/staff/interviews", icon: Mic },
       { label: "Interview Reports", to: "/staff/interview-reports", icon: ClipboardList },
+    ] },
+    { group: "System", items: [
+      { label: "Email Logs", to: "/admin/email-logs", icon: Mail },
+      { label: "Monitoring", to: "/admin/monitoring", icon: Activity },
     ] },
     { group: "", items: [{ label: "Settings", to: "/account", icon: Settings }] },
   ],

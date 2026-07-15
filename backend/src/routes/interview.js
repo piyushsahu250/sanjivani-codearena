@@ -13,6 +13,7 @@ const { generateResumeQuestions } = require("../utils/resumeInterviewQuestions")
 const { generateInterviewCertificatePdf } = require("../utils/interviewCertificatePdf");
 const { generateInterviewReportPdf } = require("../utils/interviewReportPdf");
 const { sendMailLogged, wrapBranded } = require("../utils/mailer");
+const { cached } = require("../utils/cache");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -620,8 +621,13 @@ router.get("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asyn
   const where = { generatedForStudentId: null };
   if (req.query.category) where.category = req.query.category;
   if (req.query.subject) where.subject = req.query.subject;
-  const questions = await prisma.interviewQuestion.findMany({ where, orderBy: { createdAt: "desc" } });
-  res.json(questions);
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 200));
+  const [questions, total] = await Promise.all([
+    prisma.interviewQuestion.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.interviewQuestion.count({ where }),
+  ]);
+  res.json({ rows: questions, page, pageSize, total, totalPages: Math.ceil(total / pageSize) });
 });
 
 router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
@@ -745,53 +751,81 @@ router.post("/admin/questions/import", authenticate, requireRole("ADMIN", "STAFF
 
 router.get("/admin/stats", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   try {
-    const where = req.requesterInstituteId ? { instituteId: req.requesterInstituteId, role: "STUDENT" } : { role: "STUDENT" };
-    const students = await prisma.user.findMany({ where, select: { id: true } });
-    const ids = students.map((s) => s.id);
-    if (ids.length === 0) return res.json({ totalStudents: 0, studentsParticipated: 0, completionPercent: 0, totalSessions: 0, completedSessions: 0, averageScore: 0, totalQuestions: 0 });
+    const stats = await cached(`interview:stats:${req.requesterInstituteId || "all"}`, 60 * 1000, async () => {
+      const where = req.requesterInstituteId ? { instituteId: req.requesterInstituteId, role: "STUDENT" } : { role: "STUDENT" };
+      const students = await prisma.user.findMany({ where, select: { id: true } });
+      const ids = students.map((s) => s.id);
+      if (ids.length === 0) return { totalStudents: 0, studentsParticipated: 0, completionPercent: 0, totalSessions: 0, completedSessions: 0, averageScore: 0, totalQuestions: 0 };
 
-    const [totalSessions, completedSessions, avgAgg, questionCount, participated] = await Promise.all([
-      prisma.interviewSession.count({ where: { studentId: { in: ids } } }),
-      prisma.interviewSession.count({ where: { studentId: { in: ids }, status: "COMPLETED" } }),
-      prisma.interviewReport.aggregate({ where: { studentId: { in: ids } }, _avg: { overallScore: true } }),
-      prisma.interviewQuestion.count({ where: { generatedForStudentId: null } }),
-      prisma.interviewSession.findMany({ where: { studentId: { in: ids } }, select: { studentId: true }, distinct: ["studentId"] }),
-    ]);
+      const [totalSessions, completedSessions, avgAgg, questionCount, participated] = await Promise.all([
+        prisma.interviewSession.count({ where: { studentId: { in: ids } } }),
+        prisma.interviewSession.count({ where: { studentId: { in: ids }, status: "COMPLETED" } }),
+        prisma.interviewReport.aggregate({ where: { studentId: { in: ids } }, _avg: { overallScore: true } }),
+        prisma.interviewQuestion.count({ where: { generatedForStudentId: null } }),
+        prisma.interviewSession.findMany({ where: { studentId: { in: ids } }, select: { studentId: true }, distinct: ["studentId"] }),
+      ]);
 
-    res.json({
-      totalStudents: ids.length,
-      studentsParticipated: participated.length,
-      completionPercent: Math.round((participated.length / ids.length) * 100),
-      totalSessions, completedSessions,
-      averageScore: Math.round(avgAgg._avg.overallScore || 0),
-      totalQuestions: questionCount,
+      return {
+        totalStudents: ids.length,
+        studentsParticipated: participated.length,
+        completionPercent: Math.round((participated.length / ids.length) * 100),
+        totalSessions, completedSessions,
+        averageScore: Math.round(avgAgg._avg.overallScore || 0),
+        totalQuestions: questionCount,
+      };
     });
+    res.json(stats);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load interview stats" });
   }
 });
 
+// Ranked by average interview score, computed and sorted DB-side (Prisma groupBy + orderBy on
+// the aggregate) rather than loading every report row and ranking in JS — the previous version
+// pulled the institute's entire student list plus every one of their reports into memory on
+// every request. Note: only students with at least one interview report appear here (a groupBy
+// naturally excludes students with zero rows) — this is a "who's been interviewing and how are
+// they doing" view, not a full roster; the full roster is available via /admin/students/:id or
+// the general student list.
 router.get("/admin/students", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   try {
     const where = req.requesterInstituteId ? { instituteId: req.requesterInstituteId, role: "STUDENT" } : { role: "STUDENT" };
-    const students = await prisma.user.findMany({ where, select: { id: true, name: true, email: true, rollNumber: true } });
-    const reports = students.length
-      ? await prisma.interviewReport.findMany({ where: { studentId: { in: students.map((s) => s.id) } }, select: { studentId: true, overallScore: true } })
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 50));
+
+    const scopedStudents = await prisma.user.findMany({ where, select: { id: true } });
+    const idList = scopedStudents.map((s) => s.id);
+    if (idList.length === 0) return res.json({ rows: [], page, pageSize, total: 0, totalPages: 0 });
+
+    const [grouped, distinctIds] = await Promise.all([
+      prisma.interviewReport.groupBy({
+        by: ["studentId"],
+        where: { studentId: { in: idList } },
+        _avg: { overallScore: true },
+        _count: { _all: true },
+        orderBy: { _avg: { overallScore: "desc" } },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.interviewReport.findMany({ where: { studentId: { in: idList } }, select: { studentId: true }, distinct: ["studentId"] }),
+    ]);
+
+    const students = grouped.length
+      ? await prisma.user.findMany({ where: { id: { in: grouped.map((g) => g.studentId) } }, select: { id: true, name: true, email: true, rollNumber: true } })
       : [];
-    const sums = new Map(), counts = new Map();
-    for (const r of reports) {
-      sums.set(r.studentId, (sums.get(r.studentId) || 0) + r.overallScore);
-      counts.set(r.studentId, (counts.get(r.studentId) || 0) + 1);
-    }
-    const rows = students
-      .map((s) => ({
-        studentId: s.id, name: s.name, email: s.email, rollNumber: s.rollNumber,
-        sessionsCompleted: counts.get(s.id) || 0,
-        averageScore: counts.has(s.id) ? Math.round(sums.get(s.id) / counts.get(s.id)) : 0,
-      }))
-      .sort((a, b) => b.averageScore - a.averageScore);
-    res.json(rows);
+    const studentMap = new Map(students.map((s) => [s.id, s]));
+    const rows = grouped.map((g) => {
+      const s = studentMap.get(g.studentId);
+      return {
+        studentId: g.studentId, name: s?.name, email: s?.email, rollNumber: s?.rollNumber,
+        sessionsCompleted: g._count._all,
+        averageScore: Math.round(g._avg.overallScore || 0),
+      };
+    });
+
+    const total = distinctIds.length;
+    res.json({ rows, page, pageSize, total, totalPages: Math.ceil(total / pageSize) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load student list" });
@@ -963,76 +997,97 @@ router.get("/admin/sessions", authenticate, requireRole("ADMIN", "STAFF"), attac
 // /admin/sessions above (so selecting a filter updates both the table and the charts).
 router.get("/admin/analytics", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   try {
+    // Staff requests are already institute-scoped, so the working set is naturally bounded. An
+    // unscoped platform Admin request with no explicit date range is not — it would load every
+    // completed interview across every institute, ever. Default that specific case to a rolling
+    // 90-day window rather than silently materializing the whole table; an Admin who genuinely
+    // wants all-time, cross-institute data can still ask for it explicitly via dateFrom/dateTo.
+    let defaultDateRangeApplied = null;
+    if (!req.requesterInstituteId && !req.query.dateFrom && !req.query.dateTo) {
+      const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      defaultDateRangeApplied = ninetyDaysAgo.toISOString().slice(0, 10);
+      req.query.dateFrom = defaultDateRangeApplied;
+    }
     const where = buildAdminSessionWhere(req);
-    const sessions = await prisma.interviewSession.findMany({
-      where,
-      include: {
-        student: { select: { batchYear: true, department: true, class: { select: { name: true } } } },
-        report: { select: { overallScore: true } },
-      },
-    });
+    // Cache key includes the full effective filter set (post date-default) so two different
+    // filter combinations never collide — TTL is short since an admin actively narrowing filters
+    // expects each combination to compute fresh, this just protects against rapid re-renders/
+    // double-fetches hitting the DB twice for the identical query.
+    const cacheKey = `interview:analytics:${req.requesterInstituteId || "all"}:${JSON.stringify(req.query)}`;
+    const payload = await cached(cacheKey, 30 * 1000, async () => {
+      const sessions = await prisma.interviewSession.findMany({
+        where,
+        include: {
+          student: { select: { batchYear: true, department: true, class: { select: { name: true } } } },
+          report: { select: { overallScore: true } },
+        },
+      });
 
-    const withScore = sessions.filter((s) => s.report);
-    const scores = withScore.map((s) => s.report.overallScore);
-    const totalInterviews = sessions.length;
-    const completedCount = sessions.filter((s) => s.status === "COMPLETED").length;
-    const averageScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-    const highestScore = scores.length ? Math.max(...scores) : 0;
-    const lowestScore = scores.length ? Math.min(...scores) : 0;
+      const withScore = sessions.filter((s) => s.report);
+      const scores = withScore.map((s) => s.report.overallScore);
+      const totalInterviews = sessions.length;
+      const completedCount = sessions.filter((s) => s.status === "COMPLETED").length;
+      const averageScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+      const highestScore = scores.length ? Math.max(...scores) : 0;
+      const lowestScore = scores.length ? Math.min(...scores) : 0;
 
-    const now = Date.now();
-    const weekMs = 7 * 24 * 60 * 60 * 1000, monthMs = 30 * 24 * 60 * 60 * 1000;
-    const thisWeekCount = sessions.filter((s) => s.submittedAt && now - new Date(s.submittedAt).getTime() <= weekMs).length;
-    const thisMonthCount = sessions.filter((s) => s.submittedAt && now - new Date(s.submittedAt).getTime() <= monthMs).length;
+      const now = Date.now();
+      const weekMs = 7 * 24 * 60 * 60 * 1000, monthMs = 30 * 24 * 60 * 60 * 1000;
+      const thisWeekCount = sessions.filter((s) => s.submittedAt && now - new Date(s.submittedAt).getTime() <= weekMs).length;
+      const thisMonthCount = sessions.filter((s) => s.submittedAt && now - new Date(s.submittedAt).getTime() <= monthMs).length;
 
-    function groupAvg(keyFn) {
-      const sums = new Map(), counts = new Map();
+      function groupAvg(keyFn) {
+        const sums = new Map(), counts = new Map();
+        for (const s of withScore) {
+          const key = keyFn(s);
+          if (!key) continue;
+          sums.set(key, (sums.get(key) || 0) + s.report.overallScore);
+          counts.set(key, (counts.get(key) || 0) + 1);
+        }
+        return [...sums.entries()]
+          .map(([key, sum]) => ({ key, count: counts.get(key), averageScore: Math.round(sum / counts.get(key)) }))
+          .sort((a, b) => b.count - a.count);
+      }
+
+      const companyWise = groupAvg((s) => s.config?.company || null);
+      const byClass = groupAvg((s) => s.student.class?.name || null);
+      const byBatch = groupAvg((s) => s.student.batchYear || null);
+      const byType = groupAvg((s) => sessionTypeLabel(s));
+
+      const weekly = new Map(), monthly = new Map();
       for (const s of withScore) {
-        const key = keyFn(s);
-        if (!key) continue;
-        sums.set(key, (sums.get(key) || 0) + s.report.overallScore);
-        counts.set(key, (counts.get(key) || 0) + 1);
+        if (!s.submittedAt) continue;
+        const d = new Date(s.submittedAt);
+        const weekKey = `${d.getFullYear()}-W${String(Math.ceil(d.getDate() / 7)).padStart(2, "0")}-${d.getMonth() + 1}`;
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        for (const [map, key] of [[weekly, weekKey], [monthly, monthKey]]) {
+          if (!map.has(key)) map.set(key, { sum: 0, count: 0 });
+          const cur = map.get(key);
+          cur.sum += s.report.overallScore; cur.count++;
+        }
       }
-      return [...sums.entries()]
-        .map(([key, sum]) => ({ key, count: counts.get(key), averageScore: Math.round(sum / counts.get(key)) }))
-        .sort((a, b) => b.count - a.count);
-    }
+      const toSeries = (map) => [...map.entries()].map(([period, { sum, count }]) => ({ period, averageScore: Math.round(sum / count), count }));
 
-    const companyWise = groupAvg((s) => s.config?.company || null);
-    const byClass = groupAvg((s) => s.student.class?.name || null);
-    const byBatch = groupAvg((s) => s.student.batchYear || null);
-    const byType = groupAvg((s) => sessionTypeLabel(s));
-
-    const weekly = new Map(), monthly = new Map();
-    for (const s of withScore) {
-      if (!s.submittedAt) continue;
-      const d = new Date(s.submittedAt);
-      const weekKey = `${d.getFullYear()}-W${String(Math.ceil(d.getDate() / 7)).padStart(2, "0")}-${d.getMonth() + 1}`;
-      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      for (const [map, key] of [[weekly, weekKey], [monthly, monthKey]]) {
-        if (!map.has(key)) map.set(key, { sum: 0, count: 0 });
-        const cur = map.get(key);
-        cur.sum += s.report.overallScore; cur.count++;
+      // Placement-readiness is a rule-based score bucket (>=75 Ready, 50-74 Needs Improvement,
+      // <50 Not Ready) for a quick-glance distribution chart — a heuristic threshold, not a
+      // predictive model, same spirit as the rest of this platform's "no real AI" scoring.
+      const placementReadiness = { ready: 0, needsImprovement: 0, notReady: 0 };
+      for (const sc of scores) {
+        if (sc >= 75) placementReadiness.ready++;
+        else if (sc >= 50) placementReadiness.needsImprovement++;
+        else placementReadiness.notReady++;
       }
-    }
-    const toSeries = (map) => [...map.entries()].map(([period, { sum, count }]) => ({ period, averageScore: Math.round(sum / count), count }));
 
-    // Placement-readiness is a rule-based score bucket (>=75 Ready, 50-74 Needs Improvement,
-    // <50 Not Ready) for a quick-glance distribution chart — a heuristic threshold, not a
-    // predictive model, same spirit as the rest of this platform's "no real AI" scoring.
-    const placementReadiness = { ready: 0, needsImprovement: 0, notReady: 0 };
-    for (const sc of scores) {
-      if (sc >= 75) placementReadiness.ready++;
-      else if (sc >= 50) placementReadiness.needsImprovement++;
-      else placementReadiness.notReady++;
-    }
-
-    res.json({
-      totalInterviews, completedCount, averageScore, highestScore, lowestScore, thisWeekCount, thisMonthCount,
-      companyWise, byClass, byBatch, byType,
-      weeklyTrend: toSeries(weekly), monthlyTrend: toSeries(monthly),
-      placementReadiness,
+      return {
+        totalInterviews, completedCount, averageScore, highestScore, lowestScore, thisWeekCount, thisMonthCount,
+        companyWise, byClass, byBatch, byType,
+        weeklyTrend: toSeries(weekly), monthlyTrend: toSeries(monthly),
+        placementReadiness,
+        defaultDateRangeApplied,
+      };
     });
+
+    res.json(payload);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load interview analytics" });

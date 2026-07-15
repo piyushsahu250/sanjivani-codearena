@@ -116,6 +116,11 @@ export default function InterviewReports() {
         <p style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 4 }}>
           {user?.role === "STAFF" ? "Scoped to your institute — view, search, filter, and download only." : "Cross-institute view — all institutes."}
         </p>
+        {analytics?.defaultDateRangeApplied && (
+          <p style={{ fontSize: 12, color: "var(--amber-dark, #a06a1a)", marginTop: 4 }}>
+            Showing interviews since {analytics.defaultDateRangeApplied} (last 90 days) — set a Date From below to see earlier data across all institutes.
+          </p>
+        )}
 
         {analytics && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 20 }}>

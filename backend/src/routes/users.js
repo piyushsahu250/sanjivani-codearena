@@ -100,10 +100,17 @@ router.patch("/me", authenticate, async (req, res) => {
   }
 });
 
-// ADMIN: list all users
+// ADMIN: list all users. Paginated — this is the whole User table with no institute scoping
+// (platform Super Admin view), which at scale is exactly the "load everything, render everything"
+// pattern that doesn't hold up past a few hundred rows.
 router.get("/", authenticate, requireRole("ADMIN"), async (req, res) => {
-  const users = await prisma.user.findMany({ select: SELECT_FIELDS, orderBy: { createdAt: "desc" } });
-  res.json(users);
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 200));
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({ select: SELECT_FIELDS, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.user.count(),
+  ]);
+  res.json({ rows: users, page, pageSize, total, totalPages: Math.ceil(total / pageSize) });
 });
 
 // ADMIN: create a Staff, Admin, or Student account directly (no self-registration needed).

@@ -22,7 +22,10 @@ export default function QuestionBank() {
   const [mergeTargetId, setMergeTargetId] = useState("");
 
   const [questions, setQuestions] = useState([]);
+  const [pageMeta, setPageMeta] = useState({ page: 1, totalPages: 1, total: 0 });
+  const [page, setPage] = useState(1);
   const [meta, setMeta] = useState({ subjects: [], topics: [], creators: [] });
+  const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
@@ -48,11 +51,22 @@ export default function QuestionBank() {
     api.get("/questions/meta/filters").then((res) => setMeta(res.data));
   }, []);
 
+  // Debounce free-text search — previously fired one API call per keystroke.
   useEffect(() => {
-    if (activeFolder) load();
+    const t = setTimeout(() => setQ(qInput), 350);
+    return () => clearTimeout(t);
+  }, [qInput]);
+
+  useEffect(() => {
+    setPage(1);
     setSelectedIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, subject, topic, difficulty, questionType, createdById, activeFolder]);
+
+  useEffect(() => {
+    if (activeFolder) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, subject, topic, difficulty, questionType, createdById, activeFolder, page]);
 
   const foldersById = useMemo(() => new Map((folders || []).map((f) => [f.id, f])), [folders]);
 
@@ -86,7 +100,7 @@ export default function QuestionBank() {
 
   function load() {
     setLoading(true);
-    const params = {};
+    const params = { page, pageSize: 50 };
     if (q) params.q = q;
     if (subject) params.subject = subject;
     if (topic) params.topic = topic;
@@ -96,7 +110,8 @@ export default function QuestionBank() {
     if (activeFolder?.id === "__none__") params.folderId = "__none__";
     else if (activeFolder && activeFolder.id !== "__all__") params.folderId = activeFolder.id;
     api.get("/questions", { params }).then((res) => {
-      setQuestions(res.data);
+      setQuestions(res.data.rows);
+      setPageMeta({ page: res.data.page, totalPages: res.data.totalPages, total: res.data.total });
       setLoading(false);
     });
   }
@@ -330,8 +345,8 @@ export default function QuestionBank() {
               <input
                 style={{ ...inputStyle, flex: "1 1 220px" }}
                 placeholder="Search questions…"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
+                value={qInput}
+                onChange={(e) => setQInput(e.target.value)}
               />
               <select style={selectStyle} value={subject} onChange={(e) => setSubject(e.target.value)}>
                 <option value="">All categories (subject)</option>
@@ -359,7 +374,7 @@ export default function QuestionBank() {
 
             <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
               <button className="btn btn-ghost" onClick={() => downloadFile("/questions/export", "question-bank-export.xlsx")}>
-                ⬇ Export ({questions.length})
+                ⬇ Export ({pageMeta.total})
               </button>
               <button className="btn btn-ghost" onClick={() => downloadFile("/questions/bulk-template", "question-bank-template.xlsx")}>
                 ⬇ Download import template
@@ -446,6 +461,14 @@ export default function QuestionBank() {
                 </div>
               )}
             </div>
+
+            {!loading && pageMeta.totalPages > 1 && (
+              <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "center", alignItems: "center" }}>
+                <button className="btn btn-ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>← Prev</button>
+                <span className="mono" style={{ fontSize: 13 }}>Page {pageMeta.page} / {pageMeta.totalPages} ({pageMeta.total} total)</span>
+                <button className="btn btn-ghost" disabled={page >= pageMeta.totalPages} onClick={() => setPage((p) => p + 1)}>Next →</button>
+              </div>
+            )}
           </>
         )}
       </div>

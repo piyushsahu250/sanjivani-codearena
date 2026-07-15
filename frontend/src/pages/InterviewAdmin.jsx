@@ -22,12 +22,12 @@ export default function InterviewAdmin() {
 
   function loadAll() {
     api.get("/interview/admin/stats").then((res) => setStats(res.data));
-    api.get("/interview/admin/students").then((res) => setStudents(res.data));
+    api.get("/interview/admin/students").then((res) => setStudents(res.data.rows));
     api.get("/interview/admin/weak-topics").then((res) => setWeakTopics(res.data));
     loadQuestions();
   }
   function loadQuestions() {
-    api.get("/interview/admin/questions", { params: filterCategory ? { category: filterCategory } : {} }).then((res) => setQuestions(res.data));
+    api.get("/interview/admin/questions", { params: filterCategory ? { category: filterCategory } : {} }).then((res) => setQuestions(res.data.rows));
   }
   useEffect(loadAll, []);
   useEffect(loadQuestions, [filterCategory]);

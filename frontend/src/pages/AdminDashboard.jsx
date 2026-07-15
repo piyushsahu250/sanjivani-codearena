@@ -37,7 +37,7 @@ export default function AdminDashboard() {
   const [lookingUp, setLookingUp] = useState(false);
 
   function load() {
-    api.get("/users").then((res) => setUsers(res.data));
+    api.get("/users", { params: { pageSize: 500 } }).then((res) => setUsers(res.data.rows));
     api.get("/admin/stats").then((res) => setStats(res.data));
   }
 

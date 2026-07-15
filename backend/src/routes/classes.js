@@ -4,12 +4,14 @@ const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
 const { generateTempPassword } = require("../utils/password");
+const { cached, invalidate } = require("../utils/cache");
 
 const router = express.Router();
 
 // ADMIN/STAFF: list classes/programs, with a student headcount per class. Institute-scoped
 // accounts always see only their own institute; platform-level accounts (no instituteId)
-// may optionally filter via ?instituteId=.
+// may optionally filter via ?instituteId=. Cached per scope key — classes change rarely but
+// this list is read on nearly every test-creation/bulk-upload/student-management page load.
 router.get("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   const where = {};
   if (req.requesterInstituteId) {
@@ -17,14 +19,17 @@ router.get("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInst
   } else if (req.query.instituteId) {
     where.instituteId = req.query.instituteId;
   }
-  const classes = await prisma.class.findMany({
-    where,
-    orderBy: [{ name: "asc" }, { batchYear: "asc" }],
-    include: {
-      institute: { select: { id: true, name: true } },
-      _count: { select: { users: true } },
-    },
-  });
+  const cacheKey = `classes:list:${req.requesterInstituteId || req.query.instituteId || "all"}`;
+  const classes = await cached(cacheKey, 2 * 60 * 1000, () =>
+    prisma.class.findMany({
+      where,
+      orderBy: [{ name: "asc" }, { batchYear: "asc" }],
+      include: {
+        institute: { select: { id: true, name: true } },
+        _count: { select: { users: true } },
+      },
+    })
+  );
   res.json(classes);
 });
 
@@ -55,6 +60,7 @@ router.post("/", authenticate, requireRole("ADMIN"), attachRequesterInstitute, a
       data: { name: name.trim(), code: code?.trim() || null, batchYear: String(batchYear).trim(), instituteId },
       include: { institute: { select: { id: true, name: true } }, _count: { select: { users: true } } },
     });
+    invalidate("classes:");
     res.json(cls);
   } catch (err) {
     console.error(err);
@@ -106,6 +112,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN"), attachRequesterInstitut
       },
       include: { institute: { select: { id: true, name: true } }, _count: { select: { users: true } } },
     });
+    invalidate("classes:");
     res.json(cls);
   } catch (err) {
     console.error(err);
@@ -123,6 +130,7 @@ router.delete("/:id", authenticate, requireRole("ADMIN"), attachRequesterInstitu
     }
 
     await prisma.class.delete({ where: { id: req.params.id } });
+    invalidate("classes:");
     res.json({ success: true });
   } catch (err) {
     if (err.code === "P2003" || err.code === "P2014") {

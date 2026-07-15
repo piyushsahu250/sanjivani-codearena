@@ -1,6 +1,10 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const compression = require("compression");
+const rateLimit = require("express-rate-limit");
+const { timingMiddleware, recordProcessError } = require("./utils/metrics");
 
 const authRoutes = require("./routes/auth");
 const testRoutes = require("./routes/tests");
@@ -19,10 +23,19 @@ const moduleCodingRoutes = require("./routes/moduleCoding");
 const searchRoutes = require("./routes/search");
 
 const app = express();
+app.use(helmet());
+app.use(compression());
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
+app.use(timingMiddleware);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok", service: "CodeArena API" }));
+
+// Global floor well above any legitimate per-user traffic pattern (dashboard loads fire several
+// parallel GETs; this is not meant to constrain normal use, just block runaway scripts/scraping).
+// Expensive routes (judge execution, etc.) already carry their own tighter per-route limiters.
+const globalLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 600, standardHeaders: true, legacyHeaders: false });
+app.use(globalLimiter);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/tests", testRoutes);
@@ -39,6 +52,15 @@ app.use("/api/resume", resumeRoutes);
 app.use("/api/interview", interviewRoutes);
 app.use("/api/module-coding", moduleCodingRoutes);
 app.use("/api/search", searchRoutes);
+
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err);
+  recordProcessError(err, "uncaughtException");
+});
+process.on("unhandledRejection", (err) => {
+  console.error("[unhandledRejection]", err);
+  recordProcessError(err, "unhandledRejection");
+});
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`CodeArena API running on port ${PORT}`));

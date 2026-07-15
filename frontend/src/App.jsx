@@ -21,8 +21,13 @@ const TestTaking = lazy(() => import("./pages/TestTaking"));
 const LessonView = lazy(() => import("./pages/LessonView"));
 const InterviewSession = lazy(() => import("./pages/InterviewSession"));
 const ModuleCodingAssessment = lazy(() => import("./pages/ModuleCodingAssessment"));
-import AdminDashboard from "./pages/AdminDashboard";
-import StaffDashboard from "./pages/StaffDashboard";
+// Lazy-loaded: these pull in recharts, which every student/login/account-settings page load was
+// previously downloading regardless of whether that user ever visits a chart-bearing page.
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const StaffDashboard = lazy(() => import("./pages/StaffDashboard"));
+const StudentPerformance = lazy(() => import("./pages/StudentPerformance"));
+const InterviewProgress = lazy(() => import("./pages/InterviewProgress"));
+const InterviewReports = lazy(() => import("./pages/InterviewReports"));
 import CreateQuestion from "./pages/CreateQuestion";
 import QuestionBank from "./pages/QuestionBank";
 import CreateTest from "./pages/CreateTest";
@@ -37,7 +42,6 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import ForceChangePassword from "./pages/ForceChangePassword";
 import StudentSearch from "./pages/StudentSearch";
-import StudentPerformance from "./pages/StudentPerformance";
 import LearningHub from "./pages/LearningHub";
 import CourseOverview from "./pages/CourseOverview";
 import CourseCertificate from "./pages/CourseCertificate";
@@ -51,13 +55,12 @@ import InterviewHub from "./pages/InterviewHub";
 import InterviewReport from "./pages/InterviewReport";
 import InterviewHistory from "./pages/InterviewHistory";
 import InterviewLeaderboard from "./pages/InterviewLeaderboard";
-import InterviewProgress from "./pages/InterviewProgress";
 import InterviewCertificate from "./pages/InterviewCertificate";
 import InterviewVerify from "./pages/InterviewVerify";
 import InterviewAdmin from "./pages/InterviewAdmin";
-import InterviewReports from "./pages/InterviewReports";
 import InterviewReportDetail from "./pages/InterviewReportDetail";
 import EmailLogs from "./pages/EmailLogs";
+import SystemMonitoring from "./pages/SystemMonitoring";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
@@ -117,7 +120,7 @@ export default function App() {
             }
           />
           <Route path="/test/:id/result" element={<Protected roles={["STUDENT"]}><StudentTestResult /></Protected>} />
-          <Route path="/dashboard/performance" element={<Protected roles={["STUDENT"]}><StudentPerformance /></Protected>} />
+          <Route path="/dashboard/performance" element={<Protected roles={["STUDENT"]}><Suspense fallback={<LoadingScreen />}><StudentPerformance /></Suspense></Protected>} />
           <Route path="/achievements" element={<Protected roles={["STUDENT"]}><Achievements /></Protected>} />
           <Route path="/resume" element={<Protected roles={["STUDENT"]}><ResumeBuilder /></Protected>} />
           <Route path="/interview" element={<Protected roles={["STUDENT"]}><InterviewHub /></Protected>} />
@@ -134,7 +137,7 @@ export default function App() {
           <Route path="/interview/report/:id" element={<Protected roles={["STUDENT"]}><InterviewReport /></Protected>} />
           <Route path="/interview/history" element={<Protected roles={["STUDENT"]}><InterviewHistory /></Protected>} />
           <Route path="/interview/leaderboard" element={<Protected roles={["STUDENT"]}><InterviewLeaderboard /></Protected>} />
-          <Route path="/interview/progress" element={<Protected roles={["STUDENT"]}><InterviewProgress /></Protected>} />
+          <Route path="/interview/progress" element={<Protected roles={["STUDENT"]}><Suspense fallback={<LoadingScreen />}><InterviewProgress /></Suspense></Protected>} />
           <Route path="/interview/certificate" element={<Protected roles={["STUDENT"]}><InterviewCertificate /></Protected>} />
 
           {/* Learning module — browsable by Student, Admin, and Staff (admin/staff preview content they manage) */}
@@ -163,12 +166,12 @@ export default function App() {
           />
 
           {/* Staff (and Admin, who can also manage tests/questions) */}
-          <Route path="/staff" element={<Protected roles={["ADMIN", "STAFF"]}><StaffDashboard /></Protected>} />
+          <Route path="/staff" element={<Protected roles={["ADMIN", "STAFF"]}><Suspense fallback={<LoadingScreen />}><StaffDashboard /></Suspense></Protected>} />
           <Route path="/staff/learning" element={<Protected roles={["ADMIN", "STAFF"]}><LearningManagement /></Protected>} />
           <Route path="/staff/gamification" element={<Protected roles={["ADMIN", "STAFF"]}><GamificationManagement /></Protected>} />
           <Route path="/staff/resumes" element={<Protected roles={["ADMIN", "STAFF"]}><ResumeAdmin /></Protected>} />
           <Route path="/staff/interviews" element={<Protected roles={["ADMIN", "STAFF"]}><InterviewAdmin /></Protected>} />
-          <Route path="/staff/interview-reports" element={<Protected roles={["ADMIN", "STAFF"]}><InterviewReports /></Protected>} />
+          <Route path="/staff/interview-reports" element={<Protected roles={["ADMIN", "STAFF"]}><Suspense fallback={<LoadingScreen />}><InterviewReports /></Suspense></Protected>} />
           <Route path="/staff/interview-reports/:sessionId" element={<Protected roles={["ADMIN", "STAFF"]}><InterviewReportDetail /></Protected>} />
           <Route path="/staff/questions" element={<Protected roles={["ADMIN", "STAFF"]}><QuestionBank /></Protected>} />
           <Route path="/staff/questions/new" element={<Protected roles={["ADMIN", "STAFF"]}><CreateQuestion /></Protected>} />
@@ -178,17 +181,18 @@ export default function App() {
           <Route path="/staff/tests/:id/results" element={<Protected roles={["ADMIN", "STAFF"]}><TestResults /></Protected>} />
           <Route path="/staff/tests/:id/preview" element={<Protected roles={["ADMIN", "STAFF"]}><TestPreview /></Protected>} />
           <Route path="/staff/students" element={<Protected roles={["ADMIN", "STAFF"]}><StudentSearch basePath="/staff" /></Protected>} />
-          <Route path="/staff/students/:id" element={<Protected roles={["ADMIN", "STAFF"]}><StudentPerformance basePath="/staff" /></Protected>} />
+          <Route path="/staff/students/:id" element={<Protected roles={["ADMIN", "STAFF"]}><Suspense fallback={<LoadingScreen />}><StudentPerformance basePath="/staff" /></Suspense></Protected>} />
 
           {/* Admin only: account management */}
-          <Route path="/admin" element={<Protected roles={["ADMIN"]}><AdminDashboard /></Protected>} />
+          <Route path="/admin" element={<Protected roles={["ADMIN"]}><Suspense fallback={<LoadingScreen />}><AdminDashboard /></Suspense></Protected>} />
           <Route path="/admin/bulk-upload" element={<Protected roles={["ADMIN"]}><BulkUpload /></Protected>} />
           <Route path="/admin/classes" element={<Protected roles={["ADMIN"]}><ClassManagement /></Protected>} />
           <Route path="/admin/classes/:id/students" element={<Protected roles={["ADMIN"]}><ClassStudents /></Protected>} />
           <Route path="/admin/institutes" element={<Protected roles={["ADMIN"]}><InstituteManagement /></Protected>} />
           <Route path="/admin/email-logs" element={<Protected roles={["ADMIN"]}><EmailLogs /></Protected>} />
+          <Route path="/admin/monitoring" element={<Protected roles={["ADMIN"]}><SystemMonitoring /></Protected>} />
           <Route path="/admin/students" element={<Protected roles={["ADMIN"]}><StudentSearch basePath="/admin" /></Protected>} />
-          <Route path="/admin/students/:id" element={<Protected roles={["ADMIN"]}><StudentPerformance basePath="/admin" /></Protected>} />
+          <Route path="/admin/students/:id" element={<Protected roles={["ADMIN"]}><Suspense fallback={<LoadingScreen />}><StudentPerformance basePath="/admin" /></Suspense></Protected>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

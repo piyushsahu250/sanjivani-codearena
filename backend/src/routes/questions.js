@@ -174,14 +174,23 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterIns
   }
 });
 
-// Question Bank: list with search + filters
+// Question Bank: list with search + filters. Paginated — an institute's bank can run into the
+// thousands of questions, and rendering/transferring the whole thing on every load doesn't scale.
 router.get("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
-  const questions = await prisma.question.findMany({
-    where: buildWhere(req.query, req.requesterInstituteId),
-    include: { _count: { select: { testCases: true } }, createdBy: { select: { id: true, name: true } } },
-    orderBy: { createdAt: "desc" },
-  });
-  res.json(questions);
+  const where = buildWhere(req.query, req.requesterInstituteId);
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 100));
+  const [questions, total] = await Promise.all([
+    prisma.question.findMany({
+      where,
+      include: { _count: { select: { testCases: true } }, createdBy: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.question.count({ where }),
+  ]);
+  res.json({ rows: questions, page, pageSize, total, totalPages: Math.ceil(total / pageSize) });
 });
 
 // Distinct subjects/topics/creators — powers the filter dropdowns. Scoped the same way the list

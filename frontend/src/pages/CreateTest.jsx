@@ -38,7 +38,7 @@ export default function CreateTest() {
   }, []);
 
   useEffect(() => {
-    api.get("/questions", { params: search ? { q: search } : {} }).then((res) => setQuestions(res.data));
+    api.get("/questions", { params: { ...(search ? { q: search } : {}), pageSize: 100 } }).then((res) => setQuestions(res.data.rows));
   }, [search]);
 
   useEffect(() => {
@@ -284,12 +284,12 @@ function QuestionBankPickerModal({ selected, onToggle, onQuestionsSeen, onClose 
   useEffect(() => {
     if (!activeFolder) return;
     setLoadingItems(true);
-    const params = { q: q || undefined };
+    const params = { q: q || undefined, pageSize: 200 };
     if (activeFolder.id === "__none__") params.folderId = "__none__";
     else if (activeFolder.id !== "__all__") params.folderId = activeFolder.id;
     api.get("/questions", { params }).then((res) => {
-      setItems(res.data);
-      onQuestionsSeen(res.data);
+      setItems(res.data.rows);
+      onQuestionsSeen(res.data.rows);
       setLoadingItems(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

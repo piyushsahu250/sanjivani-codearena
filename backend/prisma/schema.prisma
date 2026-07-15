@@ -107,6 +107,11 @@ model User {
   interviewReports     InterviewReport[]
   interviewCertificate InterviewCertificate?
   emailLogs            EmailLog[]
+
+  @@index([instituteId])
+  @@index([classId])
+  @@index([role])
+  @@index([department])
 }
 
 model Test {
@@ -131,6 +136,10 @@ model Test {
   questions TestQuestion[]
   attempts  TestAttempt[]
   classes   TestClass[] // empty = open to all classes (legacy/unscoped tests)
+
+  @@index([createdById])
+  @@index([isPublished])
+  @@index([startTime, endTime])
 }
 
 // Join table: which classes a test is assigned to
@@ -285,6 +294,7 @@ model Submission {
   @@unique([attemptId, questionId])
   @@index([attemptId])
   @@index([questionId])
+  @@index([studentId])
 }
 
 // Lightweight audit trail for sensitive admin actions (currently just reattempt grants).

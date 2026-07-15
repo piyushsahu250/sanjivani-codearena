@@ -73,16 +73,17 @@ async function getNotifications(student) {
   const in48h = new Date(now.getTime() + 48 * 3600 * 1000);
   const last7d = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
 
-  const assignedTests = await prisma.test.findMany({
-    where: {
-      isPublished: true,
-      OR: [{ classes: { none: {} } }, ...(student.classId ? [{ classes: { some: { classId: student.classId } } }] : [])],
-    },
-    select: { id: true, title: true, startTime: true, createdAt: true },
-  });
-  const myAttemptTestIds = new Set(
-    (await prisma.testAttempt.findMany({ where: { studentId: student.id }, select: { testId: true } })).map((a) => a.testId)
-  );
+  const [assignedTests, myAttempts] = await Promise.all([
+    prisma.test.findMany({
+      where: {
+        isPublished: true,
+        OR: [{ classes: { none: {} } }, ...(student.classId ? [{ classes: { some: { classId: student.classId } } }] : [])],
+      },
+      select: { id: true, title: true, startTime: true, createdAt: true },
+    }),
+    prisma.testAttempt.findMany({ where: { studentId: student.id }, select: { testId: true } }),
+  ]);
+  const myAttemptTestIds = new Set(myAttempts.map((a) => a.testId));
 
   for (const t of assignedTests) {
     if (t.createdAt >= last7d && !myAttemptTestIds.has(t.id)) {
@@ -142,10 +143,12 @@ router.get("/student", authenticate, requireRole("STUDENT"), async (req, res) =>
 
     let learningProgressPercent = 0;
     if (javaCourse) {
-      const totalLessons = await prisma.lesson.count({ where: { module: { courseId: javaCourse.id } } });
-      const completedLessons = await prisma.lessonProgress.count({
-        where: { studentId: student.id, status: "COMPLETED", lesson: { module: { courseId: javaCourse.id } } },
-      });
+      const [totalLessons, completedLessons] = await Promise.all([
+        prisma.lesson.count({ where: { module: { courseId: javaCourse.id } } }),
+        prisma.lessonProgress.count({
+          where: { studentId: student.id, status: "COMPLETED", lesson: { module: { courseId: javaCourse.id } } },
+        }),
+      ]);
       learningProgressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
     }
 

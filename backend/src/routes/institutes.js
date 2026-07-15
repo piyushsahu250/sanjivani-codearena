@@ -1,15 +1,21 @@
 const express = require("express");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
+const { cached, invalidate } = require("../utils/cache");
 
 const router = express.Router();
 
-// ADMIN/STAFF: list all institutes
+// ADMIN/STAFF: list all institutes. Cached — this list changes rarely (an admin adding/editing
+// an institute is a rare event, not a per-request one) but gets read on nearly every admin page
+// load for the institute-picker dropdown. Invalidated explicitly on create/update/delete below
+// rather than relying on the 2-minute TTL to catch up.
 router.get("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
-  const institutes = await prisma.institute.findMany({
-    orderBy: { name: "asc" },
-    include: { _count: { select: { classes: true, users: true } } },
-  });
+  const institutes = await cached("institutes:list", 2 * 60 * 1000, () =>
+    prisma.institute.findMany({
+      orderBy: { name: "asc" },
+      include: { _count: { select: { classes: true, users: true } } },
+    })
+  );
   res.json(institutes);
 });
 
@@ -25,6 +31,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
     const institute = await prisma.institute.create({
       data: { name: name.trim(), code: code?.trim() || null, address: address?.trim() || null, contact: contact?.trim() || null },
     });
+    invalidate("institutes:");
     res.json(institute);
   } catch (err) {
     console.error(err);
@@ -54,6 +61,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
         isActive: isActive ?? existing.isActive,
       },
     });
+    invalidate("institutes:");
     res.json(institute);
   } catch (err) {
     console.error(err);
@@ -72,6 +80,7 @@ router.delete("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
       return res.status(409).json({ error: "This institute has classes or users linked to it and can't be deleted. Remove or reassign them first." });
     }
     await prisma.institute.delete({ where: { id: req.params.id } });
+    invalidate("institutes:");
     res.json({ success: true });
   } catch (err) {
     console.error(err);

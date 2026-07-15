@@ -4,6 +4,7 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
 const { computeLevel, getTotalXp } = require("../utils/gamification");
 const { computeClassRank } = require("../utils/classRank");
+const { cached, invalidate } = require("../utils/cache");
 
 const router = express.Router();
 
@@ -78,14 +79,13 @@ async function computeXpValues(ids) {
 }
 
 async function computeProblemsValues(ids) {
-  const runs = await prisma.practiceRunLog.findMany({ where: { studentId: { in: ids }, verdict: "ACCEPTED" }, select: { studentId: true, questionId: true } });
-  const byStudent = new Map();
-  for (const r of runs) {
-    if (!byStudent.has(r.studentId)) byStudent.set(r.studentId, new Set());
-    byStudent.get(r.studentId).add(r.questionId);
-  }
+  // groupBy on (studentId, questionId) dedupes at the DB level — one row per distinct question a
+  // student has ever solved, not one row per attempt. A student who re-ran an already-solved
+  // question 50 times previously transferred and processed 50 rows for that one problem; this
+  // transfers exactly 1.
+  const rows = await prisma.practiceRunLog.groupBy({ by: ["studentId", "questionId"], where: { studentId: { in: ids }, verdict: "ACCEPTED" } });
   const map = new Map();
-  for (const [id, set] of byStudent) map.set(id, set.size);
+  for (const r of rows) map.set(r.studentId, (map.get(r.studentId) || 0) + 1);
   return map;
 }
 
@@ -112,6 +112,31 @@ async function computeLearningValues(ids) {
   return map;
 }
 
+// Finds the top-100 student ids for the metric actually driving the sort, so the (up to) three
+// other display-column metrics only ever get computed for the 100 students who'll be shown —
+// not the entire scope, which at institute/overall scope could be thousands of students. xp and
+// streak have a directly sortable DB column and get a real DB-side top-N; problems and learning
+// don't (their values are computed, not stored), so those two still scan the full scope once —
+// unavoidable without a stored/materialized column — but the other three metrics no longer do.
+async function resolveTopIdsForMetric(metric, ids) {
+  if (metric === "xp") {
+    const rows = await prisma.xpEvent.groupBy({ by: ["studentId"], where: { studentId: { in: ids } }, _sum: { xp: true }, orderBy: { _sum: { xp: "desc" } }, take: 100 });
+    return rows.map((r) => r.studentId);
+  }
+  if (metric === "streak") {
+    const yesterday = new Date(); yesterday.setHours(0, 0, 0, 0); yesterday.setDate(yesterday.getDate() - 1);
+    const rows = await prisma.studentStreak.findMany({
+      where: { studentId: { in: ids }, lastActiveDate: { gte: yesterday } },
+      orderBy: { currentStreak: "desc" },
+      take: 100,
+      select: { studentId: true },
+    });
+    return rows.map((r) => r.studentId);
+  }
+  const map = metric === "problems" ? await computeProblemsValues(ids) : await computeLearningValues(ids);
+  return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 100).map(([id]) => id);
+}
+
 // Any authenticated user: leaderboard ranked by one metric (xp/problems/learning/streak),
 // scoped to class/department/institute/overall. Always returns XP + problems-solved + streak
 // as display columns regardless of which metric is driving the sort, per the spec's column list.
@@ -128,23 +153,31 @@ router.get("/leaderboard", authenticate, async (req, res) => {
     const ids = resolved.ids;
     if (ids.length === 0) return res.json([]);
 
-    const [xpMap, problemsMap, streakMap, learningMap] = await Promise.all([
-      computeXpValues(ids), computeProblemsValues(ids), computeStreakValues(ids), computeLearningValues(ids),
-    ]);
-    const students = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, rollNumber: true } });
-    const nameMap = new Map(students.map((s) => [s.id, s]));
-    const primaryMap = { xp: xpMap, problems: problemsMap, streak: streakMap, learning: learningMap }[metric];
+    // Short TTL — a leaderboard doesn't need to reflect a submission from 30 seconds ago, and
+    // this is the single most expensive read on the platform to recompute from scratch (multiple
+    // groupBy passes even after the top-100 restructuring above).
+    const cacheKey = `leaderboard:${scope}:${metric}:${req.query.classId || ""}:${req.query.department || ""}:${req.query.instituteId || requester.instituteId || ""}`;
+    const rows = await cached(cacheKey, 30 * 1000, async () => {
+      const topIds = await resolveTopIdsForMetric(metric, ids);
+      if (topIds.length === 0) return [];
 
-    const rows = ids
-      .map((id) => ({
-        studentId: id, name: nameMap.get(id)?.name || "—", rollNumber: nameMap.get(id)?.rollNumber || null,
-        xp: xpMap.get(id) || 0, problemsSolved: problemsMap.get(id) || 0, streak: streakMap.get(id) || 0,
-        learningProgressPercent: learningMap.get(id) || 0,
-        primaryValue: primaryMap.get(id) || 0,
-      }))
-      .sort((a, b) => b.primaryValue - a.primaryValue)
-      .slice(0, 100)
-      .map((r, i) => ({ rank: i + 1, ...r }));
+      const [xpMap, problemsMap, streakMap, learningMap] = await Promise.all([
+        computeXpValues(topIds), computeProblemsValues(topIds), computeStreakValues(topIds), computeLearningValues(topIds),
+      ]);
+      const students = await prisma.user.findMany({ where: { id: { in: topIds } }, select: { id: true, name: true, rollNumber: true } });
+      const nameMap = new Map(students.map((s) => [s.id, s]));
+      const primaryMap = { xp: xpMap, problems: problemsMap, streak: streakMap, learning: learningMap }[metric];
+
+      return topIds
+        .map((id) => ({
+          studentId: id, name: nameMap.get(id)?.name || "—", rollNumber: nameMap.get(id)?.rollNumber || null,
+          xp: xpMap.get(id) || 0, problemsSolved: problemsMap.get(id) || 0, streak: streakMap.get(id) || 0,
+          learningProgressPercent: learningMap.get(id) || 0,
+          primaryValue: primaryMap.get(id) || 0,
+        }))
+        .sort((a, b) => b.primaryValue - a.primaryValue)
+        .map((r, i) => ({ rank: i + 1, ...r }));
+    });
 
     res.json(rows);
   } catch (err) {
@@ -228,6 +261,7 @@ router.delete("/badges/:id", authenticate, requireRole("ADMIN"), async (req, res
 router.post("/leaderboard/reset", authenticate, requireRole("ADMIN"), async (req, res) => {
   try {
     const deleted = await prisma.xpEvent.deleteMany({});
+    invalidate("leaderboard:");
     res.json({ success: true, xpEventsDeleted: deleted.count });
   } catch (err) {
     console.error(err);
