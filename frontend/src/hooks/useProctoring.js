@@ -97,6 +97,32 @@ export function useProctoring({ active, requireFullscreen = true, requireWebcam 
     return () => document.removeEventListener("contextmenu", onContextMenu);
   }, [active, report]);
 
+  // Drag-and-drop text into the page (e.g. dragging a selection from another window/tab into
+  // the code editor) — same intent as the copy/paste block above, via a different browser API.
+  // dragstart also covers dragging text *out* of the page.
+  useEffect(() => {
+    if (!active) return;
+    function onDragStart(e) {
+      e.preventDefault();
+      report("DRAG_ATTEMPT");
+    }
+    function onDrop(e) {
+      e.preventDefault();
+      report("DRAG_ATTEMPT");
+    }
+    function onDragOver(e) {
+      e.preventDefault(); // required for onDrop's preventDefault to actually block the drop
+    }
+    document.addEventListener("dragstart", onDragStart);
+    document.addEventListener("drop", onDrop);
+    document.addEventListener("dragover", onDragOver);
+    return () => {
+      document.removeEventListener("dragstart", onDragStart);
+      document.removeEventListener("drop", onDrop);
+      document.removeEventListener("dragover", onDragOver);
+    };
+  }, [active, report]);
+
   // F12 / devtools shortcuts / view-source / browser-chrome shortcuts — blocked where
   // preventDefault actually works. PrintScreen can be logged but never blocked (the OS captures
   // it before JS sees the event) — a real browser limitation, not a gap in this implementation.

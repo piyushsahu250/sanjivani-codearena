@@ -597,7 +597,7 @@ model ProctoringViolation {
   id        String   @id @default(uuid())
   attempt   ModuleCodingAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   attemptId String
-  type      String // TAB_SWITCH, FULLSCREEN_EXIT, COPY, PASTE, CUT, RIGHT_CLICK, DEVTOOLS, REFRESH_ATTEMPT, MULTI_MONITOR, FACE_MISSING, MULTIPLE_FACES, CAMERA_DROPPED
+  type      String // TAB_SWITCH, FULLSCREEN_EXIT, COPY, PASTE, CUT, RIGHT_CLICK, DRAG_ATTEMPT, DEVTOOLS, REFRESH_ATTEMPT, MULTI_MONITOR, FACE_MISSING, MULTIPLE_FACES, CAMERA_DROPPED
   createdAt DateTime @default(now())
 
   @@index([attemptId, createdAt])

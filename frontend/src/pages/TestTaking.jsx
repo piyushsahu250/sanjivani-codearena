@@ -519,12 +519,18 @@ export default function TestTaking() {
     document.addEventListener("copy", blockClipboard);
     document.addEventListener("paste", blockClipboard);
     document.addEventListener("cut", blockClipboard);
+    document.addEventListener("dragstart", blockClipboard);
+    document.addEventListener("drop", blockClipboard);
+    document.addEventListener("dragover", blockClipboard);
     document.addEventListener("keydown", blockKeys);
     return () => {
       document.removeEventListener("contextmenu", blockContextMenu);
       document.removeEventListener("copy", blockClipboard);
       document.removeEventListener("paste", blockClipboard);
       document.removeEventListener("cut", blockClipboard);
+      document.removeEventListener("dragstart", blockClipboard);
+      document.removeEventListener("drop", blockClipboard);
+      document.removeEventListener("dragover", blockClipboard);
       document.removeEventListener("keydown", blockKeys);
     };
   }, [started]);
