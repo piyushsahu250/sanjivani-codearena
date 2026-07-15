@@ -81,6 +81,7 @@ router.patch("/me", authenticate, async (req, res) => {
     }
     if (newPassword) {
       if (newPassword.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
+      if (newPassword === currentPassword) return res.status(400).json({ error: "New password cannot be the same as your current password" });
       data.passwordHash = await bcrypt.hash(newPassword, 10);
       data.mustChangePassword = false;
     }
@@ -528,6 +529,35 @@ router.get("/search", authenticate, requireRole("ADMIN", "STAFF"), attachRequest
   }
 });
 
+// ADMIN/STAFF: password reset history. Staff sees only resets for students under their own
+// institute (matching the same scoping as the reset action itself); an unscoped platform Admin
+// sees every institute's history. Capped at 300 rows, most recent first — an operational log,
+// not a paginated archive (same convention as /admin/email-logs). Placed before the "/:id"
+// catch-all below so this literal segment can never be shadowed by it.
+router.get("/password-reset-history", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const logs = await prisma.auditLog.findMany({
+      where: {
+        action: "PASSWORD_RESET",
+        ...(req.requesterInstituteId ? { instituteId: req.requesterInstituteId } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: 300,
+    });
+    res.json(logs.map((l) => ({
+      id: l.id,
+      studentName: l.details?.studentName || null,
+      studentId: l.studentId,
+      resetBy: l.adminName,
+      emailSent: l.details?.emailSent ?? null,
+      createdAt: l.createdAt,
+    })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load password reset history" });
+  }
+});
+
 // Shared access check for the performance dashboard + both report exports: ADMIN/STAFF can view
 // any student under their own institute (platform-level accounts see everyone); a STUDENT may
 // only view their own. Returns the student's own institute-scope-relevant fields on success, or
@@ -652,12 +682,18 @@ router.get("/:id/performance/report.pdf", authenticate, requireRole("ADMIN", "ST
   }
 });
 
-// ADMIN: reset a student's (or any account's) password to a new, unique random temporary one.
-// The account is flagged to force a password change on next login, same as any other reset.
-router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (req, res) => {
+// ADMIN/STAFF: reset a student's (or any account's) password to a new, unique random temporary
+// one — never a shared/fixed value, so an account can't be logged into by anyone who knows a
+// documented default before the real owner's first login. Staff is institute-scoped: they can
+// only reset students under their own institute, matching the same access rule as /search and
+// the performance dashboard. The account is flagged to force a password change on next login.
+router.post("/:id/reset-password", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.params.id } });
     if (!user) return res.status(404).json({ error: "User not found" });
+    if (req.requesterInstituteId && user.instituteId !== req.requesterInstituteId) {
+      return res.status(403).json({ error: "You can only reset passwords for students under your own institute" });
+    }
 
     const newPassword = generateTempPassword();
     const passwordHash = await bcrypt.hash(newPassword, 10);
@@ -686,6 +722,8 @@ router.post("/:id/reset-password", authenticate, requireRole("ADMIN"), async (re
         action: "PASSWORD_RESET",
         adminId: req.user.id,
         adminName: admin?.name || req.user.email,
+        studentId: user.id,
+        instituteId: user.instituteId,
         details: { studentId: user.id, studentName: user.name, emailSent, emailError },
       },
     }).catch(() => {});

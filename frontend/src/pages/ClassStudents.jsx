@@ -3,12 +3,16 @@ import { Link, useParams } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import { useConfirm } from "../context/ConfirmContext";
+import { useToast } from "../context/ToastContext";
 
 export default function ClassStudents() {
   const { id } = useParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [resettingId, setResettingId] = useState(null);
+  const confirmDialog = useConfirm();
+  const toast = useToast();
 
   function load() {
     api.get(`/classes/${id}/students`)
@@ -19,12 +23,19 @@ export default function ClassStudents() {
   useEffect(load, [id]);
 
   async function resetPassword(student) {
+    const ok = await confirmDialog({
+      title: "Reset Password",
+      message: `Are you sure you want to reset ${student.name}'s password? A new, unique password will be generated. They will be required to set a new password during their next login.`,
+      confirmLabel: "Reset Password",
+      danger: true,
+    });
+    if (!ok) return;
     setResettingId(student.id);
     try {
       const { data: res } = await api.post(`/users/${student.id}/reset-password`);
-      alert(`Password reset for ${student.name} to "${res.defaultPassword}". They'll be asked to set a new one on next login.`);
+      toast.success(`Password reset for ${student.name} to "${res.defaultPassword}". They'll be asked to set a new one on next login.`, 8000);
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to reset password");
+      toast.error(err.response?.data?.error || "Failed to reset password");
     } finally {
       setResettingId(null);
     }

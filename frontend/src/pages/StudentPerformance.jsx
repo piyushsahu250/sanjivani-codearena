@@ -7,6 +7,7 @@ import {
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
+import { useConfirm } from "../context/ConfirmContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 
@@ -22,6 +23,7 @@ export default function StudentPerformance({ basePath }) {
   const { id: paramId } = useParams();
   const { user } = useAuth();
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const studentId = paramId || user.id;
   const isManager = !!basePath;
   const canEditProfile = isManager && user.role === "ADMIN";
@@ -76,6 +78,13 @@ export default function StudentPerformance({ basePath }) {
   }
 
   async function resetPassword() {
+    const ok = await confirmDialog({
+      title: "Reset Password",
+      message: `Are you sure you want to reset ${student?.name || "this student"}'s password? A new, unique password will be generated and emailed to them. They will be required to set a new password during their next login.`,
+      confirmLabel: "Reset Password",
+      danger: true,
+    });
+    if (!ok) return;
     setResetting(true);
     setCopied(false);
     try {

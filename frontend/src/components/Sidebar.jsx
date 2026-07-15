@@ -35,6 +35,7 @@ const MENU = {
     ] },
     { group: "Students", items: [
       { label: "Student Search", to: "/staff/students", icon: Users },
+      { label: "Password Reset History", to: "/staff/password-reset-history", icon: History },
       { label: "Resumes", to: "/staff/resumes", icon: FileText },
       { label: "Mock Interviews", to: "/staff/interviews", icon: Mic },
       { label: "Interview Reports", to: "/staff/interview-reports", icon: ClipboardList },
@@ -59,6 +60,7 @@ const MENU = {
     ] },
     { group: "System", items: [
       { label: "Email Logs", to: "/admin/email-logs", icon: Mail },
+      { label: "Password Reset History", to: "/admin/password-reset-history", icon: History },
       { label: "Monitoring", to: "/admin/monitoring", icon: Activity },
     ] },
     { group: "", items: [{ label: "Settings", to: "/account", icon: Settings }] },

@@ -299,14 +299,19 @@ model Submission {
 
 // Lightweight audit trail for sensitive admin actions (currently just reattempt grants).
 model AuditLog {
-  id        String   @id @default(uuid())
-  action    String // e.g. "REATTEMPT_GRANTED"
-  adminId   String
-  adminName String
-  details   Json
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  action      String // e.g. "REATTEMPT_GRANTED"
+  adminId     String
+  adminName   String
+  studentId   String? // the account acted on, when applicable — lets history views filter per-student
+  instituteId String? // denormalized at write time from the acted-on student, so Staff can query
+  // their own institute's history directly instead of joining through User for every row
+  details     Json
+  createdAt   DateTime @default(now())
 
   @@index([action])
+  @@index([studentId])
+  @@index([instituteId])
 }
 
 enum EmailStatus {
