@@ -55,7 +55,10 @@ const RUNNERS = {
   java: {
     srcName: "Main.java",
     compile: (file, dir) => ({ cmd: "javac", args: [file] }),
-    run: (_file, dir) => ({ cmd: "java", args: ["-cp", dir, "Main"] }),
+    // -Xmx bounds the JVM's own heap to the same budget the OS-level ulimit enforces for the
+    // other languages. Java runs skip that OS-level ulimit (see the enforceMemory call below) —
+    // -Xmx is the JVM's actual memory guard here, not an addition to it.
+    run: (_file, dir) => ({ cmd: "java", args: [`-Xmx${MEMORY_LIMIT_KB}k`, "-cp", dir, "Main"] }),
   },
 };
 
@@ -267,7 +270,12 @@ async function prepare(language, code) {
     ok: true,
     async execute(input, timeLimitMs) {
       const { cmd, args } = runner.run(file, tmpDir);
-      const result = await spawnWithTimeout(cmd, args, { cwd: tmpDir, timeout: timeLimitMs }, input, timeLimitMs);
+      // The OS-level ulimit -v (virtual memory) is skipped for Java: the JVM reserves virtual
+      // address space (metaspace, thread stacks, JIT code cache) well beyond this budget just to
+      // start up, regardless of the student's code, which made every single Java run fail with a
+      // generic "Runtime Error" — the -Xmx flag on the java command above is Java's real memory
+      // guard instead, enforced by the JVM itself rather than the OS.
+      const result = await spawnWithTimeout(cmd, args, { cwd: tmpDir, timeout: timeLimitMs }, input, timeLimitMs, { enforceMemory: language !== "java" });
       if (!result.ok) return result;
       return { ok: true, stdout: result.stdout.trim(), timeMs: result.timeMs, memoryKb: result.memoryKb };
     },
