@@ -4,6 +4,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
+const jwt = require("jsonwebtoken");
 const { timingMiddleware, recordProcessError } = require("./utils/metrics");
 
 const authRoutes = require("./routes/auth");
@@ -34,7 +35,30 @@ app.get("/api/health", (req, res) => res.json({ status: "ok", service: "CodeAren
 // Global floor well above any legitimate per-user traffic pattern (dashboard loads fire several
 // parallel GETs; this is not meant to constrain normal use, just block runaway scripts/scraping).
 // Expensive routes (judge execution, etc.) already carry their own tighter per-route limiters.
-const globalLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 600, standardHeaders: true, legacyHeaders: false });
+//
+// Keyed by student/staff id when the request carries a valid token, falling back to IP only for
+// requests that genuinely have no user yet (login, register, health check). This mirrors the
+// same reasoning already documented on submissions.js's execLimiter: a single shared campus/lab
+// IP (very common on Indian college networks — a whole lab or hostel block behind one NAT'd
+// gateway) would otherwise share one collective budget across every student behind it. During a
+// real proctored exam, dozens of students on the same lab IP each auto-saving answers would blow
+// through an IP-keyed limit in minutes even though no individual student is doing anything wrong.
+// This is a soft decode, not full authentication — an invalid/expired token just falls through to
+// the IP key rather than rejecting the request here (the real `authenticate` middleware on each
+// route still enforces auth properly; this is only about picking a fair rate-limit bucket).
+function rateLimitKey(req) {
+  const header = req.headers.authorization;
+  if (header && header.startsWith("Bearer ")) {
+    try {
+      const payload = jwt.verify(header.split(" ")[1], process.env.JWT_SECRET);
+      if (payload?.id) return `user:${payload.id}`;
+    } catch {
+      // falls through to IP-keying below
+    }
+  }
+  return `ip:${req.ip}`;
+}
+const globalLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 600, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
 app.use(globalLimiter);
 
 app.use("/api/auth", authRoutes);
