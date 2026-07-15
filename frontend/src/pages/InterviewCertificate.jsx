@@ -10,7 +10,6 @@ export default function InterviewCertificate() {
   const [cert, setCert] = useState(null);
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
-  const dark = localStorage.getItem("interviewPrepDark") === "1";
 
   useEffect(() => {
     api.get("/interview/certificate").then((res) => setCert(res.data)).catch((err) => setError(err.response?.data?.error || "Failed to load certificate"));
@@ -33,7 +32,7 @@ export default function InterviewCertificate() {
   }
 
   return (
-    <div className={`interview-prep ${dark ? "dark" : ""}`}>
+    <div className="interview-prep">
       <Navbar />
       <div style={{ maxWidth: 700, margin: "0 auto", padding: "48px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>

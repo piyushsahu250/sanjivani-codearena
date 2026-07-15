@@ -1,7 +1,8 @@
-/* Scoped dark/light theme + glassmorphism for the Interview Prep module only — the rest of the
-   app has a single fixed "paper/chalk" theme, and building a true global dark-mode system would
-   be a much larger, separate cross-cutting change. This toggle + these styles apply only inside
-   .interview-prep. */
+/* Glassmorphism styling for the Interview Prep module. Previously drove dark mode off its own
+   page-scoped .dark class + separate localStorage toggle, independent of the platform-wide
+   theme switch in the Topbar — meaning this section could show light while the rest of the app
+   was in dark mode (or vice versa). Now reads the same :root[data-theme="dark"] attribute
+   theme.css sets platform-wide, so the single Topbar toggle controls this section too. */
 
 .interview-prep {
   --ip-bg: linear-gradient(135deg, #FBF9F4 0%, #F0EEE3 100%);
@@ -16,7 +17,7 @@
   transition: background 0.3s ease, color 0.3s ease;
 }
 
-.interview-prep.dark {
+:root[data-theme="dark"] .interview-prep {
   --ip-bg: linear-gradient(135deg, #0B2A1E 0%, #123528 100%);
   --ip-text: #F4EFE3;
   --ip-text-dim: #C9C2AE;

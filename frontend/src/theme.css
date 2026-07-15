@@ -94,6 +94,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   outline-offset: 2px;
 }
 
+/* Form fields across the app set border/padding/font inline per-page but never background or
+   color, so they fell back to the browser's native white-field rendering — legible (black text
+   on white) but a jarring bright rectangle sitting in an otherwise dark page. This single rule
+   covers every input/textarea/select without touching each page's inline style object. */
+input, textarea, select {
+  background: var(--card-bg, #fff);
+  color: var(--ink);
+}
+input::placeholder, textarea::placeholder { color: var(--ink-dim); }
+
 .btn {
   display: inline-flex;
   align-items: center;

@@ -582,7 +582,8 @@ export default function ModuleCodingAssessment() {
                 flexShrink: isMobile ? 0 : undefined,
                 textAlign: "left", padding: "10px 12px", marginBottom: isMobile ? 0 : 6, borderRadius: 8,
                 border: idx === activeIdx ? "1px solid var(--amber)" : "1px solid var(--line)",
-                background: idx === activeIdx ? "#FCEFD9" : "#fff", fontSize: 13,
+                background: idx === activeIdx ? "#FCEFD9" : "var(--card-bg)", fontSize: 13,
+                color: idx === activeIdx ? "var(--amber-dark)" : "var(--ink)",
               }}
             >
               Q{idx + 1}. {q.title || "(untitled)"}

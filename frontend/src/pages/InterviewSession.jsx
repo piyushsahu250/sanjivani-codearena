@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import api from "../api";
 import { useProctoring } from "../hooks/useProctoring";
+import { useTheme } from "../context/ThemeContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import "./interviewPrep.css";
@@ -39,7 +40,8 @@ export default function InterviewSession() {
   const [violationWarning, setViolationWarning] = useState(null);
   const recognitionRef = useRef(null);
   const finalizedRef = useRef(false);
-  const dark = localStorage.getItem("interviewPrepDark") === "1";
+  const { theme } = useTheme();
+  const dark = theme === "dark";
 
   useEffect(() => {
     api.get(`/interview/sessions/${id}`).then((res) => {

@@ -12,7 +12,6 @@ export default function InterviewLeaderboard() {
   const { user } = useAuth();
   const [scope, setScope] = useState("class");
   const [rows, setRows] = useState(null);
-  const dark = localStorage.getItem("interviewPrepDark") === "1";
 
   useEffect(() => {
     setRows(null);
@@ -20,7 +19,7 @@ export default function InterviewLeaderboard() {
   }, [scope]);
 
   return (
-    <div className={`interview-prep ${dark ? "dark" : ""}`}>
+    <div className="interview-prep">
       <Navbar />
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "48px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>

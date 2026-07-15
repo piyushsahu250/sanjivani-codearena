@@ -18,7 +18,6 @@ export default function InterviewReport() {
   const [sessionStatus, setSessionStatus] = useState(null);
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
-  const dark = localStorage.getItem("interviewPrepDark") === "1";
 
   useEffect(() => {
     api.get(`/interview/sessions/${id}`).then((res) => {
@@ -49,11 +48,11 @@ export default function InterviewReport() {
     }
   }
 
-  if (error) return <div className={`interview-prep ${dark ? "dark" : ""}`}><Navbar /><div style={{ maxWidth: 800, margin: "0 auto", padding: 48 }}><p style={{ color: "var(--rust)" }}>{error}</p></div></div>;
-  if (!report) return <div className={`interview-prep ${dark ? "dark" : ""}`}><Navbar /><div style={{ maxWidth: 800, margin: "0 auto", padding: 48 }} className="mono">Loading…</div></div>;
+  if (error) return <div className="interview-prep"><Navbar /><div style={{ maxWidth: 800, margin: "0 auto", padding: 48 }}><p style={{ color: "var(--rust)" }}>{error}</p></div></div>;
+  if (!report) return <div className="interview-prep"><Navbar /><div style={{ maxWidth: 800, margin: "0 auto", padding: 48 }} className="mono">Loading…</div></div>;
 
   return (
-    <div className={`interview-prep ${dark ? "dark" : ""}`}>
+    <div className="interview-prep">
       <Navbar />
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "48px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>

@@ -8,14 +8,13 @@ import "./interviewPrep.css";
 
 export default function InterviewProgress() {
   const [data, setData] = useState(null);
-  const dark = localStorage.getItem("interviewPrepDark") === "1";
 
   useEffect(() => {
     api.get("/interview/progress").then((res) => setData(res.data));
   }, []);
 
   return (
-    <div className={`interview-prep ${dark ? "dark" : ""}`}>
+    <div className="interview-prep">
       <Navbar />
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "48px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>

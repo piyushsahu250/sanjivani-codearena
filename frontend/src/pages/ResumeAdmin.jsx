@@ -106,7 +106,16 @@ export default function ResumeAdmin() {
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Students</div>
             <div style={{ display: "grid", gap: 8, maxHeight: 500, overflowY: "auto" }}>
               {(students || []).map((s) => (
-                <div key={s.studentId} onClick={() => viewStudent(s)} className="card" style={{ padding: 10, cursor: "pointer", background: selected?.studentId === s.studentId ? "#FCEFD9" : "#fff" }}>
+                <div
+                  key={s.studentId}
+                  onClick={() => viewStudent(s)}
+                  className="card"
+                  style={{
+                    padding: 10, cursor: "pointer",
+                    background: selected?.studentId === s.studentId ? "#FCEFD9" : "var(--card-bg)",
+                    color: selected?.studentId === s.studentId ? "var(--amber-dark)" : "var(--ink)",
+                  }}
+                >
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
                     <span>{s.name}</span>
                     <span className="mono" style={{ color: s.completion === 100 ? "var(--mint)" : "var(--ink-dim)" }}>{s.hasResume ? `${s.completion}%` : "Not started"}</span>

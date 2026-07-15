@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api";
+import { useTheme } from "../context/ThemeContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import "./interviewPrep.css";
@@ -36,7 +37,8 @@ const JOB_ROLES = ["Java Developer", "Full Stack Developer", "Backend Developer"
 export default function InterviewHub() {
   const navigate = useNavigate();
   const [summary, setSummary] = useState(null);
-  const [dark, setDark] = useState(() => localStorage.getItem("interviewPrepDark") === "1");
+  const { theme } = useTheme();
+  const dark = theme === "dark";
   const [setupCard, setSetupCard] = useState(null);
   const [starting, setStarting] = useState(false);
   const [companies, setCompanies] = useState([]);
@@ -51,10 +53,6 @@ export default function InterviewHub() {
     api.get("/interview/summary").then((res) => setSummary(res.data));
     api.get("/interview/companies").then((res) => setCompanies(res.data));
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem("interviewPrepDark", dark ? "1" : "0");
-  }, [dark]);
 
   async function start(category, extraConfig) {
     setStarting(true);
@@ -103,7 +101,6 @@ export default function InterviewHub() {
             <Link to="/interview/leaderboard" className="btn btn-ghost">Leaderboard</Link>
             <Link to="/interview/progress" className="btn btn-ghost">Progress</Link>
             <Link to="/interview/certificate" className="btn btn-ghost">🎓 Certificate</Link>
-            <button className="btn btn-ghost" onClick={() => setDark((d) => !d)}>{dark ? "☀️ Light" : "🌙 Dark"}</button>
           </div>
         </div>
 

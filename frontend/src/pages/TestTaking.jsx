@@ -979,7 +979,7 @@ export default function TestTaking() {
         >
           <span>⚠ {tabWarning}</span>
           {test.requireFullscreen && !document.fullscreenElement && (
-            <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px", background: "#fff" }} onClick={resumeFullscreen}>
+            <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px", background: "#fff", color: "#1C1B18" }} onClick={resumeFullscreen}>
               Resume fullscreen
             </button>
           )}
@@ -1024,7 +1024,8 @@ export default function TestTaking() {
                   marginBottom: isMobile ? 0 : 6,
                   borderRadius: 8,
                   border: idx === activeIdx ? "1px solid var(--amber)" : "1px solid var(--line)",
-                  background: idx === activeIdx ? "#FCEFD9" : "#fff",
+                  background: idx === activeIdx ? "#FCEFD9" : "var(--card-bg)",
+                  color: idx === activeIdx ? "var(--amber-dark)" : "var(--ink)",
                   fontSize: 13,
                 }}
               >
