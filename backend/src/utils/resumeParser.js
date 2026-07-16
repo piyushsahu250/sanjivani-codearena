@@ -13,10 +13,52 @@ const mammoth = require("mammoth");
 // (see computeConfidence) precisely so students know which fields to double-check rather than
 // trusting a false sense of completeness.
 
+// pdf-parse's default text renderer trusts the order pdf.js hands back text items in, which is
+// the PDF content stream's internal declaration order — NOT necessarily top-to-bottom reading
+// order. Many resume templates (Canva exports especially) position a date or company name as an
+// absolutely-positioned "floating" text box rather than inline flowing text; the underlying PDF
+// can declare that floating box's text anywhere in the stream regardless of where it's drawn on
+// the page. Concretely: a "Work Experience" heading was found appearing in the extracted text
+// AFTER the job entries it's supposed to introduce (right before "Projects" instead), which
+// silently merged an entire Work Experience section into whatever section preceded it. This
+// reconstructs each page's text by actual (x, y) glyph position instead — group text items into
+// visual lines by Y-coordinate proximity, sort those lines top-to-bottom, and sort items within
+// each line left-to-right — so extraction order matches what a human actually sees on the page.
+// This does not attempt real multi-column layout detection (a genuinely hard, separate problem —
+// see the file-level comment above); it fixes the specific "elements declared out of visual order
+// within an otherwise single reading column" case, which is what broke on the reported test file.
+function renderPageInReadingOrder(pageData) {
+  return pageData.getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false }).then((textContent) => {
+    const LINE_TOLERANCE = 2; // points — items within this Y delta are treated as the same visual line
+    const lineGroups = [];
+    for (const item of textContent.items) {
+      if (!item.str || !item.str.trim()) continue;
+      const y = item.transform[5];
+      const x = item.transform[4];
+      let group = lineGroups.find((g) => Math.abs(g.y - y) <= LINE_TOLERANCE);
+      if (!group) { group = { y, items: [] }; lineGroups.push(group); }
+      group.items.push({ str: item.str, x, endX: x + (item.width || item.str.length * 4) });
+    }
+    lineGroups.sort((a, b) => b.y - a.y); // PDF y-axis grows upward, so the top of the page has the largest y
+    const lines = lineGroups.map((group) => {
+      group.items.sort((a, b) => a.x - b.x);
+      let text = "";
+      let lastEndX = null;
+      for (const it of group.items) {
+        if (lastEndX !== null && it.x - lastEndX > 1) text += " ";
+        text += it.str;
+        lastEndX = it.endX;
+      }
+      return text;
+    });
+    return lines.join("\n");
+  });
+}
+
 async function extractTextFromFile(buffer, mimetype, filename) {
   const ext = String(filename || "").toLowerCase().split(".").pop();
   if (mimetype === "application/pdf" || ext === "pdf") {
-    const data = await pdfParse(buffer);
+    const data = await pdfParse(buffer, { pagerender: renderPageInReadingOrder });
     return data.text;
   }
   if (
@@ -46,7 +88,11 @@ async function extractTextFromFile(buffer, mimetype, filename) {
 const SECTION_SYNONYMS = {
   summary: ["professional summary", "summary", "objective", "career objective", "about me", "profile", "professional profile", "personal summary"],
   education: ["education", "academic background", "academic qualifications", "educational qualifications", "qualifications", "academics"],
-  skills: ["technical skills", "skills", "core skills", "competencies", "key skills", "skill set", "technical proficiencies", "areas of expertise", "technology stack", "tech stack"],
+  skills: [
+    "technical skills", "skills", "core skills", "competencies", "key skills", "skill set", "technical proficiencies",
+    "areas of expertise", "technology stack", "tech stack", "tools and technologies", "tools & technologies",
+    "technical tools", "tools", "technologies used", "technologies",
+  ],
   projects: ["projects", "academic projects", "personal projects", "key projects", "project experience", "major projects"],
   experience: ["experience", "work experience", "professional experience", "employment history", "internship experience", "internships", "work history"],
   certifications: ["certifications", "certificates", "licenses & certifications", "courses & certifications", "certifications & courses"],
@@ -130,7 +176,11 @@ const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 const PHONE_RE = /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3,5}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b/;
 const LINKEDIN_RE = /(https?:\/\/)?(www\.)?linkedin\.com\/[a-zA-Z0-9_\-/]+/i;
 const GITHUB_RE = /(https?:\/\/)?(www\.)?github\.com\/[a-zA-Z0-9_\-/]+/i;
-const GENERIC_URL_RE = /(https?:\/\/)?(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s,;]*)?/;
+// Domain part requires 2+ characters — "M.Tech" (single-letter "M" + ".Tech") was previously
+// matching this regex as if it were a domain name, and since it happened to be the first
+// non-linkedin/github URL-shaped text found anywhere in the whole resume body, it got assigned
+// as the portfolio link, corrupting the contact line with a stray "M.Tech" appended to it.
+const GENERIC_URL_RE = /(https?:\/\/)?(www\.)?[a-zA-Z0-9-]{2,}\.[a-zA-Z]{2,}(\/[^\s,;]*)?/;
 const MONTH = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec";
 const DATE_TOKEN = `(?:(?:${MONTH})[a-z]*\\.?\\s*)?\\d{4}|present|current`;
 const DATE_RANGE_RE = new RegExp(`(${DATE_TOKEN})\\s*(?:[-–—]|to)\\s*(${DATE_TOKEN})`, "i");
@@ -154,8 +204,13 @@ function extractPersonalDetails(headerLines, wholeText) {
   const githubMatch = wholeText.match(GITHUB_RE);
   if (githubMatch) details.github = githubMatch[0];
 
-  // Portfolio: first generic URL that isn't linkedin/github/email domain
-  const urlMatches = wholeText.match(new RegExp(GENERIC_URL_RE, "gi")) || [];
+  // Portfolio: first generic URL that isn't linkedin/github/email domain — scoped to the
+  // header/contact block only, not the whole document. A real portfolio link always lives in the
+  // contact area; searching the entire resume body previously let an unrelated URL-shaped false
+  // positive from anywhere in the document (e.g. a degree abbreviation) win the "first match"
+  // and get assigned as the portfolio link.
+  const headerText = headerLines.join("\n");
+  const urlMatches = headerText.match(new RegExp(GENERIC_URL_RE, "gi")) || [];
   for (const u of urlMatches) {
     if (/linkedin\.com|github\.com/i.test(u)) continue;
     if (details.email && u.includes(details.email.split("@")[1])) continue;
@@ -209,6 +264,17 @@ function toTitleCase(word) {
 
 const DEGREE_RE = /\b(b\.?\s?tech|b\.?\s?e\.?\b|m\.?\s?tech|m\.?\s?e\.?\b|b\.?\s?sc|m\.?\s?sc|bca|mca|bba|mba|b\.?\s?com|m\.?\s?com|ph\.?\s?d|bachelor'?s?|master'?s?|diploma|class\s?xii|class\s?x\b|hsc|ssc|10th|12th|associate'?s?\s?degree)\b/i;
 
+// A bare "NN%" is only trustworthy as a CGPA/percentage score when it's genuinely describing an
+// academic score, not any percentage figure that happens to appear on the same line — e.g. a
+// misclassified job-experience bullet ("resulting in a 90% improvement in user engagement") once
+// got picked up as a CGPA purely because it contained "90%", fabricating a score that never
+// existed in the Education section at all. A bare percentage is only accepted when the line looks
+// short/score-like (no verbs like "improvement", "growth", "increase" nearby) — CGPA/GPA-labeled
+// scores are always accepted since that label is unambiguous either way.
+const SCORE_WORD_RE = /\b(cgpa|gpa)\b\s*[:\-]?\s*(\d+(\.\d+)?)|\b(\d+(\.\d+)?)\s*(cgpa|gpa)\b/i;
+const BARE_PERCENT_RE = /(\d+(\.\d+)?)\s*%/;
+const PERCENT_DISQUALIFIER_RE = /\b(improve|improvement|growth|increase|reduc|decrease|engagement|efficiency|performance|accuracy|coverage|users?|customers?|satisfaction|productivity)\b/i;
+
 function parseEducationSection(lines) {
   const entries = [];
   let current = null;
@@ -219,9 +285,24 @@ function parseEducationSection(lines) {
       if (current) entries.push(current);
       current = { degree: "", specialization: "", institution: "", board: "", startYear: "", endYear: "", score: "", status: "Completed" };
       const degMatch = line.match(DEGREE_RE);
-      current.degree = degMatch[0].toUpperCase().replace(/\s+/g, " ");
-      const rest = line.replace(DEGREE_RE, "").replace(/^[\s,\-–]+/, "");
-      if (rest) current.specialization = rest.split(/[,–\-|]/)[0].trim();
+      const matchStart = degMatch.index;
+      // A qualifier word immediately before the matched abbreviation ("Integrated" in "Integrated
+      // M.Tech.") is part of the degree name, not something to silently drop — previously only
+      // "M.TECH" was kept and "Integrated" vanished with no trace.
+      const before = line.slice(0, matchStart).trim();
+      const qualifierMatch = before.match(/([A-Za-z]+)\s*$/);
+      const qualifier = qualifierMatch && qualifierMatch[1].length <= 15 && !/[,()]/.test(qualifierMatch[1]) ? qualifierMatch[1] : "";
+      current.degree = `${qualifier ? qualifier + " " : ""}${degMatch[0]}`.replace(/\s+/g, " ").trim().toUpperCase();
+      const rest = line.slice(matchStart + degMatch[0].length).replace(/^[\s,.\-–]+/, "");
+      // A parenthetical specialization ("(CSE – AI&ML)") must be captured whole — splitting on
+      // the first comma/dash inside it (the old behavior) truncated "(CSE – AI&ML)" down to just
+      // "CSE" and silently dropped "– AI&ML)".
+      const parenMatch = rest.match(/\(([^)]+)\)?/);
+      if (parenMatch) {
+        current.specialization = parenMatch[1].trim();
+      } else if (rest) {
+        current.specialization = rest.split(/[,–\-|]/)[0].replace(/^(in|with|of)\s+/i, "").trim();
+      }
     }
     if (!current) continue;
     const yearRange = line.match(/\b(19|20)\d{2}\b\s*[-–]\s*(present|current|\b(19|20)\d{2}\b)/i);
@@ -232,13 +313,21 @@ function parseEducationSection(lines) {
       if (/present|current/i.test(yearRange[0])) current.status = "Pursuing";
       continue;
     }
-    const scoreMatch = line.match(/\b(cgpa|gpa)\b\s*[:\-]?\s*(\d+(\.\d+)?)|(\d+(\.\d+)?)\s*%|\b(\d+(\.\d+)?)\s*(cgpa|gpa)\b/i);
-    if (scoreMatch) {
-      current.score = scoreMatch[0].trim();
+    const labeledScore = line.match(SCORE_WORD_RE);
+    if (labeledScore) {
+      current.score = labeledScore[0].trim();
       continue;
     }
-    if (!current.institution && !DEGREE_RE.test(line)) {
-      current.institution = line.split(/[,–\-|]/)[0].trim();
+    const bareScore = line.match(BARE_PERCENT_RE);
+    if (bareScore && !PERCENT_DISQUALIFIER_RE.test(line) && line.length < 40) {
+      current.score = bareScore[0].trim();
+      continue;
+    }
+    // Keep the whole line — "Vellore Institute of Technology, Bhopal" previously lost ", Bhopal"
+    // by only keeping the text before the first comma; a campus/city suffix is meaningful, not
+    // noise to strip.
+    if (!current.institution && !DEGREE_RE.test(line) && !bareScore) {
+      current.institution = line;
     }
   }
   if (current) entries.push(current);
@@ -251,7 +340,7 @@ const SKILL_CATEGORIES = {
   "Databases": ["mysql", "postgresql", "postgres", "mongodb", "sqlite", "oracle", "redis", "cassandra", "dynamodb", "firebase", "mssql", "sql server", "sql"],
   "Cloud": ["aws", "azure", "gcp", "google cloud", "google cloud platform", "heroku", "vercel", "netlify", "aws lambda", "amazon web services"],
   "DevOps": ["docker", "kubernetes", "terraform", "jenkins", "ci/cd", "ansible", "github actions", "gitlab ci", "circleci"],
-  "Tools": ["git", "github", "gitlab", "postman", "jira", "figma", "vs code", "intellij", "eclipse", "linux", "bash", "webpack", "npm", "maven", "gradle", "excel"],
+  "Tools": ["git", "github", "gitlab", "postman", "jira", "figma", "vs code", "visual code studio", "visual studio code", "intellij", "eclipse", "linux", "bash", "webpack", "npm", "maven", "gradle", "excel", "jupyter notebook", "jupyter", "apache netbeans", "netbeans", "canva"],
   "Libraries": ["jquery", "numpy", "pandas", "matplotlib", "scikit-learn", "sklearn", "tensorflow", "pytorch", "keras", "opencv", "seaborn", "redux", "axios", "lodash", "plotly"],
   "Soft Skills": ["communication", "teamwork", "leadership", "problem solving", "problem-solving", "time management", "adaptability", "collaboration", "critical thinking", "public speaking"],
 };
@@ -273,23 +362,78 @@ function categorizeSkill(name) {
   return "Other";
 }
 
+// A line's own explicit category label ("Programming Languages: Python, Java") is a far stronger
+// signal than guessing per-token via keyword lookup — respecting it is what fixes a resume like
+// "Programming Languages : Python, ... / Web Technologies : HTML, CSS, ... / Database : MySQL"
+// from collapsing into one indistinguishable "Other" blob. Previously the whole section was
+// joined into one comma list with no per-line awareness at all: the label text itself doesn't
+// match any hardcoded skill keyword, so with no line-aware parsing every category label became a
+// bogus "skill" of its own (dumped in "Other"), while the *values* got separately auto-bucketed
+// by keyword-matching regardless of what the user actually labeled them as.
+const CATEGORY_LABEL_RE = /^([A-Za-z][A-Za-z &/-]{1,40}?)\s*:\s*(.+)$/;
+const KNOWN_CATEGORY_ALIASES = {
+  "programming languages": "Programming Languages", "programming language": "Programming Languages",
+  "frameworks": "Frameworks", "framework": "Frameworks", "frameworks & libraries": "Frameworks",
+  "databases": "Databases", "database": "Databases",
+  "cloud": "Cloud", "cloud platforms": "Cloud", "cloud technologies": "Cloud",
+  "devops": "DevOps", "devops tools": "DevOps",
+  "tools": "Tools", "tools & technologies": "Tools", "developer tools": "Tools",
+  "libraries": "Libraries", "library": "Libraries",
+  "soft skills": "Soft Skills", "soft skill": "Soft Skills",
+};
+
+function resolveExplicitCategory(label) {
+  const key = label.toLowerCase().trim();
+  if (KNOWN_CATEGORY_ALIASES[key]) return KNOWN_CATEGORY_ALIASES[key];
+  // An unrecognized-but-explicit label ("Web Technologies", "Testing Tools") is still a real,
+  // user-authored category — Title Case it and keep it as its own group rather than discarding
+  // it into "Other", which would throw away structure the user deliberately wrote.
+  return label.replace(/\s+/g, " ").trim().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function splitSkillTokens(str) {
+  return str.split(/[,•|;\/]/).map((s) => s.trim()).filter(Boolean);
+}
+
 function parseSkillsSection(lines) {
-  const text = lines.join(", ");
-  const raw = text.split(/[,•|;\/]|(?:\s{2,})/).map((s) => s.trim()).filter(Boolean);
   const seen = new Set();
   const skills = [];
   const spokenLanguages = [];
-  for (const token of raw) {
-    const cleaned = token.replace(BULLET_RE, "").replace(/\.$/, "").trim();
-    if (cleaned.length < 2 || cleaned.length > 30) continue;
+
+  function addToken(rawToken, explicitCategory) {
+    const cleaned = rawToken.replace(BULLET_RE, "").replace(/\.$/, "").trim();
+    if (cleaned.length < 2 || cleaned.length > 30) return;
     const key = cleaned.toLowerCase();
-    if (seen.has(key)) continue;
+    if (seen.has(key)) return;
     seen.add(key);
     if (SPOKEN_LANGUAGES.includes(key)) {
       spokenLanguages.push({ name: toTitleCase(cleaned), proficiency: "Intermediate" });
-      continue;
+      return;
     }
-    skills.push({ category: categorizeSkill(cleaned), name: cleaned, proficiency: "" });
+    skills.push({ category: explicitCategory || categorizeSkill(cleaned), name: cleaned, proficiency: "" });
+  }
+
+  // Some templates wrap one long "Category: values" list across two lines (label on one line,
+  // more values starting the next). A carried category only applies when the previous line
+  // visibly continues (ends in a trailing comma) — otherwise a later plain line (e.g. a
+  // standalone "Cloud Architecture" with no label at all) would wrongly inherit whatever
+  // category came before it.
+  let carryCategory = null;
+  let prevEndedWithComma = false;
+  for (const raw of lines) {
+    if (raw === "") { carryCategory = null; prevEndedWithComma = false; continue; }
+    const line = raw.replace(BULLET_RE, "").trim();
+    const labelMatch = line.match(CATEGORY_LABEL_RE);
+    if (labelMatch) {
+      const category = resolveExplicitCategory(labelMatch[1]);
+      const value = labelMatch[2];
+      for (const token of splitSkillTokens(value)) addToken(token, category);
+      carryCategory = value.trim().endsWith(",") ? category : null;
+    } else {
+      for (const token of splitSkillTokens(line)) addToken(token, prevEndedWithComma ? carryCategory : null);
+      carryCategory = prevEndedWithComma && line.trim().endsWith(",") ? carryCategory : null;
+    }
+    prevEndedWithComma = line.trim().endsWith(",");
   }
   return { skills, spokenLanguages };
 }
@@ -327,7 +471,13 @@ function splitStructuralEntries(lines) {
       continue;
     }
 
-    const startsNewEntry = current && current.length > 0 && !isBullet && sawBodyContent;
+    // A long bullet that wraps across two visual lines in the source PDF produces a second raw
+    // line with no bullet marker of its own (only the wrap's first line keeps the "•") — without
+    // this guard, that wrap-continuation line looked identical to "a plain line after body
+    // content", the exact signal used to detect a *new* entry's title, and got misread as one.
+    // A continuation line reliably starts lowercase (it's mid-sentence); a real title doesn't.
+    const looksLikeContinuation = /^[a-z]/.test(raw.trim());
+    const startsNewEntry = current && current.length > 0 && !isBullet && sawBodyContent && !looksLikeContinuation;
     if (startsNewEntry) {
       entries.push(current);
       current = [];
@@ -480,9 +630,30 @@ function parseCertBlock(lines) {
   if (idMatch) { c.credentialId = idMatch[3]; rest = rest.replace(idMatch[0], "").trim(); }
   const dateMatch = rest.match(DATE_RANGE_RE) || rest.match(YEAR_RE);
   if (dateMatch) { c.issueDate = dateMatch[0]; rest = rest.replace(dateMatch[0], "").trim(); }
-  const parts = rest.split(/\s[—\-|]\s|,\s*/).map((s) => s.trim()).filter(Boolean);
-  c.name = (parts[0] || "").replace(/[,\-–|]+$/, "").trim();
-  c.org = (parts[1] || "").replace(/^\(|\)$/g, "").replace(/[,\-–|()]+$/, "").trim();
+  // Splitting on every comma broke titles that legitimately contain commas of their own — a real
+  // Coursera course title, "HTML, CSS, and JavaScript for Web Developers", got chopped down to
+  // just "HTML" (first comma segment) with the actual issuer "Coursera" discarded entirely (it
+  // was never even parts[1], since the extra commas shifted everything over). A dash/pipe
+  // separator (" — ", " - ", " | ") is checked first since it's unambiguous; when only commas
+  // remain, the LAST comma is treated as the title/issuer boundary — an issuer name is virtually
+  // always the final segment, so this preserves any commas that are genuinely part of the title.
+  const dashSplit = rest.split(/\s[—\-|]\s/);
+  let name, org;
+  if (dashSplit.length >= 2) {
+    name = dashSplit[0];
+    org = dashSplit.slice(1).join(" - ");
+  } else {
+    const lastComma = rest.lastIndexOf(",");
+    if (lastComma !== -1) {
+      name = rest.slice(0, lastComma);
+      org = rest.slice(lastComma + 1);
+    } else {
+      name = rest;
+      org = "";
+    }
+  }
+  c.name = name.replace(/[,\-–|]+$/, "").trim();
+  c.org = org.replace(/^\(|\)$/g, "").replace(/[,\-–|()]+$/, "").trim();
   return c;
 }
 
