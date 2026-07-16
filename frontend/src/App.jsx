@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { GamificationProvider } from "./context/GamificationContext";
 import { ThemeProvider } from "./context/ThemeContext";
@@ -70,13 +70,18 @@ const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" }
 // from an active, monitored attempt would undermine the whole point of locking it down.
 function Protected({ roles, children, noChrome = false }) {
   const { user } = useAuth();
+  const location = useLocation();
   if (!user) return <Navigate to="/login" replace />;
   if (user.mustChangePassword) return <Navigate to="/change-password" replace />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
   return (
     <>
       {!noChrome && <Sidebar role={user.role} />}
-      {children}
+      {/* Keyed by path so this remounts (and re-triggers the fade-in) on every navigation,
+          instead of silently reusing the same DOM node with stale animation state. */}
+      <div key={location.pathname} className="ca-page-enter">
+        {children}
+      </div>
     </>
   );
 }

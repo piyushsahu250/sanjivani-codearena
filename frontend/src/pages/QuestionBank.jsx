@@ -4,6 +4,7 @@ import { Folder } from "lucide-react";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import { SkeletonGrid } from "../components/Skeleton";
 
 const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "True/False", MULTISELECT: "Multiple Select" };
 
@@ -275,7 +276,7 @@ export default function QuestionBank() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginTop: 20 }}>
               <FolderCard folder={{ id: "__all__", name: "All Questions" }} onClick={() => setActiveFolder({ id: "__all__", name: "All Questions" })} />
               <FolderCard folder={{ id: "__none__", name: "Uncategorized" }} onClick={() => setActiveFolder({ id: "__none__", name: "Uncategorized" })} />
-              {folders === null && <p className="mono" style={{ color: "var(--ink-dim)" }}>Loading folders…</p>}
+              {folders === null && <SkeletonGrid count={4} minWidth={220} />}
               {rootFolders.map((f) => (
                 <FolderManageCard
                   key={f.id} folder={f} totalCount={totalCounts.get(f.id) ?? f._count.questions}
@@ -431,7 +432,7 @@ export default function QuestionBank() {
             )}
 
             <div style={{ display: "grid", gap: 10, marginTop: 24 }}>
-              {loading && <p className="mono" style={{ color: "var(--ink-dim)" }}>Loading…</p>}
+              {loading && <SkeletonGrid count={6} minWidth={200} />}
               {!loading && questions.map((question) => (
                 <div key={question.id} className="card" style={{ padding: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                   <input type="checkbox" checked={selectedIds.includes(question.id)} onChange={() => toggleSelect(question.id)} />

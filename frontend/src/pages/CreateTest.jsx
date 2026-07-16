@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ClipboardList, FolderOpen, Folder, Upload } from "lucide-react";
 import api from "../api";
 import Navbar from "../components/Navbar";
+import { SkeletonGrid } from "../components/Skeleton";
 
 const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "True/False", MULTISELECT: "Multiple Select" };
 
@@ -120,7 +121,7 @@ export default function CreateTest() {
     }
   }
 
-  if (loading) return <div><Navbar /><div style={{ maxWidth: 720, margin: "0 auto", padding: 48 }}>Loading…</div></div>;
+  if (loading) return <div><Navbar /><div style={{ maxWidth: 720, margin: "0 auto", padding: 48 }}><SkeletonGrid count={3} minWidth={220} /></div></div>;
 
   return (
     <div>
@@ -318,7 +319,7 @@ function QuestionBankPickerModal({ selected, onToggle, onQuestionsSeen, onClose 
                 <FolderOpen size={22} />
                 <div style={{ fontWeight: 700, marginTop: 4, fontSize: 13 }}>Uncategorized</div>
               </button>
-              {folders === null && <p className="mono" style={{ color: "var(--ink-dim)" }}>Loading…</p>}
+              {folders === null && <SkeletonGrid count={4} minWidth={160} />}
               {folders?.map((f) => (
                 <button type="button" key={f.id} className="card" style={{ padding: 14, textAlign: "left", cursor: "pointer" }} onClick={() => setActiveFolder(f)}>
                   <Folder size={22} />
@@ -334,7 +335,7 @@ function QuestionBankPickerModal({ selected, onToggle, onQuestionsSeen, onClose 
                 <input style={{ ...inputStyle, flex: 1 }} placeholder="Search this folder…" value={q} onChange={(e) => setQ(e.target.value)} />
               </div>
               <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                {loadingItems && <p className="mono" style={{ color: "var(--ink-dim)" }}>Loading…</p>}
+                {loadingItems && <SkeletonGrid count={5} minWidth={280} />}
                 {!loadingItems && items.map((qq) => (
                   <label key={qq.id} className="card" style={{ padding: 10, display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
                     <input type="checkbox" checked={selected.includes(qq.id)} onChange={() => onToggle(qq.id)} />

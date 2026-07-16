@@ -10,6 +10,7 @@ import { useToast } from "../context/ToastContext";
 import { useConfirm } from "../context/ConfirmContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import { SkeletonGrid, SkeletonLine } from "../components/Skeleton";
 
 const STATUS_LABEL = { IN_PROGRESS: "In Progress", SUBMITTED: "Completed", AUTO_SUBMITTED: "Auto-submitted" };
 const STATUS_COLOR = { IN_PROGRESS: "var(--amber-dark)", SUBMITTED: "var(--mint)", AUTO_SUBMITTED: "var(--rust)" };
@@ -135,7 +136,10 @@ export default function StudentPerformance({ basePath }) {
     return (
       <div>
         <Navbar />
-        <div style={{ maxWidth: 900, margin: "0 auto", padding: "48px 24px" }} className="mono">Loading…</div>
+        <div style={{ maxWidth: 900, margin: "0 auto", padding: "48px 24px" }}>
+          <SkeletonLine width="40%" height={28} />
+          <div style={{ marginTop: 24 }}><SkeletonGrid count={4} minWidth={180} /></div>
+        </div>
       </div>
     );
   }
