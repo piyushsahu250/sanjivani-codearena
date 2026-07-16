@@ -287,14 +287,14 @@ export default function ResumeBuilder() {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <input ref={fileInputRef} type="file" accept=".pdf,.docx" style={{ display: "none" }} onChange={handleFileSelected} />
             <button className="btn btn-ghost" onClick={() => fileInputRef.current?.click()} disabled={uploadProgress !== null}>
-              {uploadProgress !== null ? `Uploading… ${uploadProgress}%` : "📤 Upload Existing Resume"}
+              {uploadProgress !== null ? `Uploading… ${uploadProgress}%` : "Upload Existing Resume"}
             </button>
-            <button className="btn btn-ghost" onClick={runAutofill} disabled={autofilling}>{autofilling ? "Filling…" : "✨ Auto-fill from Platform"}</button>
-            <button className="btn btn-ghost" onClick={() => window.print()}>🖨 Print</button>
-            <button className="btn btn-ghost" onClick={downloadDocx} disabled={downloadingDocx}>{downloadingDocx ? "Preparing…" : "⬇ Download DOCX"}</button>
-            <button className="btn btn-primary" onClick={downloadPdf} disabled={downloading}>{downloading ? "Preparing…" : "⬇ Download PDF"}</button>
+            <button className="btn btn-ghost" onClick={runAutofill} disabled={autofilling}>{autofilling ? "Filling…" : "Auto-fill from Platform"}</button>
+            <button className="btn btn-ghost" onClick={() => window.print()}>Print</button>
+            <button className="btn btn-ghost" onClick={downloadDocx} disabled={downloadingDocx}>{downloadingDocx ? "Preparing…" : "Download DOCX"}</button>
+            <button className="btn btn-primary" onClick={downloadPdf} disabled={downloading}>{downloading ? "Preparing…" : "Download PDF"}</button>
             <button className="btn btn-ghost" style={{ color: "var(--rust)", borderColor: "var(--rust)" }} onClick={clearAll} disabled={clearingAll}>
-              {clearingAll ? "Clearing…" : "🗑 Clear All Resume Data"}
+              {clearingAll ? "Clearing…" : "Clear All Resume Data"}
             </button>
           </div>
         </div>
@@ -324,7 +324,7 @@ export default function ResumeBuilder() {
               )}
               {rawText && (
                 <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setShowComparison((v) => !v)}>
-                  {showComparison ? "Hide" : "📄 View"} Original vs Parsed
+                  {showComparison ? "Hide" : "View"} Original vs Parsed
                 </button>
               )}
             </div>

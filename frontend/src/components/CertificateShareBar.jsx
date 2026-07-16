@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Download, Search, Link2, FileEdit, Plus, Check, Copy } from "lucide-react";
 
 // Shared certificate action bar: View/Download/Verify + one-click social sharing.
 //
@@ -17,7 +18,7 @@ export default function CertificateShareBar({
 }) {
   const [showPostEditor, setShowPostEditor] = useState(false);
   const [postText, setPostText] = useState(
-    `🎉 Excited to share that I have successfully completed the ${credentialName} on ${orgName}.\n\nThrough this, I strengthened my knowledge, problem-solving, and coding skills.\n\nThank you, ${orgName}, for providing an excellent learning platform.\n\nVerify my certificate:\n${verifyUrl}\n\n#CodeArena #Coding #Learning #SoftwareEngineering`
+    `Excited to share that I have successfully completed the ${credentialName} on ${orgName}.\n\nThrough this, I strengthened my knowledge, problem-solving, and coding skills.\n\nThank you, ${orgName}, for providing an excellent learning platform.\n\nVerify my certificate:\n${verifyUrl}\n\n#CodeArena #Coding #Learning #SoftwareEngineering`
   );
   const [copied, setCopied] = useState("");
 
@@ -40,7 +41,7 @@ export default function CertificateShareBar({
     window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(verifyUrl)}`, "_blank", "noopener,noreferrer");
   }
   function shareX() {
-    const text = `I just earned the ${credentialName} on ${orgName}! 🎉`;
+    const text = `I just earned the ${credentialName} on ${orgName}!`;
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(verifyUrl)}`, "_blank", "noopener,noreferrer");
   }
   function shareFacebook() {
@@ -68,14 +69,14 @@ export default function CertificateShareBar({
   return (
     <div style={{ marginTop: 20 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-        <button className="btn btn-primary" onClick={downloadFn} disabled={downloading}>
-          {downloading ? "Preparing…" : "⬇ Download PDF"}
+        <button className="btn btn-primary" onClick={downloadFn} disabled={downloading} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Download size={14} /> {downloading ? "Preparing…" : "Download PDF"}
         </button>
-        <a href={verifyUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost">🔍 Verify Certificate</a>
-        <button className="btn btn-ghost" onClick={shareLinkedIn}>🔗 Share on LinkedIn</button>
-        <button className="btn btn-ghost" onClick={() => setShowPostEditor((s) => !s)}>📝 Share as Post</button>
-        <button className="btn btn-ghost" onClick={addToLinkedInProfile}>➕ Add to LinkedIn Profile</button>
-        <button className="btn btn-ghost" onClick={copyLink}>{copied === "link" ? "✓ Copied!" : "📋 Copy Certificate Link"}</button>
+        <a href={verifyUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Search size={14} /> Verify Certificate</a>
+        <button className="btn btn-ghost" onClick={shareLinkedIn} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Link2 size={14} /> Share on LinkedIn</button>
+        <button className="btn btn-ghost" onClick={() => setShowPostEditor((s) => !s)} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><FileEdit size={14} /> Share as Post</button>
+        <button className="btn btn-ghost" onClick={addToLinkedInProfile} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={14} /> Add to LinkedIn Profile</button>
+        <button className="btn btn-ghost" onClick={copyLink} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{copied === "link" ? <><Check size={14} /> Copied!</> : <><Copy size={14} /> Copy Certificate Link</>}</button>
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 10 }}>
@@ -97,7 +98,7 @@ export default function CertificateShareBar({
             text and open LinkedIn's post composer, then paste (Ctrl/Cmd+V) it in.
           </p>
           <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={copyPostAndOpen}>
-            {copied === "post" ? "✓ Copied — opening LinkedIn…" : "Copy Text & Open LinkedIn"}
+            {copied === "post" ? "Copied — opening LinkedIn…" : "Copy Text & Open LinkedIn"}
           </button>
         </div>
       )}

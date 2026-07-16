@@ -13,8 +13,8 @@ export function GamificationProvider({ children }) {
     if (!gamification) return;
     const items = [];
     if (gamification.xpAwarded > 0) items.push({ type: "xp", text: `+${gamification.xpAwarded} XP` });
-    if (gamification.leveledUp) items.push({ type: "level", text: `🎉 Level up! You're now Level ${gamification.level.level} — ${gamification.level.name}` });
-    for (const b of gamification.newBadges || []) items.push({ type: "badge", text: `${b.icon || "🏅"} Badge unlocked: ${b.name}` });
+    if (gamification.leveledUp) items.push({ type: "level", text: `Level up! You're now Level ${gamification.level.level} — ${gamification.level.name}` });
+    for (const b of gamification.newBadges || []) items.push({ type: "badge", text: `${b.icon ? `${b.icon} ` : ""}Badge unlocked: ${b.name}` });
     if (items.length === 0) return;
 
     const id = Date.now() + Math.random();

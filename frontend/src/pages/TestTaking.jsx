@@ -840,7 +840,7 @@ export default function TestTaking() {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
         <div className="card" style={{ padding: 32, maxWidth: 480, textAlign: "center" }}>
-          <span className="badge" style={{ background: "var(--amber)" }}>📝 Official Test — graded, one attempt unless permitted by admin/staff</span>
+          <span className="badge" style={{ background: "var(--amber)" }}>Official Test — graded, one attempt unless permitted by admin/staff</span>
           <h2 style={{ marginTop: 10 }}>{testMeta.title}</h2>
           {testMeta.description && <p style={{ color: "var(--ink-dim)", marginTop: 8 }}>{testMeta.description}</p>}
           <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 16 }}>
@@ -951,7 +951,7 @@ export default function TestTaking() {
           }}
           className="mono"
         >
-          🔊 Please maintain a quiet environment during the examination.
+          Please maintain a quiet environment during the examination.
         </div>
       )}
 
@@ -1218,7 +1218,7 @@ function ResultBlock({ title, result }) {
           <div className="mono" style={{ fontSize: 12, marginTop: 6, whiteSpace: "pre-wrap" }}>{result.errorSummary.message}</div>
         )}
         {result.errorSummary.hint && (
-          <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-dim)" }}>💡 Suggested fix: {result.errorSummary.hint}</div>
+          <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-dim)" }}>Suggested fix: {result.errorSummary.hint}</div>
         )}
       </div>
     );

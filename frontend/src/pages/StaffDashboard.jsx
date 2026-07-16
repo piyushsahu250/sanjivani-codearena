@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
-import { PlusCircle, BookOpen, Trophy, FileText, Mic, Users as UsersIcon, Upload, Download } from "lucide-react";
+import { PlusCircle, BookOpen, Trophy, FileText, Mic, Users as UsersIcon, Upload, Download, School, GraduationCap, ClipboardList, BarChart3 } from "lucide-react";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 import Navbar from "../components/Navbar";
@@ -115,13 +115,13 @@ export default function StaffDashboard() {
           <div style={{ marginTop: 24 }}><SkeletonGrid count={7} minWidth={150} /></div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 24 }}>
-            <StatCard icon="🏫" label="Total Classes" value={classes.length} />
-            <StatCard icon="🎓" label="Total Students" value={classes.reduce((s, c) => s + (c._count?.users || 0), 0)} />
-            <StatCard icon="📝" label="Active Tests" value={tests.filter((t) => statusOf(t).label === "Active").length} />
-            <StatCard icon="📊" label="Total Tests" value={tests.length} />
-            <StatCard icon="📚" label="Learning Courses" value={courseCount ?? "—"} />
-            <StatCard icon="📄" label="Resumes In Progress" value={resumeStats ? resumeStats.resumesStarted : "—"} />
-            <StatCard icon="🎤" label="Avg. Interview Score" value={interviewStats ? `${interviewStats.averageScore}%` : "—"} />
+            <StatCard icon={School} label="Total Classes" value={classes.length} />
+            <StatCard icon={GraduationCap} label="Total Students" value={classes.reduce((s, c) => s + (c._count?.users || 0), 0)} />
+            <StatCard icon={ClipboardList} label="Active Tests" value={tests.filter((t) => statusOf(t).label === "Active").length} />
+            <StatCard icon={BarChart3} label="Total Tests" value={tests.length} />
+            <StatCard icon={BookOpen} label="Learning Courses" value={courseCount ?? "—"} />
+            <StatCard icon={FileText} label="Resumes In Progress" value={resumeStats ? resumeStats.resumesStarted : "—"} />
+            <StatCard icon={Mic} label="Avg. Interview Score" value={interviewStats ? `${interviewStats.averageScore}%` : "—"} />
           </div>
         )}
 
@@ -261,10 +261,10 @@ export default function StaffDashboard() {
 
 const inputStyle = { padding: "10px 12px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 14 };
 
-function StatCard({ icon, label, value }) {
+function StatCard({ icon: Icon, label, value }) {
   return (
     <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ fontSize: 20 }}>{icon}</div>
+      <Icon size={20} />
       <div className="mono" style={{ fontSize: 20, fontWeight: 700, marginTop: 4 }}>{value}</div>
       <div style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>{label}</div>
     </div>

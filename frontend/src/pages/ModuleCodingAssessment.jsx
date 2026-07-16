@@ -413,7 +413,7 @@ export default function ModuleCodingAssessment() {
                           <div style={{ marginTop: 6, fontSize: 12, color: "var(--ink-dim)" }} className="mono">
                             {q.verdict} — {q.passedCases}/{q.totalCases} hidden test case{q.totalCases === 1 ? "" : "s"} passed
                             {q.timeMs != null && ` · ⏱ ${q.timeMs} ms`}
-                            {q.memoryKb != null && ` · 💾 ${(q.memoryKb / 1024).toFixed(1)} MB`}
+                            {q.memoryKb != null && ` · ${(q.memoryKb / 1024).toFixed(1)} MB`}
                           </div>
                         </div>
                       ))}
@@ -448,7 +448,7 @@ export default function ModuleCodingAssessment() {
         <Navbar />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div className="card" style={{ padding: 32, maxWidth: 560, marginTop: 24 }}>
-            <span className="badge" style={{ background: "var(--amber)" }}>📝 Official Test — graded{t.maxAttempts != null ? `, ${t.maxAttempts} attempt${t.maxAttempts === 1 ? "" : "s"} allowed` : ""}</span>
+            <span className="badge" style={{ background: "var(--amber)" }}>Official Test — graded{t.maxAttempts != null ? `, ${t.maxAttempts} attempt${t.maxAttempts === 1 ? "" : "s"} allowed` : ""}</span>
             <h2 style={{ marginTop: 10 }}>{t.title}</h2>
             <ChalkUnderline />
             {t.instructions && <p style={{ color: "var(--ink-dim)", marginTop: 10 }}>{t.instructions}</p>}
@@ -531,7 +531,7 @@ export default function ModuleCodingAssessment() {
 
       {micBlocked && (
         <div className="mono" style={{ background: "var(--rust)", color: "#fff", padding: "12px 24px", fontSize: 13, fontWeight: 700, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 14, flexWrap: "wrap" }}>
-          <span>🎙 Microphone is disabled. Please enable your microphone to continue.</span>
+          <span>Microphone is disabled. Please enable your microphone to continue.</span>
           <button className="btn btn-ghost" style={{ borderColor: "#fff", color: "#fff" }} onClick={proctor.requestMedia} disabled={proctor.requestingMedia}>
             {proctor.requestingMedia ? "Reconnecting…" : "Re-enable Microphone"}
           </button>
@@ -680,7 +680,7 @@ function ResultBlock({ result }) {
         </div>
         {result.errorSummary.message && <div className="mono" style={{ fontSize: 12, marginTop: 6, whiteSpace: "pre-wrap" }}>{result.errorSummary.message}</div>}
         {result.errorSummary.hint && (
-          <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-dim)" }}>💡 Suggested fix: {result.errorSummary.hint}</div>
+          <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-dim)" }}>Suggested fix: {result.errorSummary.hint}</div>
         )}
       </div>
     );
@@ -693,7 +693,7 @@ function ResultBlock({ result }) {
       </div>
       <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 4 }}>
         {result.maxTimeMs != null && `⏱ ${result.maxTimeMs} ms`}
-        {result.maxMemoryKb != null && ` · 💾 ${(result.maxMemoryKb / 1024).toFixed(1)} MB`}
+        {result.maxMemoryKb != null && ` · ${(result.maxMemoryKb / 1024).toFixed(1)} MB`}
       </div>
       {result.details?.map((d, i) => (
         <div key={i} style={{ fontSize: 12, marginTop: 6 }} className="mono">

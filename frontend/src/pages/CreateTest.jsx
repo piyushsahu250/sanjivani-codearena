@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { ClipboardList, FolderOpen, Folder, Upload } from "lucide-react";
 import api from "../api";
 import Navbar from "../components/Navbar";
 
@@ -213,8 +214,8 @@ export default function CreateTest() {
           )}
 
           <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-            <button type="button" className="btn btn-primary" onClick={() => setShowBankModal(true)}>📁 Add from Question Bank</button>
-            <button type="button" className="btn btn-ghost" onClick={() => setShowBulkModal(true)}>⬆ Bulk Upload Questions</button>
+            <button type="button" className="btn btn-primary" onClick={() => setShowBankModal(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Folder size={14} /> Add from Question Bank</button>
+            <button type="button" className="btn btn-ghost" onClick={() => setShowBulkModal(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Upload size={14} /> Bulk Upload Questions</button>
           </div>
           <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 8 }}>Add as many as you need — coding and quiz questions can be mixed. Candidates get the full test duration to split across all questions however they like, and can move between questions freely.</p>
 
@@ -310,17 +311,17 @@ function QuestionBankPickerModal({ selected, onToggle, onQuestionsSeen, onClose 
           {!activeFolder ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
               <button type="button" className="card" style={{ padding: 14, textAlign: "left", cursor: "pointer" }} onClick={() => setActiveFolder({ id: "__all__", name: "All Questions" })}>
-                <div style={{ fontSize: 22 }}>📋</div>
+                <ClipboardList size={22} />
                 <div style={{ fontWeight: 700, marginTop: 4, fontSize: 13 }}>All Questions</div>
               </button>
               <button type="button" className="card" style={{ padding: 14, textAlign: "left", cursor: "pointer" }} onClick={() => setActiveFolder({ id: "__none__", name: "Uncategorized" })}>
-                <div style={{ fontSize: 22 }}>📂</div>
+                <FolderOpen size={22} />
                 <div style={{ fontWeight: 700, marginTop: 4, fontSize: 13 }}>Uncategorized</div>
               </button>
               {folders === null && <p className="mono" style={{ color: "var(--ink-dim)" }}>Loading…</p>}
               {folders?.map((f) => (
                 <button type="button" key={f.id} className="card" style={{ padding: 14, textAlign: "left", cursor: "pointer" }} onClick={() => setActiveFolder(f)}>
-                  <div style={{ fontSize: 22 }}>📁</div>
+                  <Folder size={22} />
                   <div style={{ fontWeight: 700, marginTop: 4, fontSize: 13 }}>{f.name}</div>
                   <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)" }}>{f._count.questions} question{f._count.questions === 1 ? "" : "s"}</div>
                 </button>

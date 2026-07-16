@@ -189,7 +189,7 @@ function ModulePanel({ course, modules, onSelect, onManageCoding, onRefresh }) {
               <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 8px" }} onClick={() => reorder(m, -1)}>↑</button>
               <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 8px" }} onClick={() => reorder(m, 1)}>↓</button>
               <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => onSelect(m.id)}>Manage →</button>
-              <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => onManageCoding(m.id)}>🖥 Coding Assessment</button>
+              <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => onManageCoding(m.id)}>Coding Assessment</button>
               <button style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 13 }} onClick={() => remove(m)}>Delete</button>
             </div>
           </div>
@@ -441,7 +441,7 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
   );
 }
 
-// --- Mandatory Proctored Coding Test admin panel, reached from ModulePanel's "🖥 Coding
+// --- Mandatory Proctored Coding Test admin panel, reached from ModulePanel's "Coding
 // Assessment" button. Not configured for most modules (only Module 1 & 2 are seeded) — creating
 // one here is what turns on the gate; deleting it turns it back off, ungating the module.
 const EMPTY_TEST_FORM = {

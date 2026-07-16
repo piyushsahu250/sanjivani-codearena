@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { PlayCircle, Code2, LineChart, Trophy, FileText, Mic, UserCircle } from "lucide-react";
+import {
+  PlayCircle, Code2, LineChart, Trophy, FileText, Mic, UserCircle,
+  ClipboardList, CheckCircle2, Clock, BarChart3, ListChecks, BookOpen, Flame, Award, Lock, Bell, Target,
+} from "lucide-react";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
@@ -9,16 +12,16 @@ import ChalkUnderline from "../components/ChalkUnderline";
 import { SkeletonGrid, SkeletonLine } from "../components/Skeleton";
 
 const CARD_DEFS = [
-  { key: "testsAssigned", label: "Tests Assigned", icon: "📋", color: "var(--ink)" },
-  { key: "testsCompleted", label: "Tests Completed", icon: "✅", color: "var(--mint)" },
-  { key: "testsPending", label: "Tests Pending", icon: "⏳", color: "var(--amber-dark)" },
-  { key: "averageScorePercent", label: "Average Score", icon: "📊", color: "var(--mint)", suffix: "%" },
-  { key: "rank", label: "Class Rank", icon: "🏆", color: "var(--amber-dark)" },
-  { key: "codingSolved", label: "Coding Solved", icon: "💻", color: "var(--ink)" },
-  { key: "mcqCorrect", label: "MCQs Correct", icon: "✔️", color: "var(--mint)" },
-  { key: "learningProgressPercent", label: "Learning Progress", icon: "📚", color: "var(--mint)", suffix: "%" },
-  { key: "codingStreak", label: "Coding Streak", icon: "🔥", color: "var(--rust)", suffix: " days" },
-  { key: "certificatesEarned", label: "Certificates", icon: "🎓", color: "var(--amber-dark)" },
+  { key: "testsAssigned", label: "Tests Assigned", icon: ClipboardList, color: "var(--ink)" },
+  { key: "testsCompleted", label: "Tests Completed", icon: CheckCircle2, color: "var(--mint)" },
+  { key: "testsPending", label: "Tests Pending", icon: Clock, color: "var(--amber-dark)" },
+  { key: "averageScorePercent", label: "Average Score", icon: BarChart3, color: "var(--mint)", suffix: "%" },
+  { key: "rank", label: "Class Rank", icon: Trophy, color: "var(--amber-dark)" },
+  { key: "codingSolved", label: "Coding Solved", icon: Code2, color: "var(--ink)" },
+  { key: "mcqCorrect", label: "MCQs Correct", icon: ListChecks, color: "var(--mint)" },
+  { key: "learningProgressPercent", label: "Learning Progress", icon: BookOpen, color: "var(--mint)", suffix: "%" },
+  { key: "codingStreak", label: "Coding Streak", icon: Flame, color: "var(--rust)", suffix: " days" },
+  { key: "certificatesEarned", label: "Certificates", icon: Award, color: "var(--amber-dark)" },
 ];
 
 export default function StudentDashboard() {
@@ -136,7 +139,7 @@ export default function StudentDashboard() {
                 <div style={{ fontSize: 11, color: "var(--ink-dim)" }}>Leaderboard Rank</div>
                 <div style={{ fontSize: 14 }}>{gami.leaderboardRank.rank ? `#${gami.leaderboardRank.rank} / ${gami.leaderboardRank.totalStudents}` : "—"}</div>
               </div>
-              <Link to="/achievements" className="btn btn-primary" style={{ alignSelf: "center" }}>🏆 View Achievements</Link>
+              <Link to="/achievements" className="btn btn-primary" style={{ alignSelf: "center", display: "inline-flex", alignItems: "center", gap: 6 }}><Trophy size={14} /> View Achievements</Link>
             </div>
           </div>
         )}
@@ -188,7 +191,7 @@ export default function StudentDashboard() {
               <div style={{ display: "grid", gap: 10 }}>
                 {dash.notifications.map((n, i) => (
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
-                    <span>{notificationIcon(n.type)} {n.text}</span>
+                    <span><NotificationIcon type={n.type} />{n.text}</span>
                     <span className="mono" style={{ color: "var(--ink-dim)", fontSize: 11, whiteSpace: "nowrap" }}>{new Date(n.date).toLocaleDateString()}</span>
                   </div>
                 ))}
@@ -309,14 +312,16 @@ export default function StudentDashboard() {
   );
 }
 
-function notificationIcon(type) {
-  return { test_assigned: "🆕", test_reminder: "⏰", module_unlocked: "🔓", certificate: "🎓" }[type] || "🔔";
+const NOTIFICATION_ICON = { test_assigned: ClipboardList, test_reminder: Clock, module_unlocked: Lock, certificate: Award };
+function NotificationIcon({ type }) {
+  const Icon = NOTIFICATION_ICON[type] || Bell;
+  return <Icon size={14} style={{ verticalAlign: "-2px", marginRight: 4 }} />;
 }
 
-function DashboardCard({ icon, label, value, color }) {
+function DashboardCard({ icon: Icon, label, value, color }) {
   return (
     <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ fontSize: 20 }}>{icon}</div>
+      <Icon size={20} color={color} />
       <div className="mono" style={{ fontSize: 20, fontWeight: 700, color, marginTop: 4 }}>{value}</div>
       <div style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>{label}</div>
     </div>
@@ -378,13 +383,13 @@ function RecommendedLearningBlock({ learning, interviewSummary }) {
     <div style={{ display: "grid", gap: 12 }}>
       {currentModule && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontSize: 13 }}>
-          <span>📚 Continue <strong>{currentModule.title}</strong> to keep your learning streak going.</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><BookOpen size={14} /> Continue <strong>{currentModule.title}</strong> to keep your learning streak going.</span>
           <Link to={`/learning/${learning.course.slug}/lesson/${currentModule.lessons[0]?.id}`} className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}>Go →</Link>
         </div>
       )}
       {weakAreas.length > 0 && (
         <div style={{ fontSize: 13 }}>
-          <span>🎯 Based on your mock interviews, focus on: </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Target size={14} /> Based on your mock interviews, focus on: </span>
           <strong>{weakAreas.join(", ")}</strong>
         </div>
       )}
@@ -432,7 +437,7 @@ function LearningProgressBlock({ learning }) {
         <div>
           <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-dim)", marginBottom: 6 }}>Locked</div>
           {lockedModules.length === 0 ? <span style={{ fontSize: 13, color: "var(--ink-dim)" }}>None</span> : lockedModules.map((m) => (
-            <div key={m.id} style={{ fontSize: 13, color: "var(--ink-dim)" }}>🔒 {m.title}</div>
+            <div key={m.id} style={{ fontSize: 13, color: "var(--ink-dim)", display: "flex", alignItems: "center", gap: 6 }}><Lock size={13} /> {m.title}</div>
           ))}
         </div>
       </div>

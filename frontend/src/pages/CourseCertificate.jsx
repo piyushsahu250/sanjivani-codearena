@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { GraduationCap } from "lucide-react";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
@@ -56,7 +57,7 @@ export default function CourseCertificate() {
 
         {cert && (
           <div className="card" style={{ padding: 32, marginTop: 24, textAlign: "center" }}>
-            <div style={{ fontSize: 40 }}>🎓</div>
+            <GraduationCap size={40} />
             <h2 style={{ marginTop: 12 }}>{cert.courseName} Course Completion</h2>
             <p style={{ marginTop: 8 }}>Awarded to <strong>{cert.studentName}</strong></p>
             <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 12 }}>

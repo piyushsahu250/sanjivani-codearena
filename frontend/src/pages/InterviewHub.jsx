@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import {
+  MessagesSquare, Lightbulb, Code2, Building2, Compass, Briefcase, Calculator, Target, FileText, Award, GraduationCap,
+} from "lucide-react";
 import api from "../api";
 import { useTheme } from "../context/ThemeContext";
 import Navbar from "../components/Navbar";
@@ -7,17 +10,17 @@ import ChalkUnderline from "../components/ChalkUnderline";
 import "./interviewPrep.css";
 
 const CARDS = [
-  { key: "HR", title: "HR Interview", icon: "🗣️", desc: "Practice common HR questions — type or speak your answer." },
-  { key: "TECHNICAL", title: "Technical Interview", icon: "💡", desc: "Subject-based Q&A across 11 core CS subjects." },
-  { key: "CODING", title: "Coding Interview", icon: "💻", desc: "Solve real coding problems, graded by the judge." },
-  { key: "SYSTEM_DESIGN", title: "System Design Interview", icon: "🏗️", desc: "Explain your approach to designing scalable systems." },
-  { key: "BEHAVIORAL", title: "Behavioral Interview", icon: "🧭", desc: "STAR-style questions about how you've handled real situations." },
-  { key: "MANAGERIAL", title: "Managerial Interview", icon: "🧑‍💼", desc: "Leadership, prioritization, and team-management scenarios." },
-  { key: "APTITUDE", title: "Aptitude Interview", icon: "🧮", desc: "Timed quantitative, logical, verbal & DI questions." },
-  { key: "COMPANY", title: "Company-Specific Interview", icon: "🏢", desc: "Practice questions tagged to a specific company's hiring pattern, one round at a time." },
-  { key: "COMPANY_ROUND", title: "Company Round", icon: "🏆", desc: "A full HR + Technical + Coding + Managerial round for one company, all in one session." },
-  { key: "MOCK", title: "Mock Interview", icon: "🎯", desc: "A 30-minute mixed HR + Technical + Coding session." },
-  { key: "RESUME_BASED", title: "Resume-based Interview", icon: "📄", desc: "Questions generated from your own resume." },
+  { key: "HR", title: "HR Interview", icon: MessagesSquare, desc: "Practice common HR questions — type or speak your answer." },
+  { key: "TECHNICAL", title: "Technical Interview", icon: Lightbulb, desc: "Subject-based Q&A across 11 core CS subjects." },
+  { key: "CODING", title: "Coding Interview", icon: Code2, desc: "Solve real coding problems, graded by the judge." },
+  { key: "SYSTEM_DESIGN", title: "System Design Interview", icon: Building2, desc: "Explain your approach to designing scalable systems." },
+  { key: "BEHAVIORAL", title: "Behavioral Interview", icon: Compass, desc: "STAR-style questions about how you've handled real situations." },
+  { key: "MANAGERIAL", title: "Managerial Interview", icon: Briefcase, desc: "Leadership, prioritization, and team-management scenarios." },
+  { key: "APTITUDE", title: "Aptitude Interview", icon: Calculator, desc: "Timed quantitative, logical, verbal & DI questions." },
+  { key: "COMPANY", title: "Company-Specific Interview", icon: Building2, desc: "Practice questions tagged to a specific company's hiring pattern, one round at a time." },
+  { key: "COMPANY_ROUND", title: "Company Round", icon: Award, desc: "A full HR + Technical + Coding + Managerial round for one company, all in one session." },
+  { key: "MOCK", title: "Mock Interview", icon: Target, desc: "A 30-minute mixed HR + Technical + Coding session." },
+  { key: "RESUME_BASED", title: "Resume-based Interview", icon: FileText, desc: "Questions generated from your own resume." },
 ];
 
 const SUBJECTS = ["C", "C++", "Java", "Python", "JavaScript", "SQL", "DBMS", "OS", "CN", "OOP", "DSA"];
@@ -100,7 +103,7 @@ export default function InterviewHub() {
             <Link to="/interview/history" className="btn btn-ghost">History</Link>
             <Link to="/interview/leaderboard" className="btn btn-ghost">Leaderboard</Link>
             <Link to="/interview/progress" className="btn btn-ghost">Progress</Link>
-            <Link to="/interview/certificate" className="btn btn-ghost">🎓 Certificate</Link>
+            <Link to="/interview/certificate" className="btn btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><GraduationCap size={14} /> Certificate</Link>
           </div>
         </div>
 
@@ -124,7 +127,7 @@ export default function InterviewHub() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16, marginTop: 28 }}>
           {CARDS.map((c) => (
             <div key={c.key} className="ip-glass ip-card" onClick={() => handleCardClick(c.key)}>
-              <div style={{ fontSize: 28 }}>{c.icon}</div>
+              <c.icon size={28} />
               <h3 style={{ fontSize: 17, marginTop: 8 }}>{c.title}</h3>
               <p style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>{c.desc}</p>
 

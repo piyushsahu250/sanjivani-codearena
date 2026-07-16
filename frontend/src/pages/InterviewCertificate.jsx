@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Trophy } from "lucide-react";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
@@ -49,7 +50,7 @@ export default function InterviewCertificate() {
 
         {cert && (
           <div className="ip-glass" style={{ padding: 32, marginTop: 24, textAlign: "center" }}>
-            <div style={{ fontSize: 40 }}>🏆</div>
+            <Trophy size={40} />
             <h2 style={{ marginTop: 12 }}>Interview Ready</h2>
             <p style={{ marginTop: 8 }}>Awarded to <strong>{cert.studentName}</strong></p>
             <p className="mono" style={{ fontSize: 12, opacity: 0.7, marginTop: 12 }}>

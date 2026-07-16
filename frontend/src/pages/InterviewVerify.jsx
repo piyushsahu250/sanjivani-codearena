@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { Trophy } from "lucide-react";
 import api from "../api";
 import "./interviewPrep.css";
 
@@ -15,7 +16,7 @@ export default function InterviewVerify() {
   return (
     <div className="interview-prep" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div className="ip-glass" style={{ padding: 32, maxWidth: 420, textAlign: "center" }}>
-        <div style={{ fontSize: 32 }}>🏆</div>
+        <Trophy size={32} />
         <h2 style={{ marginTop: 8 }}>Certificate Verification</h2>
         {!result && <p className="mono" style={{ marginTop: 16 }}>Checking…</p>}
         {result && !result.valid && <p style={{ marginTop: 16, color: "var(--rust)" }}>This certificate code could not be verified.</p>}

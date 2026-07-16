@@ -405,7 +405,7 @@ export default function AdminDashboard() {
                     )}
                     <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                       <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={copyCredentials}>
-                        {copied ? "✓ Copied" : "📋 Copy Login Credentials"}
+                        {copied ? "✓ Copied" : "Copy Login Credentials"}
                       </button>
                       {createdCredential.emailSent === false && (
                         <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={resendWelcomeEmail} disabled={resending}>

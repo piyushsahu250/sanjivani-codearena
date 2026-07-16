@@ -114,7 +114,7 @@ export default function InterviewReport() {
                   <strong>{rec.area}:</strong> {rec.action}{" "}
                   <Link to={rec.link} style={{ color: "var(--ip-accent)" }}>→</Link>
                   {typeof rec.suggestedCodingPractice === "number" && rec.suggestedCodingPractice > 0 && (
-                    <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>💻 {rec.suggestedCodingPractice} practice problem{rec.suggestedCodingPractice === 1 ? "" : "s"}</span>
+                    <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>{rec.suggestedCodingPractice} practice problem{rec.suggestedCodingPractice === 1 ? "" : "s"}</span>
                   )}
                 </div>
               ))}

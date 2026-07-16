@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { GraduationCap } from "lucide-react";
 import api from "../api";
 
 // Public page (no auth) — reached via a shared/copied certificate verification link.
@@ -14,7 +15,7 @@ export default function CourseCertificateVerify() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--paper, #FBF9F4)" }}>
       <div className="card" style={{ padding: 32, maxWidth: 420, textAlign: "center" }}>
-        <div style={{ fontSize: 32 }}>🎓</div>
+        <GraduationCap size={32} />
         <h2 style={{ marginTop: 8 }}>Certificate Verification</h2>
         {!result && <p className="mono" style={{ marginTop: 16 }}>Checking…</p>}
         {result && !result.valid && <p style={{ marginTop: 16, color: "var(--rust)" }}>This certificate code could not be verified.</p>}

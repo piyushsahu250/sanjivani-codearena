@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Folder } from "lucide-react";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
@@ -272,8 +273,8 @@ export default function QuestionBank() {
             />
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginTop: 20 }}>
-              <FolderCard folder={{ id: "__all__", name: "📋 All Questions" }} onClick={() => setActiveFolder({ id: "__all__", name: "All Questions" })} />
-              <FolderCard folder={{ id: "__none__", name: "📂 Uncategorized" }} onClick={() => setActiveFolder({ id: "__none__", name: "Uncategorized" })} />
+              <FolderCard folder={{ id: "__all__", name: "All Questions" }} onClick={() => setActiveFolder({ id: "__all__", name: "All Questions" })} />
+              <FolderCard folder={{ id: "__none__", name: "Uncategorized" }} onClick={() => setActiveFolder({ id: "__none__", name: "Uncategorized" })} />
               {folders === null && <p className="mono" style={{ color: "var(--ink-dim)" }}>Loading folders…</p>}
               {rootFolders.map((f) => (
                 <FolderManageCard
@@ -531,7 +532,7 @@ function FolderManageCard({
       ) : (
         <>
           <div onClick={onOpen} style={{ cursor: "pointer" }}>
-            <div style={{ fontSize: 28 }}>📁</div>
+            <Folder size={28} />
             <div style={{ fontWeight: 700, marginTop: 6 }}>{folder.name}</div>
             {folder.category && <div className="badge" style={{ marginTop: 4, fontSize: 10 }}>{folder.category}</div>}
             <div className="mono" style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 4 }}>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import api from "../api";
+import { Mic, Square } from "lucide-react";
 import { useProctoring } from "../hooks/useProctoring";
 import { useTheme } from "../context/ThemeContext";
 import Navbar from "../components/Navbar";
@@ -321,7 +322,7 @@ export default function InterviewSession() {
         )}
         {proctor.micStatus === "UNAVAILABLE" && (
           <div className="mono" style={{ background: "var(--rust)", color: "#fff", padding: "14px 20px", fontSize: 13, fontWeight: 700, textAlign: "center", marginTop: 12, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 14, flexWrap: "wrap" }}>
-            <span>🎙 Microphone is disabled. Please enable your microphone to continue the interview.</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Mic size={14} /> Microphone is disabled. Please enable your microphone to continue the interview.</span>
             <button className="btn btn-ghost" style={{ borderColor: "#fff", color: "#fff" }} onClick={proctor.requestMedia} disabled={proctor.requestingMedia}>
               {proctor.requestingMedia ? "Reconnecting…" : "Re-enable Microphone"}
             </button>
@@ -359,8 +360,8 @@ export default function InterviewSession() {
                 onChange={(e) => updateDraft({ answerText: e.target.value })}
                 placeholder="Type your answer, or use the mic below to speak it…"
               />
-              <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={toggleRecording}>
-                {recording ? "⏹ Stop recording" : "🎙 Record answer (speech-to-text)"}
+              <button className="btn btn-ghost" style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6 }} onClick={toggleRecording}>
+                {recording ? <><Square size={14} /> Stop recording</> : <><Mic size={14} /> Record answer (speech-to-text)</>}
               </button>
               {recording && <span className="mono" style={{ fontSize: 11, marginLeft: 8, opacity: 0.7 }}>Listening… click Stop, then edit the transcript before moving on if needed.</span>}
             </>

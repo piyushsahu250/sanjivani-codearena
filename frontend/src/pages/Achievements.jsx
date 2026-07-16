@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Flame, Mountain, Trophy, Medal, Lock } from "lucide-react";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 import Navbar from "../components/Navbar";
@@ -62,10 +63,10 @@ export default function Achievements() {
 
         {/* Streak + rank */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 16 }}>
-          <MiniCard icon="🔥" label="Current Streak" value={`${streak.current} day${streak.current === 1 ? "" : "s"}`} />
-          <MiniCard icon="🏔️" label="Longest Streak" value={`${streak.longest} day${streak.longest === 1 ? "" : "s"}`} />
-          <MiniCard icon="🏆" label="Class Rank" value={data.leaderboardRank.rank ? `#${data.leaderboardRank.rank}/${data.leaderboardRank.totalStudents}` : "—"} />
-          <MiniCard icon="🎖️" label="Badges Earned" value={badges.earned.length} />
+          <MiniCard icon={Flame} label="Current Streak" value={`${streak.current} day${streak.current === 1 ? "" : "s"}`} />
+          <MiniCard icon={Mountain} label="Longest Streak" value={`${streak.longest} day${streak.longest === 1 ? "" : "s"}`} />
+          <MiniCard icon={Trophy} label="Class Rank" value={data.leaderboardRank.rank ? `#${data.leaderboardRank.rank}/${data.leaderboardRank.totalStudents}` : "—"} />
+          <MiniCard icon={Medal} label="Badges Earned" value={badges.earned.length} />
         </div>
 
         {/* Badges */}
@@ -88,7 +89,7 @@ export default function Achievements() {
                 ))}
                 {lockedInCat.map((b) => (
                   <div key={b.code} className="card" style={{ padding: 14, opacity: 0.45 }}>
-                    <div style={{ fontSize: 24 }}>🔒</div>
+                    <Lock size={24} />
                     <div style={{ fontWeight: 600, fontSize: 13, marginTop: 4 }}>{b.name}</div>
                     <div style={{ fontSize: 12, color: "var(--ink-dim)" }}>{b.description}</div>
                   </div>
@@ -172,10 +173,10 @@ export default function Achievements() {
   );
 }
 
-function MiniCard({ icon, label, value }) {
+function MiniCard({ icon: Icon, label, value }) {
   return (
     <div className="card" style={{ padding: "14px 16px" }}>
-      <div style={{ fontSize: 18 }}>{icon}</div>
+      <Icon size={18} />
       <div className="mono" style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>{value}</div>
       <div style={{ fontSize: 12, color: "var(--ink-dim)" }}>{label}</div>
     </div>

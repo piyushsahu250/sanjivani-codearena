@@ -202,7 +202,7 @@ export default function InterviewAdmin() {
           {(questions || []).map((q) => (
             <div key={q.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
               <div>
-                <span className="badge">{q.category}{q.subject ? ` · ${q.subject}` : ""}{q.aptitudeCategory ? ` · ${q.aptitudeCategory}` : ""}{q.company ? ` · 🏢 ${q.company}` : ""}</span>
+                <span className="badge">{q.category}{q.subject ? ` · ${q.subject}` : ""}{q.aptitudeCategory ? ` · ${q.aptitudeCategory}` : ""}{q.company ? ` · ${q.company}` : ""}</span>
                 {q.followUpQuestionId && <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>↳ has follow-up</span>}
                 <div style={{ marginTop: 4 }}>{q.prompt}</div>
               </div>

@@ -111,13 +111,13 @@ export default function LessonView() {
             <div className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
               <Link to={`/learning/${slug}`} style={{ color: "var(--ink-dim)" }}>{course.name}</Link> · {module.title}
             </div>
-            <h1 style={{ marginTop: 6 }}>{lesson.isModuleTest && "📝 "}{lesson.title}</h1>
+            <h1 style={{ marginTop: 6 }}>{lesson.title}</h1>
             <ChalkUnderline />
             <span
               className="badge"
               style={{ marginTop: 8, display: "inline-block", background: lesson.isModuleTest ? "var(--amber)" : "var(--mint-light, #E7F3EB)" }}
             >
-              {lesson.isModuleTest ? "📝 Official Test — one graded attempt" : "🧪 Practice Module — unlimited attempts"}
+              {lesson.isModuleTest ? "Official Test — one graded attempt" : "Practice Module — unlimited attempts"}
             </span>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -139,19 +139,19 @@ export default function LessonView() {
 
         {lesson.videoUrl && (
           <div className="card" style={{ padding: 16, marginTop: 16 }}>
-            <strong style={{ fontSize: 13 }}>📺 Video: </strong>
+            <strong style={{ fontSize: 13 }}>Video: </strong>
             <a href={lesson.videoUrl} target="_blank" rel="noreferrer">{lesson.videoUrl}</a>
           </div>
         )}
         {lesson.pdfUrl && (
           <div className="card" style={{ padding: 16, marginTop: 12 }}>
-            <strong style={{ fontSize: 13 }}>📄 Notes (PDF): </strong>
+            <strong style={{ fontSize: 13 }}>Notes (PDF): </strong>
             <a href={lesson.pdfUrl} target="_blank" rel="noreferrer">Download / view</a>
           </div>
         )}
         {Array.isArray(lesson.externalLinks) && lesson.externalLinks.length > 0 && (
           <div className="card" style={{ padding: 16, marginTop: 12 }}>
-            <strong style={{ fontSize: 13 }}>🔗 External resources</strong>
+            <strong style={{ fontSize: 13 }}>External resources</strong>
             <ul style={{ marginTop: 8 }}>
               {lesson.externalLinks.map((l, i) => (
                 <li key={i}><a href={l.url} target="_blank" rel="noreferrer">{l.label || l.url}</a></li>

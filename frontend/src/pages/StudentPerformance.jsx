@@ -198,7 +198,7 @@ export default function StudentPerformance({ basePath }) {
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={copySentCredential}>
-                {copied ? "✓ Copied" : "📋 Copy Login Credentials"}
+                {copied ? "✓ Copied" : "Copy Login Credentials"}
               </button>
               <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={resetPassword} disabled={resetting}>
                 {resetting ? "Resending…" : "✉ Resend Welcome Email"}

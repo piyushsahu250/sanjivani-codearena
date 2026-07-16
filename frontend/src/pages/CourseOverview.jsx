@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { GraduationCap, Lock, CheckCircle2, Clock, ClipboardList } from "lucide-react";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 import Navbar from "../components/Navbar";
@@ -55,7 +56,7 @@ export default function CourseOverview() {
                 {resumeLessonId && !complete && (
                   <Link to={`/learning/${slug}/lesson/${resumeLessonId}`} className="btn btn-primary">▶ Continue</Link>
                 )}
-                {complete && <Link to={`/learning/${slug}/certificate`} className="btn btn-primary">🎓 View Certificate</Link>}
+                {complete && <Link to={`/learning/${slug}/certificate`} className="btn btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><GraduationCap size={14} /> View Certificate</Link>}
               </div>
             </div>
             <div style={{ height: 8, borderRadius: 4, background: "var(--line)", marginTop: 14, overflow: "hidden" }}>
@@ -75,7 +76,7 @@ export default function CourseOverview() {
                     <h3 style={{ fontSize: 16 }}>Module {mi + 1}: {m.title}</h3>
                     {isStudent && m.completed && <span className="badge" style={{ background: "#E7F3EB", color: "var(--mint)" }}>✓ Completed</span>}
                     {isCurrent && <span className="badge" style={{ background: "#FCEFD9", color: "var(--amber-dark)" }}>In progress</span>}
-                    {locked && <span className="badge" style={{ background: "#F0EEE3", color: "var(--ink-dim)" }}>🔒 Locked</span>}
+                    {locked && <span className="badge" style={{ background: "#F0EEE3", color: "var(--ink-dim)", display: "inline-flex", alignItems: "center", gap: 4 }}><Lock size={11} /> Locked</span>}
                   </div>
                   {isStudent && !locked && (
                     <span className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>{m.completedCount}/{m.totalCount}</span>
@@ -101,7 +102,7 @@ export default function CourseOverview() {
                         >
                           <span>
                             {isStudent && <span className="mono" style={{ color: STATUS_COLOR[l.status], marginRight: 8 }}>{STATUS_ICON[l.status]}</span>}
-                            {l.isModuleTest && "📝 "}{l.title}
+                            {l.isModuleTest && <ClipboardList size={12} style={{ verticalAlign: "-1px", marginRight: 4 }} />}{l.title}
                             {isStudent && l.bookmarked && <span style={{ marginLeft: 6 }}>★</span>}
                           </span>
                           <span className="mono" style={{ fontSize: 11, color: "var(--ink-dim)" }}>{l.estimatedMinutes} min</span>
@@ -117,8 +118,8 @@ export default function CourseOverview() {
                           border: `1px solid ${m.codingTest.passed ? "var(--mint)" : m.lessonsComplete ? "var(--amber-dark)" : "var(--line)"}`,
                         }}
                       >
-                        <span>
-                          {m.codingTest.passed ? "✅ Coding Assessment Passed" : m.lessonsComplete ? "🟡 Coding Assessment Pending" : "🔒 Coding Assessment (complete lessons first)"}
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          {m.codingTest.passed ? <><CheckCircle2 size={14} /> Coding Assessment Passed</> : m.lessonsComplete ? <><Clock size={14} /> Coding Assessment Pending</> : <><Lock size={14} /> Coding Assessment (complete lessons first)</>}
                         </span>
                         {m.lessonsComplete && (
                           <Link to={`/learning/${slug}/module/${m.id}/coding-assessment`} className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}>

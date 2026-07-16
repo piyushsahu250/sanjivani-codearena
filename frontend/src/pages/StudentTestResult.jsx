@@ -68,7 +68,7 @@ export default function StudentTestResult() {
                       <div style={{ marginTop: 6, fontSize: 12, color: "var(--ink-dim)" }} className="mono">
                         {s.verdict} — {s.passedCases}/{s.totalCases} hidden test case{s.totalCases === 1 ? "" : "s"} passed
                         {s.timeMs != null && ` · ⏱ ${s.timeMs} ms`}
-                        {s.memoryKb != null && ` · 💾 ${(s.memoryKb / 1024).toFixed(1)} MB`}
+                        {s.memoryKb != null && ` · ${(s.memoryKb / 1024).toFixed(1)} MB`}
                       </div>
                     )}
                   </div>
