@@ -46,6 +46,18 @@ function sanitizeSubmitResponse(question, result) {
   return { status: "SUBMITTED" };
 }
 
+// When Test.shuffleOptions is on, the student saw and clicked options in a per-attempt shuffled
+// display order (see GET /tests/:id), so `selectedOptions` arrives as positions in THAT shuffled
+// array, not the original Question.options/correctAnswer indices grading compares against.
+// attempt.optionOrder[questionId] is the permutation used to build the display order (position i
+// shows original option optionOrder[i]) — invert it back to original indices before grading. A
+// question with no entry in optionOrder (shuffleOptions off, or a legacy attempt from before this
+// feature) passes through untouched.
+function toOriginalIndices(selectedOptions, order) {
+  if (!order) return selectedOptions;
+  return (Array.isArray(selectedOptions) ? selectedOptions : []).map((pos) => order[pos]).filter((v) => v !== undefined);
+}
+
 // Exact-match grading for MCQ / TRUE_FALSE / MULTISELECT: the selected set of
 // option indices must equal the correct set exactly (no partial credit).
 function gradeQuizAnswer(question, selectedOptions) {
@@ -145,7 +157,8 @@ router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async 
       return res.status(400).json({ error: "Coding questions are auto-saved via /autosave, not /submit" });
     }
 
-    const result = gradeQuizAnswer(question, selectedOptions);
+    const originalIndices = toOriginalIndices(selectedOptions, attempt.optionOrder?.[questionId]);
+    const result = gradeQuizAnswer(question, originalIndices);
     const score =
       result.verdict === "ACCEPTED"
         ? question.points

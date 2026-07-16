@@ -15,6 +15,35 @@ function questionCreateData(questionIds, questionTimeLimits) {
   }));
 }
 
+// Fisher-Yates — uniform, unbiased permutation in O(n), fine at exam scale.
+function shuffledArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Builds this student's one-time question/option order for a fresh attempt. Runs once, at
+// attempt creation, off the test's already-loaded question list — pure in-memory shuffling, no
+// extra queries, so it adds no measurable latency to test start even under heavy concurrent load.
+function buildAttemptOrder(test) {
+  const orderedIds = [...test.questions].sort((a, b) => a.order - b.order).map((tq) => tq.questionId);
+  const questionOrder = test.shuffleQuestions ? shuffledArray(orderedIds) : orderedIds;
+
+  let optionOrder = null;
+  if (test.shuffleOptions) {
+    optionOrder = {};
+    for (const tq of test.questions) {
+      const q = tq.question;
+      if (q.questionType === "CODING" || !Array.isArray(q.options) || q.options.length === 0) continue;
+      optionOrder[q.id] = shuffledArray(q.options.map((_, i) => i));
+    }
+  }
+  return { questionOrder, optionOrder };
+}
+
 // A student can see/take a test if it has no class assignment (open to all, legacy default)
 // or their class is one of the assigned classes.
 async function studentCanAccessTest(test, studentClassId) {
@@ -36,6 +65,7 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
       title, code, description, instructions, durationMin, passingMarks, showResults,
       startTime, endTime, questionIds, questionTimeLimits, classIds,
       requireFullscreen, requireWebcam, requireMicrophone,
+      shuffleQuestions, shuffleOptions,
     } = req.body;
     const test = await prisma.test.create({
       data: {
@@ -51,6 +81,8 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
         requireFullscreen: requireFullscreen === undefined ? true : !!requireFullscreen,
         requireWebcam: !!requireWebcam,
         requireMicrophone: !!requireMicrophone,
+        shuffleQuestions: shuffleQuestions === undefined ? true : !!shuffleQuestions,
+        shuffleOptions: !!shuffleOptions,
         createdById: req.user.id,
         questions: { create: questionCreateData(questionIds, questionTimeLimits) },
         classes: { create: (classIds || []).map((classId) => ({ classId })) },
@@ -74,6 +106,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
       title, code, description, instructions, durationMin, passingMarks, showResults,
       startTime, endTime, questionIds, questionTimeLimits, classIds,
       requireFullscreen, requireWebcam, requireMicrophone,
+      shuffleQuestions, shuffleOptions,
     } = req.body;
 
     const data = {
@@ -89,6 +122,8 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
       requireFullscreen: requireFullscreen === undefined ? existing.requireFullscreen : !!requireFullscreen,
       requireWebcam: requireWebcam === undefined ? existing.requireWebcam : !!requireWebcam,
       requireMicrophone: requireMicrophone === undefined ? existing.requireMicrophone : !!requireMicrophone,
+      shuffleQuestions: shuffleQuestions === undefined ? existing.shuffleQuestions : !!shuffleQuestions,
+      shuffleOptions: shuffleOptions === undefined ? existing.shuffleOptions : !!shuffleOptions,
     };
 
     await prisma.$transaction(async (tx) => {
@@ -268,6 +303,26 @@ router.get("/:id", authenticate, async (req, res) => {
     const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true } });
     const allowed = test.classes.length === 0 || (student.classId && test.classes.some((c) => c.classId === student.classId));
     if (!allowed) return res.status(404).json({ error: "Test not found" });
+
+    // Apply this student's one-time-generated order (set at attempt creation, see POST
+    // /:id/start) — staff/admin always see the test's configured (unshuffled) order, since
+    // they're previewing/editing the question bank, not taking the shuffled exam.
+    const attempt = await prisma.testAttempt.findUnique({
+      where: { testId_studentId: { testId: test.id, studentId: req.user.id } },
+      select: { questionOrder: true, optionOrder: true },
+    });
+    if (attempt?.questionOrder) {
+      const byId = new Map(test.questions.map((tq) => [tq.questionId, tq]));
+      test.questions = attempt.questionOrder.map((qId) => byId.get(qId)).filter(Boolean);
+    }
+    if (attempt?.optionOrder) {
+      for (const tq of test.questions) {
+        const order = attempt.optionOrder[tq.questionId];
+        if (order && Array.isArray(tq.question.options)) {
+          tq.question.options = order.map((origIdx) => tq.question.options[origIdx]);
+        }
+      }
+    }
   }
 
   res.json(test);
@@ -295,7 +350,19 @@ router.post("/:id/start", authenticate, requireRole("STUDENT"), async (req, res)
     if (now < test.startTime) return res.status(403).json({ error: "Test has not started yet" });
     if (now > test.endTime) return res.status(403).json({ error: "Test window has closed" });
 
-    const attempt = existing || (await prisma.testAttempt.create({ data: { testId, studentId: req.user.id } }));
+    // The random order is generated exactly once, right here at attempt creation — never
+    // recomputed on subsequent /start calls (page refresh, logout/login) since `existing` short-
+    // circuits past this block entirely, so the same student always lands back on the same
+    // sequence for the rest of the attempt.
+    let attempt = existing;
+    if (!attempt) {
+      const testWithQuestions = await prisma.test.findUnique({
+        where: { id: testId },
+        include: { questions: { include: { question: { select: { id: true, questionType: true, options: true } } } } },
+      });
+      const { questionOrder, optionOrder } = buildAttemptOrder(testWithQuestions);
+      attempt = await prisma.testAttempt.create({ data: { testId, studentId: req.user.id, questionOrder, optionOrder } });
+    }
     // Include already-saved submissions (auto-saved MCQ answers, locked coding submissions)
     // so a page refresh mid-test restores exactly where the candidate left off.
     const submissions = await prisma.submission.findMany({ where: { attemptId: attempt.id } });

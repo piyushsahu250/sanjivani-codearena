@@ -10,6 +10,7 @@ const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "Tru
 const emptyForm = {
   title: "", code: "", description: "", instructions: "", durationMin: 60, passingMarks: "", showResults: true, startTime: "", endTime: "",
   requireFullscreen: true, requireWebcam: false, requireMicrophone: false,
+  shuffleQuestions: true, shuffleOptions: false,
 };
 
 function toLocalInputValue(iso) {
@@ -52,6 +53,7 @@ export default function CreateTest() {
         instructions: t.instructions || "", durationMin: t.durationMin, passingMarks: t.passingMarks ?? "",
         showResults: t.showResults, startTime: toLocalInputValue(t.startTime), endTime: toLocalInputValue(t.endTime),
         requireFullscreen: t.requireFullscreen !== false, requireWebcam: !!t.requireWebcam, requireMicrophone: !!t.requireMicrophone,
+        shuffleQuestions: t.shuffleQuestions !== false, shuffleOptions: !!t.shuffleOptions,
       });
       setClassIds((t.classes || []).map((c) => c.classId));
       const qIds = t.questions.map((tq) => tq.question.id);
@@ -182,6 +184,22 @@ export default function CreateTest() {
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
               <input type="checkbox" checked={form.requireMicrophone} onChange={(e) => setForm({ ...form, requireMicrophone: e.target.checked })} /> Enable microphone monitoring
+            </label>
+          </div>
+
+          <div style={{ marginTop: 20, fontWeight: 700, fontSize: 14 }}>Question Order</div>
+          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>
+            Every student gets the exact same questions — this only controls the order, to reduce the chances of
+            students sitting together comparing answers question-by-question. Generated once per student when they
+            start the test, and stays fixed for that attempt (refresh, logout/login, and auto-save recovery all keep
+            the same order).
+          </p>
+          <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <input type="checkbox" checked={form.shuffleQuestions} onChange={(e) => setForm({ ...form, shuffleQuestions: e.target.checked })} /> Shuffle questions for every student
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <input type="checkbox" checked={form.shuffleOptions} onChange={(e) => setForm({ ...form, shuffleOptions: e.target.checked })} /> Shuffle answer options (MCQ / Multiple Select)
             </label>
           </div>
 

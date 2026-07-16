@@ -130,6 +130,8 @@ model Test {
   requireFullscreen Boolean @default(true)
   requireWebcam     Boolean @default(false) // best-effort face presence check, mirrors ModuleCodingTest
   requireMicrophone Boolean @default(false) // mic-drop is monitored/warned but never blocks Submit
+  shuffleQuestions  Boolean @default(true)  // each student gets a random per-attempt question order (same question set)
+  shuffleOptions    Boolean @default(false) // each student also gets randomized MCQ/MULTISELECT option order
   createdBy    User     @relation("TestCreator", fields: [createdById], references: [id])
   createdById  String
   createdAt    DateTime @default(now())
@@ -264,6 +266,15 @@ model TestAttempt {
   totalScore  Int       @default(0)
   status      String    @default("IN_PROGRESS") // IN_PROGRESS, SUBMITTED, AUTO_SUBMITTED
   tabSwitchCount Int    @default(0)
+
+  // Generated once, at first attempt creation, from Test.shuffleQuestions/shuffleOptions — never
+  // recomputed afterward, so a refresh, logout/login, or auto-save/recovery always sees the same
+  // sequence. questionOrder: Question.id[] in this student's display order (equals the test's
+  // configured order when shuffleQuestions is off). optionOrder: { [questionId]: number[] }, a
+  // permutation of original option indices per MCQ/MULTISELECT/TRUE_FALSE question — populated
+  // only when shuffleOptions is on.
+  questionOrder Json?
+  optionOrder   Json?
 
   submissions Submission[]
 
