@@ -40,7 +40,22 @@ function renderPageInReadingOrder(pageData) {
       group.items.push({ str: item.str, x, endX: x + (item.width || item.str.length * 4) });
     }
     lineGroups.sort((a, b) => b.y - a.y); // PDF y-axis grows upward, so the top of the page has the largest y
-    const lines = lineGroups.map((group) => {
+
+    // Most consecutive lines sit one normal line-height apart; a visibly larger gap is the extra
+    // spacing a template puts before a new entry/section — the paragraph-break signal splitBlocks()
+    // (and, one level up, splitEntries()) relies on to tell "new project/job" apart from "wrapped
+    // continuation of the same bullet". Joining every line with a single "\n" and nothing else
+    // erases that signal entirely, forcing every resume through the much less reliable structural
+    // fallback and causing entries to be mis-split even when the source PDF had normal spacing.
+    const gaps = [];
+    for (let i = 1; i < lineGroups.length; i++) gaps.push(lineGroups[i - 1].y - lineGroups[i].y);
+    const sortedGaps = [...gaps].sort((a, b) => a - b);
+    const typicalGap = sortedGaps.length ? sortedGaps[Math.floor(sortedGaps.length / 2)] : 12;
+    const gapThreshold = Math.max(typicalGap * 1.5, typicalGap + 4);
+
+    const lines = [];
+    lineGroups.forEach((group, i) => {
+      if (i > 0 && lineGroups[i - 1].y - group.y > gapThreshold) lines.push("");
       group.items.sort((a, b) => a.x - b.x);
       let text = "";
       let lastEndX = null;
@@ -49,7 +64,7 @@ function renderPageInReadingOrder(pageData) {
         text += it.str;
         lastEndX = it.endX;
       }
-      return text;
+      lines.push(text);
     });
     return lines.join("\n");
   });
@@ -477,7 +492,14 @@ function splitStructuralEntries(lines) {
     // content", the exact signal used to detect a *new* entry's title, and got misread as one.
     // A continuation line reliably starts lowercase (it's mid-sentence); a real title doesn't.
     const looksLikeContinuation = /^[a-z]/.test(raw.trim());
-    const startsNewEntry = current && current.length > 0 && !isBullet && sawBodyContent && !looksLikeContinuation;
+    // A genuine new entry's title is short, like "SPAM MAIL PREDICTION" — a wrapped bullet's
+    // *first* line-fragment (no bullet marker to identify it by, since not every template renders
+    // list bullets as an extractable text glyph at all) is capitalized too, so it passes the
+    // continuation check above, but reads like "Performed feature engineering using key variables
+    // like temperature and humidity, enhancing model" — a near-full-width sentence fragment, not a
+    // title. Titles also don't dangle on a mid-clause punctuation mark the way a wrap point can.
+    const looksLikeTitle = raw.trim().length < 80 && !/[,;:]$/.test(raw.trim());
+    const startsNewEntry = current && current.length > 0 && !isBullet && sawBodyContent && !looksLikeContinuation && looksLikeTitle;
     if (startsNewEntry) {
       entries.push(current);
       current = [];
