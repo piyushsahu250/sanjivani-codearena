@@ -6,6 +6,7 @@ import * as blazeface from "@tensorflow-models/blazeface";
 import api from "../api";
 import { useGamification } from "../context/GamificationContext";
 import useIsMobile from "../hooks/useIsMobile";
+import CodeResultBlock from "../components/CodeResultBlock";
 
 const FACE_CHECK_INTERVAL_MS = 2000;
 const FACE_CONFIDENCE_THRESHOLD = 0.7;
@@ -1187,7 +1188,7 @@ export default function TestTaking() {
               </p>
             )}
             {!running && runResult && (
-              <ResultBlock title="Sample run result" result={runResult} />
+              <CodeResultBlock title="Sample run result" result={runResult} />
             )}
             {!isQuiz && !running && !runResult && (
               <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
@@ -1200,42 +1201,6 @@ export default function TestTaking() {
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function ResultBlock({ title, result }) {
-  if (result.error) {
-    return <p style={{ color: "var(--rust)" }} className="mono">{title}: {result.error}</p>;
-  }
-  if (result.errorSummary) {
-    return (
-      <div>
-        <div className="mono" style={{ fontWeight: 700, color: "var(--rust)" }}>
-          {title}: {result.errorSummary.type}{result.errorSummary.line ? ` (line ${result.errorSummary.line})` : ""}
-        </div>
-        {result.errorSummary.message && (
-          <div className="mono" style={{ fontSize: 12, marginTop: 6, whiteSpace: "pre-wrap" }}>{result.errorSummary.message}</div>
-        )}
-        {result.errorSummary.hint && (
-          <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-dim)" }}>Suggested fix: {result.errorSummary.hint}</div>
-        )}
-      </div>
-    );
-  }
-  const color = result.verdict === "ACCEPTED" ? "var(--mint)" : result.verdict === "PARTIAL" ? "var(--amber-dark)" : "var(--rust)";
-  return (
-    <div>
-      <div className="mono" style={{ fontWeight: 700, color }}>
-        {title}: {result.verdict === "ACCEPTED" ? "Correct" : result.verdict === "PARTIAL" ? "Partially correct" : "Incorrect"}
-        {` — ${result.passedCases}/${result.totalCases} test cases passed`}
-      </div>
-      {result.details?.map((d, i) => (
-        <div key={i} style={{ fontSize: 12, marginTop: 6 }} className="mono">
-          <span style={{ color: d.verdict === "PASSED" ? "var(--mint)" : "var(--rust)" }}>[{d.verdict}]</span>{" "}
-          input: {d.input} | expected: {d.expected} | got: {d.actual ?? d.error}
-        </div>
-      ))}
     </div>
   );
 }

@@ -183,8 +183,12 @@ export default function InterviewAdmin() {
                 <select style={inputStyle} value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })}>
                   <option value="java">Java</option><option value="python">Python</option><option value="javascript">JavaScript</option><option value="c">C</option><option value="cpp">C++</option>
                 </select>
-                <label style={labelStyle}>Test Cases (JSON array: [{"{"}"input":"...","expected":"..."{"}"}])</label>
-                <textarea style={{ ...inputStyle, minHeight: 60, fontFamily: "var(--font-mono)", fontSize: 12 }} value={form.testCases} onChange={(e) => setForm({ ...form, testCases: e.target.value })} placeholder='[{"input":"4","expected":"24"}]' />
+                <label style={labelStyle}>
+                  Test Cases (JSON array: [{"{"}"input":"...","expected":"...","isHidden":true{"}"}]) — add "isHidden":true
+                  to keep a case out of the candidate's self-check Run and use it only for scoring. Include at least
+                  2 visible (isHidden omitted/false) and 2 hidden cases.
+                </label>
+                <textarea style={{ ...inputStyle, minHeight: 60, fontFamily: "var(--font-mono)", fontSize: 12 }} value={form.testCases} onChange={(e) => setForm({ ...form, testCases: e.target.value })} placeholder='[{"input":"4","expected":"24"},{"input":"5","expected":"120"},{"input":"6","expected":"720","isHidden":true},{"input":"7","expected":"5040","isHidden":true}]' />
               </>
             )}
 

@@ -96,6 +96,7 @@ model User {
   lessonProgress LessonProgress[]
   certificates    Certificate[]
   practiceRunLogs PracticeRunLog[]
+  codeDrafts      CodeDraft[]
   moduleCodingAttempts ModuleCodingAttempt[]
   xpEvents        XpEvent[]
   badges          StudentBadge[]
@@ -434,7 +435,7 @@ model PracticeQuestion {
   correctAnswer Json?
   explanation   String?
   starterCode   String?
-  testCases     Json?
+  testCases     Json? // CODING: [{input, expected, isHidden?}] — isHidden absent/false = sample case
   language      String?
   difficulty    Difficulty @default(EASY) // CODING only — drives the tiered solve-XP amount
   order         Int      @default(0)
@@ -445,9 +446,11 @@ model PracticeQuestion {
   @@index([lessonId])
 }
 
-// One row per "Run" click on a coding practice question — the only persisted trace of daily
-// learning-module coding activity (POST /learning/practice/:id/run is otherwise stateless).
-// Powers the dashboard's coding-practice streak: any day with at least one row counts,
+// One row per "Submit" click on a coding practice question (POST /learning/practice/:id/submit)
+// — the only persisted trace of daily learning-module coding activity. "Run" (sample-case-only
+// self-check) is deliberately not logged here, matching the Run/Submit split used everywhere else
+// on the platform: Run is a free, unlimited, side-effect-free debugging aid, Submit is the real
+// attempt. Powers the dashboard's coding-practice streak: any day with at least one row counts,
 // regardless of verdict, since a streak should reward showing up and practicing, not just
 // getting it right on the first try.
 model PracticeRunLog {
@@ -460,6 +463,24 @@ model PracticeRunLog {
   createdAt  DateTime @default(now())
 
   @@index([studentId, createdAt])
+}
+
+// Generic code-draft autosave for coding surfaces that have no natural "attempt" row to hang a
+// draft off of (Practice Coding, Mock Interview coding questions) — Coding Tests and Module
+// Coding Tests autosave onto their own Submission/attempt models instead and don't use this.
+// contextType + contextId together identify what's being edited (e.g. "PRACTICE" + questionId,
+// or "INTERVIEW" + "<sessionId>:<questionId>") without needing a dedicated FK per surface.
+model CodeDraft {
+  id          String   @id @default(uuid())
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   String
+  contextType String
+  contextId   String
+  code        String
+  language    String
+  updatedAt   DateTime @updatedAt
+
+  @@unique([studentId, contextType, contextId])
 }
 
 model Certificate {
@@ -804,7 +825,7 @@ model InterviewQuestion {
   correctAnswer         Json?   // Aptitude: correct option index
   explanation           String? // Aptitude: shown after
   starterCode           String? // Coding
-  testCases             Json?   // Coding: [{input, expected}]
+  testCases             Json?   // Coding: [{input, expected, isHidden?}] — isHidden absent/false = sample case
   language               String? // Coding: default language
   generatedForStudentId String? // set only for ephemeral resume-based questions
   isActive              Boolean  @default(true)

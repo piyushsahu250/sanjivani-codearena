@@ -319,7 +319,7 @@ function LessonDetailPanel({ lessonId, lessonSummary, onRefresh }) {
   );
 }
 
-const EMPTY_Q = { type: "MCQ", prompt: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "", starterCode: "", testCases: [{ input: "", expected: "" }], language: "java" };
+const EMPTY_Q = { type: "MCQ", prompt: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "", starterCode: "", testCases: [{ input: "", expected: "", isHidden: false }], language: "java" };
 
 function PracticeQuestionsPanel({ lesson, onRefresh }) {
   const [adding, setAdding] = useState(false);
@@ -363,6 +363,11 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
           <div key={q.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
             <div>
               <span className="badge">{q.type}</span>
+              {q.type === "CODING" && Array.isArray(q.testCases) && (
+                <span className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginLeft: 8 }}>
+                  {q.testCases.length} test case(s) — {q.testCases.filter((tc) => tc.isHidden).length} hidden
+                </span>
+              )}
               <div style={{ marginTop: 4 }}>{q.prompt}</div>
             </div>
             <button style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 12 }} onClick={() => remove(q)}>Delete</button>
@@ -420,14 +425,17 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
                 <option value="c">C</option>
                 <option value="cpp">C++</option>
               </select>
-              <label style={labelStyle}>Test cases</label>
+              <label style={labelStyle}>Test cases (at least 2 visible + 2 hidden)</label>
               {form.testCases.map((tc, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <div key={i} style={{ display: "flex", gap: 8, marginTop: 6, alignItems: "center" }}>
                   <input style={{ ...inputStyle, marginTop: 0 }} placeholder="input" value={tc.input} onChange={(e) => { const t = [...form.testCases]; t[i] = { ...t[i], input: e.target.value }; setForm({ ...form, testCases: t }); }} />
                   <input style={{ ...inputStyle, marginTop: 0 }} placeholder="expected output" value={tc.expected} onChange={(e) => { const t = [...form.testCases]; t[i] = { ...t[i], expected: e.target.value }; setForm({ ...form, testCases: t }); }} />
+                  <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+                    <input type="checkbox" checked={!!tc.isHidden} onChange={(e) => { const t = [...form.testCases]; t[i] = { ...t[i], isHidden: e.target.checked }; setForm({ ...form, testCases: t }); }} /> Hidden
+                  </label>
                 </div>
               ))}
-              <button type="button" className="btn btn-ghost" style={{ fontSize: 12, marginTop: 8 }} onClick={() => setForm({ ...form, testCases: [...form.testCases, { input: "", expected: "" }] })}>+ Add test case</button>
+              <button type="button" className="btn btn-ghost" style={{ fontSize: 12, marginTop: 8 }} onClick={() => setForm({ ...form, testCases: [...form.testCases, { input: "", expected: "", isHidden: true }] })}>+ Add test case</button>
             </>
           )}
 

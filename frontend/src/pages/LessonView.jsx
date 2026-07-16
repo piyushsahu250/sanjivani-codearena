@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import api from "../api";
 import { useGamification } from "../context/GamificationContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import CodeResultBlock from "../components/CodeResultBlock";
+
+const AUTOSAVE_DEBOUNCE_MS = 2000;
 
 const LANGUAGES = [
   { id: "java", label: "Java", monaco: "java" },
@@ -340,13 +343,60 @@ function PracticeQuestionCard({ question }) {
   const [code, setCode] = useState(question.starterCode || "");
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(false);
+  const [submitResult, setSubmitResult] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [history, setHistory] = useState(null); // { totalAttempts, solved, latestVerdict }
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const autosaveTimerRef = useRef(null);
+  const codeRef = useRef(code);
+  const languageRef = useRef(language);
+  codeRef.current = code;
+  languageRef.current = language;
 
   function loadHistory() {
     if (question.type !== "CODING") return;
     api.get(`/learning/practice/${question.id}/history`).then((res) => setHistory(res.data)).catch(() => {});
   }
   useEffect(loadHistory, [question.id]);
+
+  // Restore any in-progress draft (survives refresh/navigation) before falling back to starter code.
+  useEffect(() => {
+    if (question.type !== "CODING") return;
+    api.get(`/learning/practice/${question.id}/draft`)
+      .then((res) => {
+        if (res.data) { setCode(res.data.code); setLanguage(res.data.language); }
+      })
+      .catch(() => {})
+      .finally(() => setDraftLoaded(true));
+  }, [question.id]);
+
+  function flushAutosave() {
+    if (question.type !== "CODING") return;
+    api.post(`/learning/practice/${question.id}/autosave`, { code: codeRef.current, language: languageRef.current }).catch(() => {});
+  }
+
+  // Periodic debounced autosave while typing.
+  useEffect(() => {
+    if (!draftLoaded || question.type !== "CODING") return;
+    clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(flushAutosave, AUTOSAVE_DEBOUNCE_MS);
+    return () => clearTimeout(autosaveTimerRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, language, draftLoaded]);
+
+  // Flush on unmount (covers navigating to a different lesson/question) and on tab close.
+  useEffect(() => {
+    if (question.type !== "CODING") return;
+    const handler = () => flushAutosave();
+    window.addEventListener("beforeunload", handler);
+    window.addEventListener("pagehide", handler);
+    return () => {
+      window.removeEventListener("beforeunload", handler);
+      window.removeEventListener("pagehide", handler);
+      flushAutosave();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question.id]);
 
   async function checkAnswer() {
     setChecking(true);
@@ -367,12 +417,25 @@ function PracticeQuestionCard({ question }) {
     try {
       const { data } = await api.post(`/learning/practice/${question.id}/run`, { language, code });
       setRunResult(data);
-      notify(data.gamification);
-      loadHistory();
     } catch (err) {
       alert(err.response?.data?.error || "Execution failed");
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function submitCode() {
+    setSubmitting(true);
+    setSubmitResult(null);
+    try {
+      const { data } = await api.post(`/learning/practice/${question.id}/submit`, { language, code });
+      setSubmitResult(data);
+      notify(data.gamification);
+      loadHistory();
+    } catch (err) {
+      alert(err.response?.data?.error || "Submission failed");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -387,15 +450,27 @@ function PracticeQuestionCard({ question }) {
         <>
           {history && history.totalAttempts > 0 && (
             <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 8 }}>
-              Total attempts: {history.totalAttempts} · Best: {history.solved ? "✓ Solved" : "Not solved yet"} · Latest: {history.latestVerdict}
+              Submissions: {history.totalAttempts} · Best: {history.solved ? "✓ Solved" : "Not solved yet"} · Latest: {history.latestVerdict}
               {" · "}unlimited attempts — practice as many times as you like
             </p>
+          )}
+          {Array.isArray(question.testCases) && question.testCases.length > 0 && (
+            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+              {question.testCases.map((tc, i) => (
+                <div key={i} className="mono" style={{ fontSize: 12, background: "var(--card-bg, #F7F7F5)", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 12px" }}>
+                  <strong>Sample {i + 1}</strong> — input: {tc.input} | expected output: {tc.expected}
+                </div>
+              ))}
+            </div>
           )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
             <select value={language} onChange={(e) => setLanguage(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)" }}>
               {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
-            <button className="btn btn-primary" onClick={runCode} disabled={running}>{running ? "Running…" : "Run"}</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-ghost" onClick={runCode} disabled={running}>{running ? "Running…" : "Run"}</button>
+              <button className="btn btn-primary" onClick={submitCode} disabled={submitting}>{submitting ? "Submitting…" : "Submit"}</button>
+            </div>
           </div>
           <div style={{ marginTop: 10, border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
             <Editor
@@ -408,14 +483,12 @@ function PracticeQuestionCard({ question }) {
           </div>
           {runResult && (
             <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: runResult.verdict === "ACCEPTED" ? "#E7F3EB" : "#F7E4E0" }}>
-              <div className="mono" style={{ fontWeight: 700, color: runResult.verdict === "ACCEPTED" ? "var(--mint)" : "var(--rust)" }}>
-                {runResult.verdict} — {runResult.passedCases}/{runResult.totalCases} cases passed
-              </div>
-              {runResult.errorSummary && (
-                <div className="mono" style={{ fontSize: 12, marginTop: 6 }}>
-                  {runResult.errorSummary.type}{runResult.errorSummary.line ? ` (line ${runResult.errorSummary.line})` : ""}: {runResult.errorSummary.message}
-                </div>
-              )}
+              <CodeResultBlock title="Sample run result" result={runResult} />
+            </div>
+          )}
+          {submitResult && (
+            <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: submitResult.verdict === "ACCEPTED" ? "#E7F3EB" : "#F7E4E0" }}>
+              <CodeResultBlock title="Submission result" result={submitResult} />
             </div>
           )}
         </>

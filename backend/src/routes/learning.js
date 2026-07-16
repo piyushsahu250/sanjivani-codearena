@@ -24,11 +24,14 @@ const router = express.Router();
 
 const runLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: (req) => req.user.id });
 
-// Strips answer-revealing fields from a practice question before sending it to a student.
+// Strips answer-revealing fields from a practice question before sending it to a student. For
+// CODING questions this includes the sample (non-hidden) test cases, so a student can see what
+// their code needs to produce before running it — hidden cases (used by /submit) never go out.
 function sanitizeQuestion(q) {
   return {
     id: q.id, type: q.type, prompt: q.prompt, options: q.options,
     starterCode: q.starterCode, language: q.language, order: q.order,
+    testCases: q.type === "CODING" ? (Array.isArray(q.testCases) ? q.testCases.filter((tc) => !tc.isHidden) : []) : undefined,
   };
 }
 
@@ -356,19 +359,49 @@ router.get("/practice/:id/history", authenticate, requireRole("STUDENT"), async 
   }
 });
 
-// STUDENT: run a coding practice question against its test cases. Full pass/fail detail is
-// returned — this is a learning aid, not a proctored exam, so there's no reason to hide it.
-// Every run (any verdict) is logged to PracticeRunLog — the streak/badge signal. Solving a
-// problem for the first time awards tiered XP (by question difficulty); re-solving an
-// already-solved one still counts toward today's streak, just not for XP again.
+// Splits a practice question's stored test cases into visible/hidden pools. Older questions
+// authored before isHidden existed have no such key on any case — treated as all-visible, so
+// /run keeps showing every case exactly as it always has, and /submit's hidden-fallback (below)
+// naturally grades against the same full set for those questions too.
+function splitPracticeCases(testCases) {
+  const all = Array.isArray(testCases) ? testCases : [];
+  const visible = all.filter((tc) => !tc.isHidden);
+  const hidden = all.filter((tc) => tc.isHidden);
+  return { visible, hidden };
+}
+
+// STUDENT: run a coding practice question against its VISIBLE (sample) test cases only — a
+// free, unlimited, side-effect-free self-check. Does not log an attempt or award XP; use
+// /submit for that. Full pass/fail detail on these sample cases is returned since nothing here
+// is hidden from the student anyway.
 router.post("/practice/:id/run", authenticate, requireRole("STUDENT"), runLimiter, async (req, res) => {
   try {
     const q = await prisma.practiceQuestion.findUnique({ where: { id: req.params.id } });
     if (!q || q.type !== "CODING") return res.status(400).json({ error: "Not a coding question" });
 
     const { language, code } = req.body;
-    const testCases = Array.isArray(q.testCases) ? q.testCases : [];
-    const result = await runQueued(() => judgeSubmission({ language, code, testCases, timeLimitMs: 3000 }));
+    const { visible } = splitPracticeCases(q.testCases);
+    const result = await runQueued(() => judgeSubmission({ language, code, testCases: visible, timeLimitMs: 3000 }));
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Execution failed" });
+  }
+});
+
+// STUDENT: submit a coding practice question for real grading — evaluated against the HIDDEN
+// test cases (falling back to the full case set for legacy questions with none marked hidden,
+// same policy used for Coding Tests and Module Coding Tests). This is the action that's logged
+// to PracticeRunLog (the streak/badge signal) and that awards tiered XP on first solve.
+router.post("/practice/:id/submit", authenticate, requireRole("STUDENT"), runLimiter, async (req, res) => {
+  try {
+    const q = await prisma.practiceQuestion.findUnique({ where: { id: req.params.id } });
+    if (!q || q.type !== "CODING") return res.status(400).json({ error: "Not a coding question" });
+
+    const { language, code } = req.body;
+    const { visible, hidden } = splitPracticeCases(q.testCases);
+    const gradingCases = hidden.length > 0 ? hidden : visible;
+    const result = await runQueued(() => judgeSubmission({ language, code, testCases: gradingCases, timeLimitMs: 3000 }));
 
     let gamification = null;
     try {
@@ -389,10 +422,47 @@ router.post("/practice/:id/run", authenticate, requireRole("STUDENT"), runLimite
       console.error("gamification failed", e);
     }
 
-    res.json({ ...result, gamification });
+    // Hidden test-case inputs/expected outputs never leave the server — only pass/fail counts,
+    // verdict, timing, and (when every case failed the same way) a compile/runtime error summary
+    // that judge.js already keeps content-free by design.
+    const { details, ...safeResult } = result;
+    res.json({ ...safeResult, gamification });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Execution failed" });
+    res.status(500).json({ error: "Submission failed" });
+  }
+});
+
+// STUDENT: autosave the in-progress code draft for a practice coding question — same atomic
+// upsert pattern used for Coding Test / Module Coding Test autosave, keyed generically since
+// practice questions have no "attempt" row of their own to hang a draft off of.
+router.post("/practice/:id/autosave", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const { language, code } = req.body;
+    if (typeof code !== "string" || !language) return res.status(400).json({ error: "language and code are required" });
+    await prisma.codeDraft.upsert({
+      where: { studentId_contextType_contextId: { studentId: req.user.id, contextType: "PRACTICE", contextId: req.params.id } },
+      update: { code, language },
+      create: { studentId: req.user.id, contextType: "PRACTICE", contextId: req.params.id, code, language },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Autosave failed" });
+  }
+});
+
+// STUDENT: fetch the saved draft (if any) for a practice coding question, so reopening a lesson
+// restores in-progress code instead of resetting to the question's starter code.
+router.get("/practice/:id/draft", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const draft = await prisma.codeDraft.findUnique({
+      where: { studentId_contextType_contextId: { studentId: req.user.id, contextType: "PRACTICE", contextId: req.params.id } },
+    });
+    res.json(draft ? { code: draft.code, language: draft.language } : null);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load draft" });
   }
 });
 
@@ -619,6 +689,15 @@ router.post("/lessons/:id/questions", authenticate, requireRole("ADMIN", "STAFF"
   try {
     const { type, prompt, options, correctAnswer, explanation, starterCode, testCases, language, order } = req.body;
     if (!type || !prompt) return res.status(400).json({ error: "type and prompt are required" });
+    if (type === "CODING") {
+      const cases = Array.isArray(testCases) ? testCases : [];
+      if (cases.filter((tc) => !tc.isHidden).length < 2) {
+        return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
+      }
+      if (cases.filter((tc) => tc.isHidden).length < 2) {
+        return res.status(400).json({ error: "Each coding question needs at least 2 hidden test cases for final evaluation" });
+      }
+    }
     const q = await prisma.practiceQuestion.create({
       data: {
         lessonId: req.params.id, type, prompt,
@@ -637,6 +716,19 @@ router.post("/lessons/:id/questions", authenticate, requireRole("ADMIN", "STAFF"
 router.patch("/practice/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const { type, prompt, options, correctAnswer, explanation, starterCode, testCases, language, order } = req.body;
+    if (testCases !== undefined) {
+      const existing = await prisma.practiceQuestion.findUnique({ where: { id: req.params.id }, select: { type: true } });
+      const effectiveType = type !== undefined ? type : existing?.type;
+      if (effectiveType === "CODING") {
+        const cases = Array.isArray(testCases) ? testCases : [];
+        if (cases.filter((tc) => !tc.isHidden).length < 2) {
+          return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
+        }
+        if (cases.filter((tc) => tc.isHidden).length < 2) {
+          return res.status(400).json({ error: "Each coding question needs at least 2 hidden test cases for final evaluation" });
+        }
+      }
+    }
     const q = await prisma.practiceQuestion.update({
       where: { id: req.params.id },
       data: {

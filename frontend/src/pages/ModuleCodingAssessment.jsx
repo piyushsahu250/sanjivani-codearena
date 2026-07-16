@@ -7,6 +7,7 @@ import { useProctoring } from "../hooks/useProctoring";
 import useIsMobile from "../hooks/useIsMobile";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import CodeResultBlock from "../components/CodeResultBlock";
 
 const ALL_LANGUAGES = [
   { id: "java", label: "Java", monaco: "java" },
@@ -645,7 +646,7 @@ export default function ModuleCodingAssessment() {
           </div>
           <div style={{ flex: 1, minHeight: 80, overflowY: "auto", padding: 16, background: "#FBF9F4" }}>
             {running && <p className="mono" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>⏳ Compiling and running…</p>}
-            {!running && runResult && <ResultBlock result={runResult} />}
+            {!running && runResult && <CodeResultBlock title="Sample run result" result={runResult} />}
           </div>
         </div>
       </div>
@@ -670,48 +671,6 @@ function Banner({ color, children }) {
   );
 }
 
-function ResultBlock({ result }) {
-  if (result.error) return <p style={{ color: "var(--rust)" }} className="mono">{result.error}</p>;
-  if (result.errorSummary) {
-    return (
-      <div>
-        <div className="mono" style={{ fontWeight: 700, color: "var(--rust)" }}>
-          {result.errorSummary.type}{result.errorSummary.line ? ` (line ${result.errorSummary.line})` : ""}
-        </div>
-        {result.errorSummary.message && <div className="mono" style={{ fontSize: 12, marginTop: 6, whiteSpace: "pre-wrap" }}>{result.errorSummary.message}</div>}
-        {result.errorSummary.hint && (
-          <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-dim)" }}>Suggested fix: {result.errorSummary.hint}</div>
-        )}
-      </div>
-    );
-  }
-  const color = result.verdict === "ACCEPTED" ? "var(--mint)" : result.verdict === "PARTIAL" ? "var(--amber-dark)" : "var(--rust)";
-  return (
-    <div>
-      <div className="mono" style={{ fontWeight: 700, color }}>
-        {result.verdict} — {result.passedCases}/{result.totalCases} sample cases passed
-      </div>
-      <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 4 }}>
-        {result.maxTimeMs != null && `⏱ ${result.maxTimeMs} ms`}
-        {result.maxMemoryKb != null && ` · ${(result.maxMemoryKb / 1024).toFixed(1)} MB`}
-      </div>
-      {result.details?.map((d, i) => (
-        <div key={i} style={{ fontSize: 12, marginTop: 6 }} className="mono">
-          <span style={{ color: d.verdict === "PASSED" ? "var(--mint)" : "var(--rust)" }}>[{d.verdict}]</span>{" "}
-          input: {d.input}
-          {d.verdict === "PASSED" ? (
-            <> | output: {d.actual}</>
-          ) : d.verdict === "WRONG_ANSWER" ? (
-            <> | expected: {d.expected} | your output: {d.actual}</>
-          ) : (
-            <> | {d.error || "no output"}</>
-          )}
-          {d.timeMs != null && <span style={{ color: "var(--ink-dim)" }}> ({d.timeMs} ms)</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function defaultStarter(language) {
   switch (language) {

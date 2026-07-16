@@ -7,7 +7,10 @@ import { useProctoring } from "../hooks/useProctoring";
 import { useTheme } from "../context/ThemeContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import CodeResultBlock from "../components/CodeResultBlock";
 import "./interviewPrep.css";
+
+const AUTOSAVE_DEBOUNCE_MS = 2000;
 
 const LANGUAGES = [
   { id: "java", label: "Java", monaco: "java" }, { id: "javascript", label: "JavaScript", monaco: "javascript" },
@@ -45,7 +48,7 @@ export default function InterviewSession() {
   const dark = theme === "dark";
 
   useEffect(() => {
-    api.get(`/interview/sessions/${id}`).then((res) => {
+    api.get(`/interview/sessions/${id}`).then(async (res) => {
       setData(res.data);
       setViolationCount(res.data.session.violationCount || 0);
       const initial = {};
@@ -56,6 +59,17 @@ export default function InterviewSession() {
           language: q.answer?.language || q.language || "java",
           selected: q.category === "APTITUDE" && q.answer?.answerText != null && q.answer.answerText !== "" ? Number(q.answer.answerText) : null,
         };
+      }
+      // A leftover autosaved draft (unsaved code from before a refresh/crash) takes precedence
+      // over the last officially-saved answer, since it's more recent in-progress work.
+      const codingQuestions = res.data.questions.filter((q) => q.category === "CODING");
+      if (res.data.session.status === "IN_PROGRESS" && codingQuestions.length > 0) {
+        const drafts_ = await Promise.all(
+          codingQuestions.map((q) => api.get(`/interview/sessions/${id}/questions/${q.id}/draft`).then((r) => r.data).catch(() => null))
+        );
+        codingQuestions.forEach((q, i) => {
+          if (drafts_[i]) initial[q.id] = { ...initial[q.id], code: drafts_[i].code, language: drafts_[i].language };
+        });
       }
       setDrafts(initial);
       const durationMin = res.data.session.config?.durationMin;
@@ -73,6 +87,38 @@ export default function InterviewSession() {
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, secondsLeft === 0]);
+
+  // Debounced draft autosave for the active coding question — protects in-progress code against
+  // a refresh or crash before the candidate clicks Next (which is when the real answer saves).
+  // Hooks must run unconditionally, so the active question/draft are re-derived defensively here
+  // (data may not have loaded yet, or the active question may not be CODING) rather than reusing
+  // the `q`/`draft` consts declared further down, which only exist after the loading-state guards.
+  const activeQuestion = data?.questions?.[activeIdx];
+  const activeDraft = activeQuestion ? drafts[activeQuestion.id] || {} : {};
+  useEffect(() => {
+    if (phase !== "active" || !activeQuestion || activeQuestion.category !== "CODING") return;
+    const timer = setTimeout(() => {
+      api.post(`/interview/sessions/${id}/questions/${activeQuestion.id}/draft`, { code: activeDraft.code, language: activeDraft.language }).catch(() => {});
+    }, AUTOSAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDraft.code, activeDraft.language, activeQuestion?.id, phase]);
+
+  useEffect(() => {
+    if (phase !== "active" || !activeQuestion) return;
+    const handler = () => {
+      if (activeQuestion.category === "CODING") {
+        api.post(`/interview/sessions/${id}/questions/${activeQuestion.id}/draft`, { code: activeDraft.code, language: activeDraft.language }).catch(() => {});
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    window.addEventListener("pagehide", handler);
+    return () => {
+      window.removeEventListener("beforeunload", handler);
+      window.removeEventListener("pagehide", handler);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeQuestion?.id, phase]);
 
   // Every violation type is reported to the server, which decides — never trusted client-side —
   // whether it's penalized (tab switch, fullscreen exit, camera/mic dropped: counts toward the
@@ -214,11 +260,20 @@ export default function InterviewSession() {
     }
   }
 
+  // Sample-case-only self-check — does not save the answer or affect the score. Matches the
+  // Run/Submit split used everywhere else: the real (hidden-graded) evaluation happens silently
+  // when the candidate moves on via saveAnswer() (Next/Skip/Submit Interview).
   async function runCode() {
     setRunning(true);
     setRunResult(null);
-    await saveAnswer(false);
-    setRunning(false);
+    try {
+      const { data: res } = await api.post(`/interview/sessions/${id}/run-code`, { questionId: q.id, code: draft.code, language: draft.language });
+      setRunResult(res);
+    } catch (err) {
+      alert(err.response?.data?.error || "Execution failed");
+    } finally {
+      setRunning(false);
+    }
   }
 
   async function go(delta) {
@@ -380,6 +435,15 @@ export default function InterviewSession() {
 
           {q.category === "CODING" && (
             <>
+              {Array.isArray(q.testCases) && q.testCases.length > 0 && (
+                <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
+                  {q.testCases.map((tc, i) => (
+                    <div key={i} className="mono ip-glass" style={{ fontSize: 12, padding: "8px 12px" }}>
+                      <strong>Sample {i + 1}</strong> — input: {tc.input} | expected output: {tc.expected}
+                    </div>
+                  ))}
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
                 <select className="ip-select" value={draft.language} onChange={(e) => updateDraft({ language: e.target.value })}>
                   {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
@@ -396,12 +460,15 @@ export default function InterviewSession() {
                   options={{ fontSize: 13, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace" }}
                 />
               </div>
-              {runResult && (
+              {runResult ? (
                 <div className="ip-glass" style={{ marginTop: 12, padding: 12 }}>
-                  <div className="mono" style={{ fontWeight: 700, color: runResult.verdict === "ACCEPTED" ? "var(--ip-accent)" : "var(--rust)" }}>
-                    {runResult.verdict} — {runResult.passedCases}/{runResult.totalCases} cases passed
-                  </div>
+                  <CodeResultBlock title="Sample run result" result={runResult} />
                 </div>
+              ) : (
+                <p className="mono" style={{ fontSize: 11, marginTop: 8, opacity: 0.7 }}>
+                  Run against sample cases any time. Your code is judged against hidden test cases (for scoring)
+                  automatically when you move to the next question or submit the interview.
+                </p>
               )}
             </>
           )}

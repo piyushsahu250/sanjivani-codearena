@@ -41,11 +41,24 @@ function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
 }
 
+// Splits a coding interview question's stored test cases into visible/hidden pools. Questions
+// authored before isHidden existed have no such key on any case — treated as all-visible, so
+// scoring naturally falls back to grading against the full set for those (same policy as
+// Practice Coding / Coding Tests / Module Coding Tests).
+function splitInterviewCases(testCases) {
+  const all = Array.isArray(testCases) ? testCases : [];
+  const visible = all.filter((tc) => !tc.isHidden);
+  const hidden = all.filter((tc) => tc.isHidden);
+  return { visible, hidden };
+}
+
 function sanitizeQuestion(q) {
   return {
     id: q.id, category: q.category, subject: q.subject, company: q.company, aptitudeCategory: q.aptitudeCategory,
     difficulty: q.difficulty, prompt: q.prompt, options: q.options,
     starterCode: q.starterCode, language: q.language,
+    // Sample cases only — hidden ones (used for real scoring) never leave the server.
+    testCases: q.category === "CODING" ? splitInterviewCases(q.testCases).visible : undefined,
   };
 }
 
@@ -270,10 +283,71 @@ async function maybeInsertFollowUp(session, question, answerText, skipped) {
   return null;
 }
 
-// STUDENT: submit/update one answer. Coding gets immediate pass/fail feedback (like Run); HR/
-// Technical/Aptitude are graded silently — the full picture only shows up in the final report,
-// matching "AI evaluates after submission" (of the whole interview, not each question). May
-// return a `followUpQuestion` when this answer triggers one (see maybeInsertFollowUp) — the
+// STUDENT: run a coding interview question's code against its VISIBLE (sample) test cases only
+// — a free, unlimited, side-effect-free self-check before answering, matching the Run/Submit
+// split used everywhere else on the platform. Does not save an answer or affect the score.
+router.post("/sessions/:id/run-code", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const session = await prisma.interviewSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.studentId !== req.user.id) return res.status(403).json({ error: "Invalid session" });
+    if (session.status !== "IN_PROGRESS") return res.status(400).json({ error: "This session is already finalized" });
+
+    const { questionId, code, language } = req.body;
+    const question = await prisma.interviewQuestion.findUnique({ where: { id: questionId } });
+    if (!question || question.category !== "CODING") return res.status(400).json({ error: "Not a coding question" });
+
+    const { visible } = splitInterviewCases(question.testCases);
+    const result = await runQueued(() => judgeSubmission({ language, code, testCases: visible, timeLimitMs: 3000 }));
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Execution failed" });
+  }
+});
+
+// STUDENT: autosave the in-progress code draft for a coding interview question — same atomic
+// upsert pattern used for autosave everywhere else, keyed by session+question since the same
+// question bank entry could in principle appear again in a different session.
+router.post("/sessions/:id/questions/:questionId/draft", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const session = await prisma.interviewSession.findUnique({ where: { id: req.params.id } });
+    if (!session || session.studentId !== req.user.id) return res.status(403).json({ error: "Invalid session" });
+
+    const { language, code } = req.body;
+    if (typeof code !== "string" || !language) return res.status(400).json({ error: "language and code are required" });
+    const contextId = `${req.params.id}:${req.params.questionId}`;
+    await prisma.codeDraft.upsert({
+      where: { studentId_contextType_contextId: { studentId: req.user.id, contextType: "INTERVIEW", contextId } },
+      update: { code, language },
+      create: { studentId: req.user.id, contextType: "INTERVIEW", contextId, code, language },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Autosave failed" });
+  }
+});
+
+// STUDENT: fetch the saved draft (if any) for a coding interview question, so reloading mid-
+// question after a refresh or network blip restores in-progress code instead of losing it.
+router.get("/sessions/:id/questions/:questionId/draft", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const contextId = `${req.params.id}:${req.params.questionId}`;
+    const draft = await prisma.codeDraft.findUnique({
+      where: { studentId_contextType_contextId: { studentId: req.user.id, contextType: "INTERVIEW", contextId } },
+    });
+    res.json(draft ? { code: draft.code, language: draft.language } : null);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load draft" });
+  }
+});
+
+// STUDENT: submit/update one answer. Coding gets immediate pass/fail feedback on the hidden
+// grading cases (after the candidate already self-checked against sample cases via
+// POST /sessions/:id/run-code); HR/Technical/Aptitude are graded silently — the full picture
+// only shows up in the final report, matching "AI evaluates after submission" (of the whole
+// interview, not each question). May
 // frontend appends it to the live question list rather than the session needing to be re-fetched.
 router.post("/sessions/:id/answer", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
@@ -303,11 +377,19 @@ router.post("/sessions/:id/answer", authenticate, requireRole("STUDENT"), async 
       const r = evaluateAptitudeAnswer(answerText, question.correctAnswer, session.config?.negativeMarking);
       score = r.score; breakdown = { correct: r.correct };
     } else if (question.category === "CODING") {
-      const testCases = Array.isArray(question.testCases) ? question.testCases : [];
-      const judgeResult = await runQueued(() => judgeSubmission({ language, code, testCases, timeLimitMs: 3000 }));
+      // Final scoring (like the rest of the platform) is based on hidden test cases only, with a
+      // fallback to the visible set for legacy questions that predate isHidden. The candidate
+      // already had unlimited access to a sample-only self-check via POST /sessions/:id/run-code
+      // before submitting this answer.
+      const { visible, hidden } = splitInterviewCases(question.testCases);
+      const gradingCases = hidden.length > 0 ? hidden : visible;
+      const judgeResult = await runQueued(() => judgeSubmission({ language, code, testCases: gradingCases, timeLimitMs: 3000 }));
       const r = evaluateCodingAnswer(judgeResult, code);
       score = r.score; breakdown = r.breakdown;
-      immediateResult = judgeResult;
+      // Hidden case inputs/expected outputs never leave the server — only counts/verdict/timing
+      // and (when every case failed the same way) judge.js's already-content-free error summary.
+      const { details, ...safeJudgeResult } = judgeResult;
+      immediateResult = safeJudgeResult;
     }
 
     const answer = await prisma.interviewAnswer.upsert({
