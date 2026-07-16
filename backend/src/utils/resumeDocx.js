@@ -1,11 +1,12 @@
 const { Document, Packer, Paragraph, TextRun, AlignmentType, BorderStyle } = require("docx");
 
-// Same principle as resumePdf.js: every template shares one single-column, text-first
-// structure — only the accent color/font vary — since multi-column/table layouts are exactly
-// what makes a .docx unreliable for ATS parsers to begin with.
+// Unlike resumePdf.js (5 genuinely distinct layouts), the DOCX export stays a single
+// single-column, text-first structure across all templates — multi-column/table layouts are
+// exactly what makes a .docx unreliable for ATS parsers, and this export exists specifically as
+// the ATS-safe fallback. Colors here are kept in sync with resumePdf.js's TEMPLATE_META so a
+// DOCX download at least matches its PDF counterpart's accent, even though the layout doesn't.
 const TEMPLATE_COLORS = {
-  modern: "4F9D6E", professional: "1C3D5A", minimal: "333333", classic: "3B2F2F",
-  "software-engineer": "2C5B45", fresher: "C7852A", experienced: "1C3D5A",
+  modern: "4F9D6E", professional: "1C3D5A", minimal: "1C1B18", executive: "2B2118", creative: "9C4FD6",
 };
 
 function arr(x) {

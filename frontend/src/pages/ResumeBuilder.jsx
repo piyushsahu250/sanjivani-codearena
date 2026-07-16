@@ -7,14 +7,14 @@ const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border
 const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--ink-dim)" };
 const SECTION_LABELS = { personal: "Personal Details", summary: "Professional Summary", education: "Education", skills: "Skills", projects: "Projects", experience: "Experience", certifications: "Certifications" };
 
+// Five genuinely distinct layouts (see ResumePreview below + backend/src/utils/resumePdf.js) —
+// not just a color swap. Ids/colors kept in sync with resumePdf.js's TEMPLATE_META.
 const TEMPLATES = [
-  { id: "modern", label: "Modern", accent: "#4F9D6E" },
-  { id: "professional", label: "Professional", accent: "#1C3D5A" },
-  { id: "minimal", label: "Minimal", accent: "#333333" },
-  { id: "classic", label: "Classic", accent: "#3B2F2F" },
-  { id: "software-engineer", label: "Software Engineer", accent: "#2C5B45" },
-  { id: "fresher", label: "Fresher", accent: "#C7852A" },
-  { id: "experienced", label: "Experienced", accent: "#1C3D5A" },
+  { id: "modern", label: "Modern", accent: "#4F9D6E", desc: "Two-column, timeline experience" },
+  { id: "professional", label: "Professional", accent: "#1C3D5A", desc: "ATS-friendly, single-column" },
+  { id: "minimal", label: "Minimal", accent: "#1C1B18", desc: "Black & white, tight spacing" },
+  { id: "executive", label: "Executive", accent: "#2B2118", desc: "Premium corporate style" },
+  { id: "creative", label: "Creative", accent: "#9C4FD6", desc: "Visual header, skill tags" },
 ];
 
 const EDUCATION_FIELDS = [
@@ -270,7 +270,12 @@ export default function ResumeBuilder() {
   if (!data) return <div><Navbar /><div style={{ maxWidth: 1200, margin: "0 auto", padding: 48 }} className="mono">Loading…</div></div>;
 
   const { resume, completion, feedback } = data;
-  const template = TEMPLATES.find((t) => t.id === resume.template) || TEMPLATES[0];
+  // Old ids from before the 5-template rewrite (still possibly stored on existing resumes) map
+  // onto their closest replacement so the picker highlights the right one, matching the same
+  // LEGACY_TEMPLATE_MAP the backend uses in resumePdf.js.
+  const LEGACY_TEMPLATE_MAP = { classic: "professional", "software-engineer": "modern", fresher: "minimal", experienced: "executive" };
+  const resolvedTemplateId = LEGACY_TEMPLATE_MAP[resume.template] || resume.template;
+  const template = TEMPLATES.find((t) => t.id === resolvedTemplateId) || TEMPLATES[0];
 
   return (
     <div>
@@ -424,8 +429,9 @@ export default function ResumeBuilder() {
                   <button
                     key={t.id}
                     onClick={() => save({ template: t.id })}
-                    className={resume.template === t.id ? "btn btn-dark" : "btn btn-ghost"}
+                    className={resolvedTemplateId === t.id ? "btn btn-dark" : "btn btn-ghost"}
                     style={{ fontSize: 12, borderLeft: `4px solid ${t.accent}` }}
+                    title={t.desc}
                   >
                     {t.label}
                   </button>
@@ -584,7 +590,7 @@ export default function ResumeBuilder() {
             </div>
             <div style={{ overflow: "auto", maxHeight: "80vh", border: "1px solid var(--line)", borderRadius: 8, background: "#ddd", padding: 16 }}>
               <div id="resume-print-area" style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top center", transition: "transform 0.15s" }}>
-                <ResumePreview resume={resume} accent={template.accent} />
+                <ResumePreview resume={resume} accent={template.accent} templateId={resolvedTemplateId} />
               </div>
             </div>
           </div>
@@ -820,20 +826,46 @@ function ItemForm({ fields, draft, setDraft, onSave, onCancel }) {
   );
 }
 
-function ResumePreview({ resume, accent }) {
+// Mirrors backend/src/utils/resumePdf.js's 5 renderers so what's shown here roughly matches
+// what gets downloaded — a student picking "Modern" should see the two-column/timeline layout
+// change right away, not just discover it after downloading a PDF.
+function ResumePreview({ resume, accent, templateId }) {
   const education = resume.education || [], skills = resume.skills || [], projects = resume.projects || [];
   const experience = resume.experience || [], certifications = resume.certifications || [], achievements = resume.achievements || [], languages = resume.languages || [];
   const skillsByCategory = {};
   for (const s of skills) (skillsByCategory[s.category || "Other"] = skillsByCategory[s.category || "Other"] || []).push(s);
+  const contactLine = [resume.email, resume.mobile, resume.address].filter(Boolean).join("   |   ");
+  const linksLine = [resume.linkedin, resume.github, resume.portfolio].filter(Boolean).join("   |   ");
 
+  const shared = { resume, accent, education, skills, projects, experience, certifications, achievements, languages, skillsByCategory, contactLine, linksLine };
+  if (templateId === "minimal") return <MinimalPreview {...shared} />;
+  if (templateId === "modern") return <ModernPreview {...shared} />;
+  if (templateId === "executive") return <ExecutivePreview {...shared} />;
+  if (templateId === "creative") return <CreativePreview {...shared} />;
+  return <ProfessionalPreview {...shared} />;
+}
+
+function ProfessionalPreview({ resume, accent, education, skills, projects, experience, certifications, achievements, languages, skillsByCategory, contactLine, linksLine }) {
   return (
     <div style={{ width: 700, minHeight: 900, background: "#fff", padding: 40, fontFamily: "var(--font-body)", color: "#1C1B18", boxShadow: "0 2px 10px rgba(0,0,0,0.15)" }}>
       <h1 style={{ fontFamily: "var(--font-display)", color: accent, margin: 0, fontSize: 28 }}>{resume.fullName || "Your Name"}</h1>
-      <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>{[resume.email, resume.mobile, resume.address].filter(Boolean).join("   |   ")}</div>
-      <div style={{ fontSize: 12, color: "#555" }}>{[resume.linkedin, resume.github, resume.portfolio].filter(Boolean).join("   |   ")}</div>
+      <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>{contactLine}</div>
+      <div style={{ fontSize: 12, color: "#555" }}>{linksLine}</div>
       <div style={{ height: 2, background: accent, marginTop: 10, marginBottom: 14 }} />
 
       {resume.summary && <PreviewSection title="Professional Summary" accent={accent}><p style={{ fontSize: 13, margin: 0 }}>{resume.summary}</p></PreviewSection>}
+
+      {experience.length > 0 && (
+        <PreviewSection title="Experience" accent={accent}>
+          {experience.map((e, i) => (
+            <div key={i} style={{ marginBottom: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{e.title}{e.company ? ` — ${e.company}` : ""}</div>
+              <div style={{ fontSize: 11, color: "#666" }}>{[e.employmentType, [e.startDate, e.endDate].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")}</div>
+              {e.responsibilities && <div style={{ fontSize: 12 }}>{e.responsibilities}</div>}
+            </div>
+          ))}
+        </PreviewSection>
+      )}
 
       {education.length > 0 && (
         <PreviewSection title="Education" accent={accent}>
@@ -843,14 +875,6 @@ function ResumePreview({ resume, accent }) {
               <div style={{ fontSize: 12 }}>{e.institution}{e.board ? ` (${e.board})` : ""}</div>
               <div style={{ fontSize: 11, color: "#666" }}>{e.startYear} – {e.endYear || e.status}{e.score ? ` · ${e.score}` : ""}</div>
             </div>
-          ))}
-        </PreviewSection>
-      )}
-
-      {skills.length > 0 && (
-        <PreviewSection title="Skills" accent={accent}>
-          {Object.entries(skillsByCategory).map(([cat, list]) => (
-            <div key={cat} style={{ fontSize: 12, marginBottom: 3 }}><strong>{cat}:</strong> {list.map((s) => s.proficiency ? `${s.name} (${s.proficiency})` : s.name).join(", ")}</div>
           ))}
         </PreviewSection>
       )}
@@ -868,14 +892,10 @@ function ResumePreview({ resume, accent }) {
         </PreviewSection>
       )}
 
-      {experience.length > 0 && (
-        <PreviewSection title="Experience" accent={accent}>
-          {experience.map((e, i) => (
-            <div key={i} style={{ marginBottom: 8 }}>
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{e.title}{e.company ? ` — ${e.company}` : ""}</div>
-              <div style={{ fontSize: 11, color: "#666" }}>{[e.employmentType, [e.startDate, e.endDate].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")}</div>
-              {e.responsibilities && <div style={{ fontSize: 12 }}>{e.responsibilities}</div>}
-            </div>
+      {skills.length > 0 && (
+        <PreviewSection title="Skills" accent={accent}>
+          {Object.entries(skillsByCategory).map(([cat, list]) => (
+            <div key={cat} style={{ fontSize: 12, marginBottom: 3 }}><strong>{cat}:</strong> {list.map((s) => s.proficiency ? `${s.name} (${s.proficiency})` : s.name).join(", ")}</div>
           ))}
         </PreviewSection>
       )}
@@ -897,6 +917,316 @@ function ResumePreview({ resume, accent }) {
           <div style={{ fontSize: 12 }}>{languages.map((l) => `${l.name} (${l.proficiency})`).join(", ")}</div>
         </PreviewSection>
       )}
+    </div>
+  );
+}
+
+// Black & white, tight spacing, no color anywhere — mirrors renderMinimal in resumePdf.js.
+function MinimalPreview({ resume, education, skills, projects, experience, certifications, achievements, languages, skillsByCategory, contactLine, linksLine }) {
+  const h = { fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", marginBottom: 4 };
+  const sec = { marginBottom: 10 };
+  return (
+    <div style={{ width: 700, minHeight: 900, background: "#fff", padding: 44, fontFamily: "var(--font-body)", color: "#000", boxShadow: "0 2px 10px rgba(0,0,0,0.15)" }}>
+      <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{resume.fullName || "Your Name"}</h1>
+      <div style={{ fontSize: 11, color: "#444", marginTop: 3 }}>{contactLine}</div>
+      <div style={{ fontSize: 11, color: "#444" }}>{linksLine}</div>
+      <div style={{ height: 14 }} />
+
+      {resume.summary && <div style={sec}><div style={h}>SUMMARY</div><p style={{ fontSize: 12, margin: 0 }}>{resume.summary}</p></div>}
+
+      {experience.length > 0 && (
+        <div style={sec}><div style={h}>EXPERIENCE</div>
+          {experience.map((e, i) => (
+            <div key={i} style={{ marginBottom: 5 }}>
+              <div style={{ fontWeight: 700, fontSize: 12 }}>{e.title}{e.company ? ` — ${e.company}` : ""}</div>
+              <div style={{ fontSize: 10.5, color: "#555" }}>{[e.employmentType, [e.startDate, e.endDate].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")}</div>
+              {e.responsibilities && <div style={{ fontSize: 11.5 }}>{e.responsibilities}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {education.length > 0 && (
+        <div style={sec}><div style={h}>EDUCATION</div>
+          {education.map((e, i) => (
+            <div key={i} style={{ fontSize: 11.5, marginBottom: 3 }}>
+              <strong>{e.degree}{e.specialization ? ` in ${e.specialization}` : ""}</strong> — {e.institution} ({e.startYear}–{e.endYear || e.status})
+            </div>
+          ))}
+        </div>
+      )}
+
+      {skills.length > 0 && <div style={sec}><div style={h}>SKILLS</div><div style={{ fontSize: 11.5 }}>{Object.values(skillsByCategory).flat().map((s) => s.proficiency ? `${s.name} (${s.proficiency})` : s.name).join(", ")}</div></div>}
+
+      {projects.length > 0 && (
+        <div style={sec}><div style={h}>PROJECTS</div>
+          {projects.map((p, i) => <div key={i} style={{ fontSize: 11.5, marginBottom: 3 }}><strong>{p.title}</strong>{p.description ? ` — ${p.description}` : ""}</div>)}
+        </div>
+      )}
+
+      {certifications.length > 0 && <div style={sec}><div style={h}>CERTIFICATIONS</div><div style={{ fontSize: 11.5 }}>{certifications.map((c) => `${c.name}${c.org ? ` (${c.org})` : ""}`).join("; ")}</div></div>}
+      {achievements.length > 0 && <div style={sec}><div style={h}>ACHIEVEMENTS</div>{achievements.map((a, i) => <div key={i} style={{ fontSize: 11.5 }}>— {a.text}</div>)}</div>}
+      {languages.length > 0 && <div style={sec}><div style={h}>LANGUAGES</div><div style={{ fontSize: 11.5 }}>{languages.map((l) => `${l.name} (${l.proficiency})`).join(", ")}</div></div>}
+    </div>
+  );
+}
+
+// Two-column with a tinted sidebar + timeline-style experience — mirrors renderModern.
+function ModernPreview({ resume, accent, education, skills, projects, experience, certifications, achievements, languages, skillsByCategory, contactLine, linksLine }) {
+  return (
+    <div style={{ width: 700, minHeight: 900, background: "#fff", display: "flex", fontFamily: "var(--font-body)", boxShadow: "0 2px 10px rgba(0,0,0,0.15)" }}>
+      <div style={{ width: 210, background: "#F0EEE3", padding: "30px 20px", flexShrink: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: accent, marginBottom: 6, letterSpacing: "0.04em" }}>CONTACT</div>
+        <div style={{ fontSize: 10.5, color: "#333", marginBottom: 2 }}>{resume.email}</div>
+        <div style={{ fontSize: 10.5, color: "#333", marginBottom: 2 }}>{resume.mobile}</div>
+        <div style={{ fontSize: 10.5, color: "#333", marginBottom: 10 }}>{resume.address}</div>
+        {skills.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, color: accent, marginBottom: 6, letterSpacing: "0.04em" }}>SKILLS</div>
+            {Object.entries(skillsByCategory).map(([cat, list]) => (
+              <div key={cat} style={{ fontSize: 10, marginBottom: 6 }}>
+                <div style={{ fontWeight: 700, color: "#1C1B18" }}>{cat}</div>
+                <div style={{ color: "#444" }}>{list.map((s) => s.name).join(", ")}</div>
+              </div>
+            ))}
+          </>
+        )}
+        {education.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, color: accent, margin: "10px 0 6px", letterSpacing: "0.04em" }}>EDUCATION</div>
+            {education.map((e, i) => (
+              <div key={i} style={{ fontSize: 10, marginBottom: 6 }}>
+                <div style={{ fontWeight: 700 }}>{e.degree}</div>
+                <div style={{ color: "#444" }}>{e.institution}</div>
+                <div style={{ color: "#666" }}>{e.startYear}–{e.endYear || e.status}</div>
+              </div>
+            ))}
+          </>
+        )}
+        {languages.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, color: accent, margin: "10px 0 6px", letterSpacing: "0.04em" }}>LANGUAGES</div>
+            <div style={{ fontSize: 10, color: "#444" }}>{languages.map((l) => l.name).join(", ")}</div>
+          </>
+        )}
+      </div>
+      <div style={{ flex: 1, padding: "34px 28px", color: "#1C1B18" }}>
+        <h1 style={{ margin: 0, fontSize: 26 }}>{resume.fullName || "Your Name"}</h1>
+        <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>{linksLine}</div>
+        <div style={{ height: 2, background: accent, marginTop: 10, marginBottom: 16, width: "100%" }} />
+
+        {resume.summary && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: accent, letterSpacing: "0.03em", marginBottom: 6 }}>SUMMARY</div>
+            <p style={{ fontSize: 11.5, margin: 0 }}>{resume.summary}</p>
+          </div>
+        )}
+
+        {experience.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: accent, letterSpacing: "0.03em", marginBottom: 8 }}>EXPERIENCE</div>
+            {experience.map((e, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                <div style={{ width: 8, paddingTop: 4, flexShrink: 0 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: accent }} />
+                  {i < experience.length - 1 && <div style={{ width: 1, background: "#ddd", height: 34, marginLeft: 3.5 }} />}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 12 }}>{e.title}{e.company ? ` — ${e.company}` : ""}</div>
+                  <div style={{ fontSize: 10.5, color: "#777" }}>{[e.startDate, e.endDate].filter(Boolean).join(" – ")}</div>
+                  {e.responsibilities && <div style={{ fontSize: 11 }}>{e.responsibilities}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {projects.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: accent, letterSpacing: "0.03em", marginBottom: 8 }}>PROJECTS</div>
+            {projects.map((p, i) => (
+              <div key={i} style={{ marginBottom: 8 }}>
+                <div style={{ fontWeight: 700, fontSize: 12 }}>{p.title}</div>
+                {p.description && <div style={{ fontSize: 11 }}>{p.description}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {certifications.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: accent, letterSpacing: "0.03em", marginBottom: 6 }}>CERTIFICATIONS</div>
+            <div style={{ fontSize: 11 }}>{certifications.map((c) => c.name).join(", ")}</div>
+          </div>
+        )}
+
+        {achievements.length > 0 && (
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: accent, letterSpacing: "0.03em", marginBottom: 6 }}>ACHIEVEMENTS</div>
+            {achievements.map((a, i) => <div key={i} style={{ fontSize: 11 }}>•  {a.text}</div>)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Centered serif header, generous spacing, formal — mirrors renderExecutive.
+function ExecutivePreview({ resume, accent, education, skills, projects, experience, certifications, achievements, contactLine, linksLine, skillsByCategory }) {
+  const h = { fontSize: 13, fontWeight: 700, color: accent, letterSpacing: "0.08em", textAlign: "center", marginBottom: 10 };
+  return (
+    <div style={{ width: 700, minHeight: 900, background: "#fff", padding: "48px 60px", fontFamily: "Georgia, 'Times New Roman', serif", color: "#1C1B18", boxShadow: "0 2px 10px rgba(0,0,0,0.15)" }}>
+      <h1 style={{ margin: 0, fontSize: 26, textAlign: "center", letterSpacing: "0.05em", color: accent }}>{(resume.fullName || "Your Name").toUpperCase()}</h1>
+      <div style={{ fontSize: 11, color: "#555", textAlign: "center", marginTop: 8 }}>{contactLine}</div>
+      <div style={{ fontSize: 11, color: "#555", textAlign: "center" }}>{linksLine}</div>
+      <div style={{ borderTop: `1px solid ${accent}`, marginTop: 14, marginBottom: 4 }} />
+      <div style={{ borderTop: `0.5px solid ${accent}`, marginBottom: 20 }} />
+
+      {resume.summary && <div style={{ marginBottom: 20 }}><div style={h}>EXECUTIVE SUMMARY</div><p style={{ fontSize: 12, margin: 0, textAlign: "center" }}>{resume.summary}</p></div>}
+
+      {experience.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={h}>PROFESSIONAL EXPERIENCE</div>
+          {experience.map((e, i) => (
+            <div key={i} style={{ marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 12.5 }}>{e.title}{e.company ? ` — ${e.company}` : ""}</div>
+              <div style={{ fontSize: 10.5, fontStyle: "italic", color: "#666" }}>{[e.employmentType, [e.startDate, e.endDate].filter(Boolean).join(" – ")].filter(Boolean).join("   ·   ")}</div>
+              {e.responsibilities && <div style={{ fontSize: 11.5, marginTop: 3 }}>{e.responsibilities}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {education.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={h}>EDUCATION</div>
+          {education.map((e, i) => (
+            <div key={i} style={{ marginBottom: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 12 }}>{e.degree}{e.specialization ? ` in ${e.specialization}` : ""}</div>
+              <div style={{ fontSize: 11.5 }}>{e.institution}</div>
+              <div style={{ fontSize: 10.5, color: "#666" }}>{e.startYear} – {e.endYear || e.status}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {skills.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={h}>CORE COMPETENCIES</div>
+          {Object.entries(skillsByCategory).map(([cat, list]) => (
+            <div key={cat} style={{ fontSize: 11.5, marginBottom: 3 }}><strong>{cat}:</strong> {list.map((s) => s.name).join(", ")}</div>
+          ))}
+        </div>
+      )}
+
+      {certifications.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={h}>CERTIFICATIONS</div>
+          {certifications.map((c, i) => <div key={i} style={{ fontSize: 11.5, marginBottom: 3 }}>{c.name}{c.org ? ` — ${c.org}` : ""}</div>)}
+        </div>
+      )}
+
+      {projects.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={h}>SELECTED PROJECTS</div>
+          {projects.map((p, i) => <div key={i} style={{ fontSize: 11.5, marginBottom: 3 }}><strong>{p.title}</strong>{p.description ? ` — ${p.description}` : ""}</div>)}
+        </div>
+      )}
+
+      {achievements.length > 0 && (
+        <div>
+          <div style={h}>ACHIEVEMENTS</div>
+          {achievements.map((a, i) => <div key={i} style={{ fontSize: 11.5, textAlign: "center" }}>{a.text}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Colored header band + skill "tag" pills — mirrors renderCreative.
+function CreativePreview({ resume, accent, education, skills, projects, experience, certifications, achievements, contactLine, linksLine, skillsByCategory }) {
+  const initials = (resume.fullName || "Y N").trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  return (
+    <div style={{ width: 700, minHeight: 900, background: "#fff", fontFamily: "var(--font-body)", color: "#1C1B18", boxShadow: "0 2px 10px rgba(0,0,0,0.15)" }}>
+      <div style={{ background: accent, padding: "26px 40px", display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ width: 60, height: 60, borderRadius: "50%", background: "#fff", color: accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 20, flexShrink: 0 }}>{initials}</div>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 24, color: "#fff" }}>{resume.fullName || "Your Name"}</h1>
+          <div style={{ fontSize: 11, color: "#fff", opacity: 0.9, marginTop: 4 }}>{contactLine}</div>
+          <div style={{ fontSize: 11, color: "#fff", opacity: 0.9 }}>{linksLine}</div>
+        </div>
+      </div>
+      <div style={{ padding: "24px 40px" }}>
+        {resume.summary && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ width: 4, height: 14, background: accent }} />
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: accent }}>ABOUT ME</div>
+            </div>
+            <p style={{ fontSize: 11.5, margin: 0 }}>{resume.summary}</p>
+          </div>
+        )}
+
+        {skills.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 4, height: 14, background: accent }} />
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: accent }}>SKILLS</div>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {Object.values(skillsByCategory).flat().map((s, i) => (
+                <span key={i} style={{ background: "#F4E9FB", color: accent, borderRadius: 999, padding: "3px 10px", fontSize: 10.5 }}>{s.name}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {experience.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ width: 4, height: 14, background: accent }} />
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: accent }}>EXPERIENCE</div>
+            </div>
+            {experience.map((e, i) => (
+              <div key={i} style={{ marginBottom: 8 }}>
+                <div style={{ fontWeight: 700, fontSize: 12 }}>{e.title}{e.company ? ` — ${e.company}` : ""}</div>
+                <div style={{ fontSize: 10.5, color: accent }}>{[e.startDate, e.endDate].filter(Boolean).join(" – ")}</div>
+                {e.responsibilities && <div style={{ fontSize: 11 }}>{e.responsibilities}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {projects.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ width: 4, height: 14, background: accent }} />
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: accent }}>PROJECTS</div>
+            </div>
+            {projects.map((p, i) => <div key={i} style={{ fontSize: 11, marginBottom: 4 }}><strong>{p.title}</strong>{p.description ? ` — ${p.description}` : ""}</div>)}
+          </div>
+        )}
+
+        {education.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ width: 4, height: 14, background: accent }} />
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: accent }}>EDUCATION</div>
+            </div>
+            {education.map((e, i) => <div key={i} style={{ fontSize: 11, marginBottom: 3 }}><strong>{e.degree}</strong> — {e.institution}</div>)}
+          </div>
+        )}
+
+        {achievements.length > 0 && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ width: 4, height: 14, background: accent }} />
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: accent }}>ACHIEVEMENTS</div>
+            </div>
+            {achievements.map((a, i) => <div key={i} style={{ fontSize: 11 }}>•  {a.text}</div>)}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
