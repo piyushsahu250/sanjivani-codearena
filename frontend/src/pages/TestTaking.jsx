@@ -35,6 +35,16 @@ export default function TestTaking() {
   const [test, setTest] = useState(null);
   const [attemptId, setAttemptId] = useState(null);
   const [loadError, setLoadError] = useState(null);
+
+  // Editor-specific preferences (independent of the site-wide light/dark theme — code editors
+  // conventionally keep their own theme choice, same as VSCode/GitHub/LeetCode). Persisted to
+  // localStorage so a refresh mid-test doesn't reset them back to defaults.
+  const [editorTheme, setEditorTheme] = useState(() => localStorage.getItem("ca-editor-theme") || "vs-dark");
+  const [editorFontSize, setEditorFontSize] = useState(() => Number(localStorage.getItem("ca-editor-fontsize")) || 14);
+  const [editorWordWrap, setEditorWordWrap] = useState(() => localStorage.getItem("ca-editor-wordwrap") === "on");
+  useEffect(() => { localStorage.setItem("ca-editor-theme", editorTheme); }, [editorTheme]);
+  useEffect(() => { localStorage.setItem("ca-editor-fontsize", String(editorFontSize)); }, [editorFontSize]);
+  useEffect(() => { localStorage.setItem("ca-editor-wordwrap", editorWordWrap ? "on" : "off"); }, [editorWordWrap]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [answers, setAnswers] = useState({}); // { [questionId]: { language, code } | { selected: number[] } }
   const [runResult, setRunResult] = useState(null);
@@ -1062,6 +1072,7 @@ export default function TestTaking() {
                     <div key={tc.id} className="card" style={{ padding: 12, marginTop: 8, fontSize: 13 }}>
                       <div className="mono"><strong>Input:</strong> {tc.input}</div>
                       <div className="mono"><strong>Expected:</strong> {tc.expected}</div>
+                      {tc.explanation && <div style={{ marginTop: 6, color: "var(--ink-dim)" }}>{tc.explanation}</div>}
                     </div>
                   ))}
                 </div>
@@ -1159,6 +1170,20 @@ export default function TestTaking() {
                   <button className="btn btn-ghost" onClick={handleRun} disabled={running}>{running ? "Running…" : "▶ Run sample"}</button>
                 </div>
               </div>
+              <div style={{ padding: "6px 16px", borderBottom: "1px solid var(--line)", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                <button className="btn btn-ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => setEditorTheme((t) => (t === "vs-dark" ? "light" : "vs-dark"))}>
+                  {editorTheme === "vs-dark" ? "☾ Dark" : "☀ Light"}
+                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span className="mono" style={{ fontSize: 11, color: "var(--ink-dim)" }}>Font</span>
+                  <button className="btn btn-ghost" style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => setEditorFontSize((s) => Math.max(10, s - 1))}>A-</button>
+                  <span className="mono" style={{ fontSize: 11, minWidth: 18, textAlign: "center" }}>{editorFontSize}</span>
+                  <button className="btn btn-ghost" style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => setEditorFontSize((s) => Math.min(28, s + 1))}>A+</button>
+                </div>
+                <label className="mono" style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4, color: "var(--ink-dim)" }}>
+                  <input type="checkbox" checked={editorWordWrap} onChange={(e) => setEditorWordWrap(e.target.checked)} /> Wrap lines
+                </label>
+              </div>
               <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", padding: "6px 16px 0" }}>
                 Your code is saved automatically — edit it freely until you submit the whole test. "Run sample"
                 checks against sample cases only; the final saved version is graded when the test is submitted.
@@ -1170,8 +1195,13 @@ export default function TestTaking() {
                   language={LANGUAGES.find((l) => l.id === answer?.language)?.monaco}
                   value={answer?.code || ""}
                   onChange={(v) => setCode(v || "")}
-                  theme="vs-dark"
-                  options={{ fontSize: 14, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace" }}
+                  theme={editorTheme}
+                  options={{
+                    fontSize: editorFontSize,
+                    wordWrap: editorWordWrap ? "on" : "off",
+                    minimap: { enabled: false },
+                    fontFamily: "JetBrains Mono, monospace",
+                  }}
                 />
               </div>
             </>

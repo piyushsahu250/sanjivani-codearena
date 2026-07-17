@@ -21,6 +21,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { mapWithConcurrency } = require("./queue");
+const { wrapFunctionCode } = require("./functionHarness");
 
 const CASE_CONCURRENCY = Number(process.env.JUDGE_CASE_CONCURRENCY || 2);
 const MEMORY_LIMIT_KB = Number(process.env.JUDGE_MEMORY_LIMIT_KB || 262144); // 256 MB default
@@ -289,8 +290,22 @@ async function prepare(language, code) {
  * Runs `code` against a list of test cases: [{ input, expected }]
  * Returns { passedCases, totalCases, verdict, details: [...] }
  */
-async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000, memoryLimitKb = MEMORY_LIMIT_KB }) {
-  const prepared = await prepare(language, code);
+async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000, memoryLimitKb = MEMORY_LIMIT_KB, evaluationType, functionSignature }) {
+  let sourceCode = code;
+  if (evaluationType === "FUNCTION" && functionSignature) {
+    try {
+      sourceCode = wrapFunctionCode(language, functionSignature, code);
+    } catch (err) {
+      return {
+        passedCases: 0,
+        totalCases: testCases.length,
+        verdict: "COMPILE_ERROR",
+        details: [],
+        errorSummary: { type: "Compilation Error", line: null, message: err.message, hint: null },
+      };
+    }
+  }
+  const prepared = await prepare(language, sourceCode);
   if (!prepared.ok) {
     const details = testCases.map((tc) => ({
       input: tc.input,

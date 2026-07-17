@@ -229,7 +229,7 @@ router.post("/attempts/:attemptId/run", authenticate, requireRole("STUDENT"), ex
     const question = await prisma.question.findUnique({ where: { id: questionId }, include: { testCases: { where: { isHidden: false } } } });
     if (!question) return res.status(404).json({ error: "Question not found" });
 
-    const result = await runQueued(() => judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs }));
+    const result = await runQueued(() => judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs, memoryLimitKb: question.memoryLimitKb || undefined, evaluationType: question.evaluationType, functionSignature: question.functionSignature }));
     res.json(result);
   } catch (err) {
     console.error(err);

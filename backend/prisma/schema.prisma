@@ -186,6 +186,14 @@ model Question {
   starterCodeByLanguage Json? // { java, python, cpp, c, javascript } — preferred when present
   tags          Json?   // string[], e.g. ["Arrays","Dynamic Programming"]
 
+  // "STDIO" (default): the student's submitted code IS the whole program — reads stdin, writes
+  // stdout, same as it always has been. "FUNCTION": LeetCode-style — the student writes only a
+  // method/function body matching functionSignature; the judge auto-generates the surrounding
+  // driver (stdin parsing, method invocation, output formatting) at judge time — see
+  // backend/src/utils/functionHarness.js. Only meaningful for CODING questions.
+  evaluationType   String @default("STDIO")
+  functionSignature Json? // { methodName, returnType, params: [{name, type}] } — see functionHarness.js SUPPORTED_TYPES
+
   // MCQ / TRUE_FALSE / MULTISELECT fields
   options       Json? // array of option strings
   correctAnswer Json? // array of correct option indices

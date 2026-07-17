@@ -86,7 +86,7 @@ router.post("/run", authenticate, requireRole("STUDENT"), execLimiter, async (re
     }
 
     const result = await runQueued(() =>
-      judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs, memoryLimitKb: question.memoryLimitKb || undefined })
+      judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs, memoryLimitKb: question.memoryLimitKb || undefined, evaluationType: question.evaluationType, functionSignature: question.functionSignature })
     );
     res.json(result);
   } catch (err) {

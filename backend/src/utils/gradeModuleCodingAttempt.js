@@ -31,7 +31,7 @@ async function gradeModuleCodingAttempt(attemptId, { reason } = {}) {
       const hiddenCases = question.testCases.filter((tc) => tc.isHidden);
       const gradingCases = hiddenCases.length > 0 ? hiddenCases : question.testCases;
       const result = await runQueued(() =>
-        judgeSubmission({ language: sub.language, code: sub.code, testCases: gradingCases, timeLimitMs: question.timeLimitMs })
+        judgeSubmission({ language: sub.language, code: sub.code, testCases: gradingCases, timeLimitMs: question.timeLimitMs, memoryLimitKb: question.memoryLimitKb || undefined, evaluationType: question.evaluationType, functionSignature: question.functionSignature })
       );
       await prisma.moduleCodingSubmission.update({
         where: { id: sub.id },
