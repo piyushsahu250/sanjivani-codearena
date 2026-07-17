@@ -8,6 +8,7 @@ import useIsMobile from "../hooks/useIsMobile";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import CodeResultBlock from "../components/CodeResultBlock";
+import RunSubmitButtons from "../components/RunSubmitButtons";
 
 const ALL_LANGUAGES = [
   { id: "java", label: "Java", monaco: "java" },
@@ -54,6 +55,7 @@ export default function ModuleCodingAssessment() {
   const [answers, setAnswers] = useState({}); // { [questionId]: { language, code } }
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(false);
+  const [submittingCode, setSubmittingCode] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [finalizing, setFinalizing] = useState(false);
   const [autoSubmitted, setAutoSubmitted] = useState(false);
@@ -319,6 +321,26 @@ export default function ModuleCodingAssessment() {
       setRunResult({ error: err.response?.data?.error || "Run failed" });
     } finally {
       setRunning(false);
+    }
+  }
+
+  // Grades this one question against hidden test cases immediately, distinct from Run (samples
+  // only, no score). Marks the code as "already saved" in lastSavedCodeRef right after — the
+  // periodic 10s autosave interval skips a question whose code hasn't changed since its last
+  // save, so without this the very next tick would re-autosave the same code and reset the
+  // verdict it just computed back to PENDING.
+  async function handleSubmitCode() {
+    if (!current || !answer || !attemptId) return;
+    setSubmittingCode(true);
+    try {
+      const { data } = await api.post(`/module-coding/attempts/${attemptId}/submit-code`, { questionId: current.id, language: answer.language, code: answer.code });
+      lastSavedCodeRef.current[current.id] = `${answer.language}:${answer.code}`;
+      setLastSavedAt(new Date());
+      alert(`Submitted — ${data.passedCases}/${data.totalCases} hidden test cases passed.`);
+    } catch (err) {
+      alert(err.response?.data?.error || "Submission failed");
+    } finally {
+      setSubmittingCode(false);
     }
   }
 
@@ -621,11 +643,18 @@ export default function ModuleCodingAssessment() {
             <select value={answer?.language || allowedLanguages[0]} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
               {ALL_LANGUAGES.filter((l) => allowedLanguages.includes(l.id)).map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
-            <button className="btn btn-ghost" onClick={handleRun} disabled={running || micBlocked}>{running ? "Running…" : "▶ Run sample"}</button>
+            <RunSubmitButtons
+              onRun={handleRun}
+              onSubmit={handleSubmitCode}
+              running={running}
+              submitting={submittingCode}
+              runDisabled={micBlocked}
+              submitDisabled={micBlocked}
+            />
           </div>
           <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", padding: "6px 16px 0" }}>
-            Your code is auto-saved every 10 seconds. "Run sample" checks against sample cases only — your saved code
-            is graded against all (including hidden) test cases when you submit.
+            Your code is auto-saved every 10 seconds. "Run" checks against sample cases only — "Submit" grades this
+            question against all test cases, including hidden ones, right away.
           </p>
           <div style={{ height: isMobile ? Math.min(editorHeight, 320) : editorHeight, minHeight: 0, flexShrink: 0 }}>
             <Editor

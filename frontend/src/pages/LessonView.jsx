@@ -6,6 +6,7 @@ import { useGamification } from "../context/GamificationContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import CodeResultBlock from "../components/CodeResultBlock";
+import RunSubmitButtons from "../components/RunSubmitButtons";
 
 const AUTOSAVE_DEBOUNCE_MS = 2000;
 
@@ -467,10 +468,7 @@ function PracticeQuestionCard({ question }) {
             <select value={language} onChange={(e) => setLanguage(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)" }}>
               {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-ghost" onClick={runCode} disabled={running}>{running ? "Running…" : "Run"}</button>
-              <button className="btn btn-primary" onClick={submitCode} disabled={submitting}>{submitting ? "Submitting…" : "Submit"}</button>
-            </div>
+            <RunSubmitButtons onRun={runCode} onSubmit={submitCode} running={running} submitting={submitting} />
           </div>
           <div style={{ marginTop: 10, border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
             <Editor

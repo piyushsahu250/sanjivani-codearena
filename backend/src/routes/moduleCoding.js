@@ -5,7 +5,7 @@ const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { judgeSubmission } = require("../utils/judge");
 const { runQueued } = require("../utils/queue");
-const { gradeModuleCodingAttempt } = require("../utils/gradeModuleCodingAttempt");
+const { gradeModuleCodingAttempt, gradeOneModuleCodingSubmission } = require("../utils/gradeModuleCodingAttempt");
 const { getModuleLockMap } = require("../utils/learningLock");
 const { processGamification } = require("../utils/gamification");
 
@@ -256,6 +256,36 @@ router.post("/attempts/:attemptId/autosave", authenticate, requireRole("STUDENT"
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Autosave failed" });
+  }
+});
+
+// STUDENT: explicit per-question Submit — saves the current code and immediately grades it
+// against the HIDDEN test cases (unlike /run, which only checks the visible sample cases and
+// never touches the score). Same counts-only-no-raw-hidden-data shape the finalize result already
+// uses (questionBreakdown) — passedCases/totalCases/verdict/timing are safe to show immediately,
+// the hidden inputs/outputs themselves never are.
+router.post("/attempts/:attemptId/submit-code", authenticate, requireRole("STUDENT"), execLimiter, async (req, res) => {
+  try {
+    const attempt = await loadOwnedAttempt(req, res);
+    if (!attempt) return;
+    if (Date.now() > deadlineOf(attempt)) return res.status(403).json({ error: "Time is up for this assessment" });
+
+    const { questionId, language, code } = req.body;
+    const question = await prisma.question.findUnique({ where: { id: questionId }, include: { testCases: true } });
+    if (!question) return res.status(404).json({ error: "Question not found" });
+
+    const sub = await prisma.moduleCodingSubmission.upsert({
+      where: { attemptId_questionId: { attemptId: attempt.id, questionId } },
+      update: { language: language || "", code: code || "", verdict: "PENDING", passedCases: 0, totalCases: 0, timeMs: null, memoryKb: null },
+      create: { attemptId: attempt.id, questionId, studentId: req.user.id, language: language || "", code: code || "", verdict: "PENDING" },
+    });
+
+    const result = await gradeOneModuleCodingSubmission(sub, question);
+    const { details, ...safeResult } = result;
+    res.json(safeResult);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Submission failed" });
   }
 });
 

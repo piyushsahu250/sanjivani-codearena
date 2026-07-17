@@ -4,7 +4,7 @@ const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { judgeSubmission } = require("../utils/judge");
 const { runQueued, getQueueStatus } = require("../utils/queue");
-const { gradePendingCodingSubmissions } = require("../utils/gradeAttempt");
+const { gradePendingCodingSubmissions, gradeCodingSubmission, recomputeAttemptScore } = require("../utils/gradeAttempt");
 const { processGamification } = require("../utils/gamification");
 
 const router = express.Router();
@@ -132,6 +132,48 @@ router.post("/autosave", authenticate, requireRole("STUDENT"), async (req, res) 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Autosave failed" });
+  }
+});
+
+// STUDENT: explicit per-question Submit — saves the current code and immediately grades it
+// against the HIDDEN test cases (never the sample cases the student already checked via /run),
+// unlike /autosave which never judges anything. The response still withholds pass/fail (same
+// sanitizeSubmitResponse used by the quiz /submit route below) — exam integrity doesn't change
+// just because grading now happens the moment the student asks for it instead of only at
+// finalize; the real score is fully computed and stored, it just isn't shown until results
+// publish. A student can Submit as many times as the test allows re-submission; recomputeAttemptScore
+// always keeps each question's BEST scoring submission.
+router.post("/submit-code", authenticate, requireRole("STUDENT"), execLimiter, async (req, res) => {
+  try {
+    const { attemptId, questionId, language, code } = req.body;
+
+    const attempt = await prisma.testAttempt.findUnique({ where: { id: attemptId } });
+    if (!attempt || attempt.studentId !== req.user.id) {
+      return res.status(403).json({ error: "Invalid attempt" });
+    }
+    if (attempt.status !== "IN_PROGRESS") {
+      return res.status(403).json({ error: "This test attempt is already finalized" });
+    }
+
+    const question = await prisma.question.findUnique({ where: { id: questionId }, include: { testCases: true } });
+    if (!question) return res.status(404).json({ error: "Question not found" });
+    if (question.questionType !== "CODING") {
+      return res.status(400).json({ error: "Submit is only for coding questions" });
+    }
+
+    const sub = await prisma.submission.upsert({
+      where: { attemptId_questionId: { attemptId, questionId } },
+      update: { language: language || "", code: code || "", verdict: "PENDING", score: 0, passedCases: 0, totalCases: 0, timeMs: null, memoryKb: null },
+      create: { attemptId, questionId, studentId: req.user.id, language: language || "", code: code || "", verdict: "PENDING" },
+    });
+
+    const result = await gradeCodingSubmission(sub, question);
+    await recomputeAttemptScore(attemptId);
+
+    res.json(sanitizeSubmitResponse(question, result));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Submission failed" });
   }
 });
 

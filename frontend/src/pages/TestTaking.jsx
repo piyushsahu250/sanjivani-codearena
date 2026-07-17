@@ -7,6 +7,7 @@ import api from "../api";
 import { useGamification } from "../context/GamificationContext";
 import useIsMobile from "../hooks/useIsMobile";
 import CodeResultBlock from "../components/CodeResultBlock";
+import RunSubmitButtons from "../components/RunSubmitButtons";
 
 const FACE_CHECK_INTERVAL_MS = 2000;
 const FACE_CONFIDENCE_THRESHOLD = 0.7;
@@ -49,6 +50,7 @@ export default function TestTaking() {
   const [answers, setAnswers] = useState({}); // { [questionId]: { language, code } | { selected: number[] } }
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(false);
+  const [submittingCode, setSubmittingCode] = useState(false);
   const [queueStatus, setQueueStatus] = useState(null);
   const [submittedQuestions, setSubmittedQuestions] = useState({});
   const [secondsLeft, setSecondsLeft] = useState(null);
@@ -744,6 +746,31 @@ export default function TestTaking() {
     }
   }
 
+  // Grades this one question against hidden test cases immediately, distinct from the whole-test
+  // Submit Test button — the score is fully computed and stored right away, same as clicking Run,
+  // just scored against hidden cases instead of samples. Cancels any pending debounced autosave
+  // first: that autosave always resets the row back to PENDING on write, which would silently
+  // undo this grading if it fired right after with the same (already-submitted) code.
+  async function handleSubmitCode() {
+    if (!answer || isQuiz || !attemptId) return;
+    clearTimeout(codeAutoSaveTimeoutRef.current);
+    pendingCodeAutoSaveRef.current = null;
+    setSubmittingCode(true);
+    try {
+      const { data } = await api.post("/submissions/submit-code", { attemptId, questionId: current.id, language: answer.language, code: answer.code });
+      setSubmittedQuestions((prev) => ({ ...prev, [current.id]: true }));
+      if (data.status === "SUBMITTED") {
+        alert("Submitted — graded against hidden test cases. Your score is recorded; results are shown after the test ends.");
+      } else {
+        alert(`Submitted, but your code didn't run cleanly (${data.status}). You can keep editing and submit again.`);
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || "Submission failed");
+    } finally {
+      setSubmittingCode(false);
+    }
+  }
+
   async function finalizeAndExit(auto = false, reason = null) {
     if (!attemptId || finalizedRef.current) return;
     if (!auto && !confirm("Are you sure you want to submit your test? After submission, you will not be able to modify your answers.")) return;
@@ -1167,7 +1194,7 @@ export default function TestTaking() {
                   >
                     {markedForReview[current.id] ? "⚑ Marked" : "⚑ Mark for review"}
                   </button>
-                  <button className="btn btn-ghost" onClick={handleRun} disabled={running}>{running ? "Running…" : "▶ Run sample"}</button>
+                  <RunSubmitButtons onRun={handleRun} onSubmit={handleSubmitCode} running={running} submitting={submittingCode} />
                 </div>
               </div>
               <div style={{ padding: "6px 16px", borderBottom: "1px solid var(--line)", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>

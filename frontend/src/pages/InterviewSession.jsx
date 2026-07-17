@@ -8,6 +8,7 @@ import { useTheme } from "../context/ThemeContext";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import CodeResultBlock from "../components/CodeResultBlock";
+import RunSubmitButtons from "../components/RunSubmitButtons";
 import "./interviewPrep.css";
 
 const AUTOSAVE_DEBOUNCE_MS = 2000;
@@ -37,6 +38,7 @@ export default function InterviewSession() {
   const [saving, setSaving] = useState(false);
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(false);
+  const [codeSubmittedResult, setCodeSubmittedResult] = useState(false); // true once runResult holds a hidden-case Submit grade, not a sample-only Run
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [recording, setRecording] = useState(false);
   const [violationCount, setViolationCount] = useState(0);
@@ -266,6 +268,7 @@ export default function InterviewSession() {
   async function runCode() {
     setRunning(true);
     setRunResult(null);
+    setCodeSubmittedResult(false);
     try {
       const { data: res } = await api.post(`/interview/sessions/${id}/run-code`, { questionId: q.id, code: draft.code, language: draft.language });
       setRunResult(res);
@@ -274,6 +277,14 @@ export default function InterviewSession() {
     } finally {
       setRunning(false);
     }
+  }
+
+  // Grades the current answer against hidden test cases right away via the same saveAnswer()
+  // path Next/Skip/Submit Interview already use (idempotent upsert — calling it again on Next
+  // just re-saves the same code and re-grades it, no double-counting).
+  async function submitCode() {
+    const res = await saveAnswer(false);
+    if (res?.immediateResult) setCodeSubmittedResult(true);
   }
 
   async function go(delta) {
@@ -448,7 +459,7 @@ export default function InterviewSession() {
                 <select className="ip-select" value={draft.language} onChange={(e) => updateDraft({ language: e.target.value })}>
                   {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
                 </select>
-                <button className="btn btn-primary" onClick={runCode} disabled={running || micBlocked}>{running ? "Running…" : "Run"}</button>
+                <RunSubmitButtons onRun={runCode} onSubmit={submitCode} running={running} submitting={saving} runDisabled={micBlocked} submitDisabled={micBlocked} />
               </div>
               <div style={{ marginTop: 10, border: "1px solid var(--ip-glass-border)", borderRadius: 8, overflow: "hidden" }}>
                 <Editor
@@ -462,12 +473,12 @@ export default function InterviewSession() {
               </div>
               {runResult ? (
                 <div className="ip-glass" style={{ marginTop: 12, padding: 12 }}>
-                  <CodeResultBlock title="Sample run result" result={runResult} />
+                  <CodeResultBlock title={codeSubmittedResult ? "Submitted — graded against hidden test cases" : "Sample run result"} result={runResult} />
                 </div>
               ) : (
                 <p className="mono" style={{ fontSize: 11, marginTop: 8, opacity: 0.7 }}>
-                  Run against sample cases any time. Your code is judged against hidden test cases (for scoring)
-                  automatically when you move to the next question or submit the interview.
+                  "Run" checks against sample cases only. "Submit" grades this answer against hidden test cases right
+                  away — it also happens automatically when you move to the next question or submit the interview.
                 </p>
               )}
             </>
