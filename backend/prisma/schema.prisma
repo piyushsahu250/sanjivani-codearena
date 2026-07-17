@@ -132,6 +132,16 @@ model Test {
   requireMicrophone Boolean @default(false) // mic-drop is monitored/warned but never blocks Submit
   shuffleQuestions  Boolean @default(true)  // each student gets a random per-attempt question order (same question set)
   shuffleOptions    Boolean @default(false) // each student also gets randomized MCQ/MULTISELECT option order
+  // "FIXED" (default): every student gets the test's full configured question list (questions[]).
+  // "RANDOM": every student gets a random randomQuestionsPerStudent-sized subset of the questions
+  // in randomBankFolder, generated once at attempt start — see buildAttemptOrder() in tests.js.
+  // In RANDOM mode, questions[] still holds every question in the bank (so admin edits/points/
+  // time limits are managed the normal way); it's just never shown to a student in full.
+  questionSelectionMode    String  @default("FIXED")
+  randomBankFolder         QuestionFolder? @relation(fields: [randomBankFolderId], references: [id])
+  randomBankFolderId       String?
+  randomQuestionsPerStudent Int?
+  difficultyDistribution   Json? // optional { easy, medium, hard } counts that must sum to randomQuestionsPerStudent
   createdBy    User     @relation("TestCreator", fields: [createdById], references: [id])
   createdById  String
   createdAt    DateTime @default(now())
@@ -170,8 +180,11 @@ model Question {
   createdAt      DateTime     @default(now())
 
   // CODING-only fields
-  timeLimitMs Int     @default(2000)
-  starterCode String?
+  timeLimitMs   Int     @default(2000)
+  memoryLimitKb Int?    // null = use the judge's global default (JUDGE_MEMORY_LIMIT_KB)
+  starterCode   String? // legacy single-language fallback, kept for old questions/callers
+  starterCodeByLanguage Json? // { java, python, cpp, c, javascript } — preferred when present
+  tags          Json?   // string[], e.g. ["Arrays","Dynamic Programming"]
 
   // MCQ / TRUE_FALSE / MULTISELECT fields
   options       Json? // array of option strings
@@ -227,6 +240,7 @@ model QuestionFolder {
   createdAt   DateTime @default(now())
 
   questions Question[]
+  randomBankTests Test[]
 
   @@index([parentId])
 
@@ -234,12 +248,13 @@ model QuestionFolder {
 }
 
 model TestCase {
-  id         String   @id @default(uuid())
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  questionId String
-  input      String
-  expected   String
-  isHidden   Boolean  @default(true) // hidden test cases aren't shown to students
+  id          String   @id @default(uuid())
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId  String
+  input       String
+  expected    String
+  isHidden    Boolean  @default(true) // hidden test cases aren't shown to students
+  explanation String?  // optional, sample cases only — shown alongside the case to help students understand it
 }
 
 // Join table: which questions belong to which test, in what order

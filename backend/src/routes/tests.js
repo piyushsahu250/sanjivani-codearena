@@ -25,17 +25,47 @@ function shuffledArray(arr) {
   return a;
 }
 
+// RANDOM mode: draws randomQuestionsPerStudent TestQuestion rows out of the test's full bank
+// (test.questions holds every question in the linked folder — see resolveQuestionIds). Honors
+// difficultyDistribution when set by sampling each difficulty pool independently; any shortfall
+// (a pool with fewer questions than requested) is topped up from whatever's left in the bank so
+// the student still gets the promised count. Independent per-student sampling — no cross-student
+// combination tracking, which is the standard, practical approach at real question-bank scale.
+function pickRandomQuestions(bank, perStudent, distribution) {
+  if (!distribution || (!distribution.easy && !distribution.medium && !distribution.hard)) {
+    return shuffledArray(bank).slice(0, perStudent);
+  }
+  const byDifficulty = { EASY: [], MEDIUM: [], HARD: [] };
+  for (const tq of bank) byDifficulty[tq.question.difficulty]?.push(tq);
+  const picks = [
+    ...shuffledArray(byDifficulty.EASY).slice(0, Number(distribution.easy) || 0),
+    ...shuffledArray(byDifficulty.MEDIUM).slice(0, Number(distribution.medium) || 0),
+    ...shuffledArray(byDifficulty.HARD).slice(0, Number(distribution.hard) || 0),
+  ];
+  if (picks.length < perStudent) {
+    const pickedIds = new Set(picks.map((tq) => tq.questionId));
+    const remaining = shuffledArray(bank.filter((tq) => !pickedIds.has(tq.questionId)));
+    picks.push(...remaining.slice(0, perStudent - picks.length));
+  }
+  return picks.slice(0, perStudent);
+}
+
 // Builds this student's one-time question/option order for a fresh attempt. Runs once, at
 // attempt creation, off the test's already-loaded question list — pure in-memory shuffling, no
 // extra queries, so it adds no measurable latency to test start even under heavy concurrent load.
 function buildAttemptOrder(test) {
-  const orderedIds = [...test.questions].sort((a, b) => a.order - b.order).map((tq) => tq.questionId);
+  const bank = [...test.questions].sort((a, b) => a.order - b.order);
+  const selected = test.questionSelectionMode === "RANDOM" && test.randomQuestionsPerStudent
+    ? pickRandomQuestions(bank, test.randomQuestionsPerStudent, test.difficultyDistribution)
+    : bank;
+
+  const orderedIds = selected.map((tq) => tq.questionId);
   const questionOrder = test.shuffleQuestions ? shuffledArray(orderedIds) : orderedIds;
 
   let optionOrder = null;
   if (test.shuffleOptions) {
     optionOrder = {};
-    for (const tq of test.questions) {
+    for (const tq of selected) {
       const q = tq.question;
       if (q.questionType === "CODING" || !Array.isArray(q.options) || q.options.length === 0) continue;
       optionOrder[q.id] = shuffledArray(q.options.map((_, i) => i));
@@ -56,9 +86,43 @@ async function studentCanAccessTest(test, studentClassId) {
   return !!match;
 }
 
+const SELECTION_MODES = ["FIXED", "RANDOM"];
+
+// In RANDOM mode the "question list" is resolved server-side from the selected bank folder,
+// never trusted from the client — the whole point is a fixed, admin-picked pool that
+// buildAttemptOrder() then samples from per student, not an arbitrary client-supplied id list.
+async function resolveQuestionIds(mode, questionIds, randomBankFolderId) {
+  if (mode !== "RANDOM") return questionIds || [];
+  if (!randomBankFolderId) throw new Error("Select a Question Bank folder for random question selection");
+  const bankQuestions = await prisma.question.findMany({
+    where: { folderId: randomBankFolderId, questionType: "CODING" },
+    select: { id: true },
+  });
+  if (bankQuestions.length === 0) throw new Error("The selected Question Bank has no coding questions");
+  return bankQuestions.map((q) => q.id);
+}
+
+function validateRandomConfig(mode, randomQuestionsPerStudent, difficultyDistribution, bankSize) {
+  if (mode !== "RANDOM") return;
+  const perStudent = Number(randomQuestionsPerStudent);
+  if (!perStudent || perStudent < 1) throw new Error("Set how many questions each student should receive");
+  if (bankSize != null && perStudent > bankSize) {
+    throw new Error(`Questions per student (${perStudent}) can't exceed the bank size (${bankSize})`);
+  }
+  if (difficultyDistribution) {
+    const { easy = 0, medium = 0, hard = 0 } = difficultyDistribution;
+    const sum = Number(easy) + Number(medium) + Number(hard);
+    if (sum !== perStudent) {
+      throw new Error(`Difficulty distribution (${sum}) must add up to questions per student (${perStudent})`);
+    }
+  }
+}
+
 // --- ADMIN/STAFF: create a test ---
 // questionIds: string[]  |  questionTimeLimits: { [questionId]: seconds } (optional, defaults to 900s/15min each)
 // classIds: string[] (optional) — assign the test to specific classes; omitted/empty = open to all classes
+// questionSelectionMode "RANDOM": randomBankFolderId + randomQuestionsPerStudent (+ optional
+// difficultyDistribution) replace questionIds — see resolveQuestionIds/validateRandomConfig above.
 router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const {
@@ -66,7 +130,13 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
       startTime, endTime, questionIds, questionTimeLimits, classIds,
       requireFullscreen, requireWebcam, requireMicrophone,
       shuffleQuestions, shuffleOptions,
+      questionSelectionMode, randomBankFolderId, randomQuestionsPerStudent, difficultyDistribution,
     } = req.body;
+
+    const mode = SELECTION_MODES.includes(questionSelectionMode) ? questionSelectionMode : "FIXED";
+    const resolvedQuestionIds = await resolveQuestionIds(mode, questionIds, randomBankFolderId);
+    validateRandomConfig(mode, randomQuestionsPerStudent, difficultyDistribution, resolvedQuestionIds.length);
+
     const test = await prisma.test.create({
       data: {
         title,
@@ -83,8 +153,12 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
         requireMicrophone: !!requireMicrophone,
         shuffleQuestions: shuffleQuestions === undefined ? true : !!shuffleQuestions,
         shuffleOptions: !!shuffleOptions,
+        questionSelectionMode: mode,
+        randomBankFolderId: mode === "RANDOM" ? randomBankFolderId : null,
+        randomQuestionsPerStudent: mode === "RANDOM" ? Number(randomQuestionsPerStudent) : null,
+        difficultyDistribution: mode === "RANDOM" ? difficultyDistribution || null : null,
         createdById: req.user.id,
-        questions: { create: questionCreateData(questionIds, questionTimeLimits) },
+        questions: { create: questionCreateData(resolvedQuestionIds, questionTimeLimits) },
         classes: { create: (classIds || []).map((classId) => ({ classId })) },
       },
       include: { questions: true, classes: true },
@@ -92,7 +166,7 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
     res.json(test);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to create test" });
+    res.status(400).json({ error: err.message || "Failed to create test" });
   }
 });
 
@@ -107,7 +181,23 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
       startTime, endTime, questionIds, questionTimeLimits, classIds,
       requireFullscreen, requireWebcam, requireMicrophone,
       shuffleQuestions, shuffleOptions,
+      questionSelectionMode, randomBankFolderId, randomQuestionsPerStudent, difficultyDistribution,
     } = req.body;
+
+    const mode = questionSelectionMode !== undefined
+      ? (SELECTION_MODES.includes(questionSelectionMode) ? questionSelectionMode : existing.questionSelectionMode)
+      : existing.questionSelectionMode;
+    const effectiveBankFolderId = mode === "RANDOM" ? (randomBankFolderId ?? existing.randomBankFolderId) : null;
+    const effectivePerStudent = mode === "RANDOM" ? (randomQuestionsPerStudent ?? existing.randomQuestionsPerStudent) : null;
+    const effectiveDistribution = mode === "RANDOM" ? (difficultyDistribution !== undefined ? difficultyDistribution : existing.difficultyDistribution) : null;
+
+    // RANDOM mode always re-resolves from the bank folder on save (so the pool reflects the
+    // folder's current contents), independent of whether questionIds was sent; FIXED mode only
+    // replaces questions when questionIds is explicitly provided, same as before this feature.
+    const resolvedQuestionIds = mode === "RANDOM"
+      ? await resolveQuestionIds("RANDOM", null, effectiveBankFolderId)
+      : questionIds;
+    if (mode === "RANDOM") validateRandomConfig("RANDOM", effectivePerStudent, effectiveDistribution, resolvedQuestionIds.length);
 
     const data = {
       title: title ?? existing.title,
@@ -124,15 +214,19 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
       requireMicrophone: requireMicrophone === undefined ? existing.requireMicrophone : !!requireMicrophone,
       shuffleQuestions: shuffleQuestions === undefined ? existing.shuffleQuestions : !!shuffleQuestions,
       shuffleOptions: shuffleOptions === undefined ? existing.shuffleOptions : !!shuffleOptions,
+      questionSelectionMode: mode,
+      randomBankFolderId: effectiveBankFolderId,
+      randomQuestionsPerStudent: effectivePerStudent != null ? Number(effectivePerStudent) : null,
+      difficultyDistribution: effectiveDistribution || null,
     };
 
     await prisma.$transaction(async (tx) => {
       await tx.test.update({ where: { id: existing.id }, data });
 
-      if (questionIds) {
+      if (resolvedQuestionIds) {
         await tx.testQuestion.deleteMany({ where: { testId: existing.id } });
         await tx.testQuestion.createMany({
-          data: questionCreateData(questionIds, questionTimeLimits).map((q) => ({ ...q, testId: existing.id })),
+          data: questionCreateData(resolvedQuestionIds, questionTimeLimits).map((q) => ({ ...q, testId: existing.id })),
         });
       }
 
@@ -151,7 +245,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
     res.json(test);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to update test" });
+    res.status(400).json({ error: err.message || "Failed to update test" });
   }
 });
 
@@ -286,6 +380,7 @@ router.get("/:id", authenticate, async (req, res) => {
               points: true,
               timeLimitMs: true,
               starterCode: true,
+              starterCodeByLanguage: true,
               options: true,
               correctAnswer: isStaff,
               explanation: isStaff,
@@ -358,7 +453,7 @@ router.post("/:id/start", authenticate, requireRole("STUDENT"), async (req, res)
     if (!attempt) {
       const testWithQuestions = await prisma.test.findUnique({
         where: { id: testId },
-        include: { questions: { include: { question: { select: { id: true, questionType: true, options: true } } } } },
+        include: { questions: { include: { question: { select: { id: true, questionType: true, options: true, difficulty: true } } } } },
       });
       const { questionOrder, optionOrder } = buildAttemptOrder(testWithQuestions);
       attempt = await prisma.testAttempt.create({ data: { testId, studentId: req.user.id, questionOrder, optionOrder } });

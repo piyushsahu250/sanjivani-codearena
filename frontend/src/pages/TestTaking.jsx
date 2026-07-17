@@ -400,7 +400,8 @@ export default function TestTaking() {
     setAnswers((prev) => {
       if (prev[current.id]) return prev;
       if (current.questionType === "CODING") {
-        return { ...prev, [current.id]: { language: "javascript", code: current.starterCode || defaultStarter("javascript") } };
+        const code = current.starterCodeByLanguage?.javascript || current.starterCode || defaultStarter("javascript");
+        return { ...prev, [current.id]: { language: "javascript", code } };
       }
       return { ...prev, [current.id]: { selected: [] } };
     });
@@ -553,7 +554,9 @@ export default function TestTaking() {
     if (!current) return;
     // Switching language always loads that language's own default template — keeping the
     // previous language's code around makes no sense and reads as "the compiler is broken".
-    const code = defaultStarter(language);
+    // Prefers the question's own per-language starter code (bulk-uploaded or authored that way)
+    // over the generic boilerplate fallback.
+    const code = current.starterCodeByLanguage?.[language] || defaultStarter(language);
     setAnswers((prev) => ({ ...prev, [current.id]: { language, code } }));
     setRunResult(null);
     scheduleCodeAutoSave(current.id, language, code);

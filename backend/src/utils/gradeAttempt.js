@@ -25,7 +25,7 @@ async function gradePendingCodingSubmissions(attemptId) {
       const hiddenCases = question.testCases.filter((tc) => tc.isHidden);
       const gradingCases = hiddenCases.length > 0 ? hiddenCases : question.testCases;
       const result = await runQueued(() =>
-        judgeSubmission({ language: sub.language, code: sub.code, testCases: gradingCases, timeLimitMs: question.timeLimitMs })
+        judgeSubmission({ language: sub.language, code: sub.code, testCases: gradingCases, timeLimitMs: question.timeLimitMs, memoryLimitKb: question.memoryLimitKb || undefined })
       );
       const score =
         result.totalCases === 0

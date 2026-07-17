@@ -15,14 +15,13 @@ export default function TestResults() {
     api.get(`/tests/${id}`).then((res) => setTest(res.data));
   }, [id]);
 
-  // Original Question N is this test's admin-configured order (unshuffled, staff always sees
-  // this) — a lookup from questionId to that fixed 1-based position, for cross-referencing
-  // against each student's own randomized questionOrder (see Test.shuffleQuestions).
-  const originalPositionByQuestionId = {};
-  (test?.questions || [])
-    .slice()
-    .sort((a, b) => a.order - b.order)
-    .forEach((tq, i) => { originalPositionByQuestionId[tq.questionId] = i + 1; });
+  // Q{questionNumber} is the question's real, stable bank id — unlike a position number, it
+  // still means something when a RANDOM-mode test only draws a subset of the bank per student
+  // (see Test.questionSelectionMode), not just when a FIXED-mode test's order is shuffled.
+  const questionLabelById = {};
+  for (const tq of test?.questions || []) {
+    questionLabelById[tq.questionId] = `Q${tq.question.questionNumber}${tq.question.title ? `: ${tq.question.title}` : ""}`;
+  }
 
   // Rank reflects position in the full (already score-sorted) list, so it
   // stays stable regardless of the roll-number filter below.
@@ -87,7 +86,7 @@ export default function TestResults() {
               <th>Score</th>
               <th>Status</th>
               <th>Tab switches</th>
-              <th>Question order</th>
+              <th>Assigned Questions</th>
             </tr>
           </thead>
           <tbody>
@@ -113,20 +112,21 @@ export default function TestResults() {
                     <td colSpan={7} style={{ padding: "0 4px 16px" }}>
                       <div className="card" style={{ padding: 12 }}>
                         <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginBottom: 8 }}>
-                          This student's view vs. the test's original question order — same question set, different sequence.
+                          Exactly which questions this student saw, and in what order — the same underlying
+                          question bank id (Q#) as everyone else's evaluation/audit records.
                         </p>
                         <table style={{ width: "100%", fontSize: 12 }}>
                           <thead>
                             <tr style={{ textAlign: "left", color: "var(--ink-dim)" }}>
                               <th style={{ padding: "2px 8px" }}>Student view</th>
-                              <th>Original question</th>
+                              <th>Question</th>
                             </tr>
                           </thead>
                           <tbody>
                             {a.questionOrder.map((qId, i) => (
                               <tr key={qId} className="mono">
                                 <td style={{ padding: "2px 8px" }}>Question {i + 1}</td>
-                                <td>Question {originalPositionByQuestionId[qId] ?? "?"}</td>
+                                <td>{questionLabelById[qId] ?? qId}</td>
                               </tr>
                             ))}
                           </tbody>

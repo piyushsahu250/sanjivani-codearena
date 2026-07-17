@@ -32,6 +32,52 @@ const TEMPLATE_HEADERS = [
   "Options", "Correct Answer", "Marks", "Difficulty Level", "Explanation",
 ];
 
+// Coding-question bulk import. A flat spreadsheet cell can't hold a nested test-case list, so
+// "Hidden Test Cases" packs multiple cases into one cell as `input->output` pairs separated by
+// `||` (e.g. "5->25||3->9||10->100") — documented in the template's own header note + sample row.
+// Constraints/Input Format/Output Format have no dedicated Question fields (the manual question
+// form doesn't either — see CreateQuestion.jsx), so they're appended into the stored description
+// as labeled sections rather than silently dropped.
+const CODING_TEMPLATE_HEADERS = [
+  "Question Title", "Problem Statement", "Difficulty", "Programming Languages",
+  "Time Limit (seconds)", "Memory Limit (MB)", "Marks", "Constraints", "Input Format", "Output Format",
+  "Sample Input 1", "Sample Output 1", "Sample Explanation 1",
+  "Sample Input 2", "Sample Output 2", "Sample Explanation 2",
+  "Hidden Test Cases (input->output pairs, separated by ||)",
+  "Starter Code (Java)", "Starter Code (Python)", "Starter Code (Cpp)", "Starter Code (C)",
+  "Tags", "Question Bank",
+];
+
+const CODING_IMPORT_HEADER_ALIASES = {
+  title: ["question title", "title", "question name", "name"],
+  description: ["problem statement", "question text", "description"],
+  difficulty: ["difficulty", "difficulty level"],
+  languages: ["programming languages", "languages"],
+  timeLimitSec: ["time limit seconds", "time limit s", "time limit"],
+  memoryLimitMb: ["memory limit mb", "memory limit"],
+  points: ["marks", "points"],
+  constraints: ["constraints"],
+  inputFormat: ["input format"],
+  outputFormat: ["output format"],
+  sampleInput1: ["sample input 1"],
+  sampleOutput1: ["sample output 1"],
+  sampleExplanation1: ["sample explanation 1"],
+  sampleInput2: ["sample input 2"],
+  sampleOutput2: ["sample output 2"],
+  sampleExplanation2: ["sample explanation 2"],
+  hiddenTestCases: ["hidden test cases input output pairs separated by", "hidden test cases"],
+  starterJava: ["starter code java"],
+  starterPython: ["starter code python"],
+  // "C++" and "C" would both normalize to the same string ("starter code c") once normalizeHeader
+  // strips the "++" as non-alphanumeric — the template header text uses "Cpp" instead specifically
+  // to keep these two distinguishable.
+  starterCpp: ["starter code cpp", "starter code c++"],
+  starterC: ["starter code c"],
+  tags: ["tags"],
+  questionBank: ["question bank"],
+};
+const SUPPORTED_CODING_LANGUAGES = ["java", "python", "cpp", "c", "javascript"];
+
 // Normalizes/validates the type-specific fields (options + correctAnswer) for
 // MCQ / TRUE_FALSE / MULTISELECT questions. Returns { options, correctAnswer }
 // or throws a descriptive error.
@@ -333,20 +379,46 @@ router.post("/bulk-move", authenticate, requireRole("ADMIN", "STAFF"), attachReq
   res.json({ movedCount: movableIds.length, skippedCount: questionIds.length - movableIds.length });
 });
 
-// Download a sample .xlsx template for bulk question import (quiz types only)
+// Download a sample .xlsx template for bulk question import — quiz types by default,
+// or coding questions via ?type=coding.
 router.get("/bulk-template", authenticate, requireRole("ADMIN", "STAFF"), (req, res) => {
-  const sampleRows = [
-    ["Capital of France", "Geography", "Europe", "What is the capital of France?", "Multiple Choice", "Paris|London|Berlin|Madrid", "Paris", 5, "Easy", "Paris has been the capital since 987 AD."],
-    ["Water boils at 100C", "Science", "Physics", "Water boils at 100°C at sea level.", "True/False", "", "True", 2, "Easy", ""],
-    ["Prime numbers", "Math", "Number Theory", "Which of the following are prime numbers?", "Multiple Select", "2|3|4|9", "2,3", 5, "Medium", "2 and 3 are prime; 4 and 9 are not."],
-  ];
-  const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ...sampleRows]);
+  const isCoding = req.query.type === "coding";
+  let headers, sampleRows, filename;
+
+  if (isCoding) {
+    headers = CODING_TEMPLATE_HEADERS;
+    sampleRows = [
+      [
+        "Sum of Two Numbers", "Read two integers and print their sum.", "Easy", "Java, Python, C++, C",
+        2, 256, 10, "1 <= a, b <= 10^9", "Two space-separated integers a and b on one line", "A single integer: a + b",
+        "2 3", "5", "2 + 3 = 5",
+        "10 20", "30", "",
+        "4 6->10||100 200->300||-5 5->0",
+        "import java.util.*;\npublic class Main {\n  public static void main(String[] args) {\n    Scanner sc = new Scanner(System.in);\n    int a = sc.nextInt(), b = sc.nextInt();\n    System.out.println(a + b);\n  }\n}",
+        "a, b = map(int, input().split())\nprint(a + b)",
+        "#include <iostream>\nusing namespace std;\nint main() {\n  int a, b; cin >> a >> b;\n  cout << a + b;\n}",
+        "#include <stdio.h>\nint main() {\n  int a, b; scanf(\"%d %d\", &a, &b);\n  printf(\"%d\", a + b);\n}",
+        "Math, Basics", "Java Coding Bank",
+      ],
+    ];
+    filename = "coding-question-template.xlsx";
+  } else {
+    headers = TEMPLATE_HEADERS;
+    sampleRows = [
+      ["Capital of France", "Geography", "Europe", "What is the capital of France?", "Multiple Choice", "Paris|London|Berlin|Madrid", "Paris", 5, "Easy", "Paris has been the capital since 987 AD."],
+      ["Water boils at 100C", "Science", "Physics", "Water boils at 100°C at sea level.", "True/False", "", "True", 2, "Easy", ""],
+      ["Prime numbers", "Math", "Number Theory", "Which of the following are prime numbers?", "Multiple Select", "2|3|4|9", "2,3", 5, "Medium", "2 and 3 are prime; 4 and 9 are not."],
+    ];
+    filename = "question-bank-template.xlsx";
+  }
+
+  const sheet = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, "Questions");
   const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", "attachment; filename=question-bank-template.xlsx");
+  res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
   res.send(buffer);
 });
 
@@ -479,7 +551,7 @@ router.post("/bulk-import", authenticate, requireRole("ADMIN", "STAFF"), attachR
         continue;
       }
       if (questionType === "CODING") {
-        errors.push({ row: rowNum, reason: "Coding questions can't be bulk-imported — use the question form" });
+        errors.push({ row: rowNum, reason: "Coding questions use the separate coding-question bulk upload (different template/columns), not this one" });
         continue;
       }
 
@@ -517,6 +589,244 @@ router.post("/bulk-import", authenticate, requireRole("ADMIN", "STAFF"), attachR
     }
 
     res.json({ total: rows.length, createdCount: created.length, errorCount: errors.length, errors, created });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Bulk import failed" });
+  }
+});
+
+const LANGUAGE_ALIASES = {
+  java: "java", python: "python", py: "python",
+  cpp: "cpp", "c++": "cpp", "cplusplus": "cpp",
+  c: "c", javascript: "javascript", js: "javascript",
+};
+
+function buildCodingHeaderMap(headers) {
+  const map = {};
+  for (const header of headers) {
+    const norm = normalizeHeader(header);
+    for (const [field, aliases] of Object.entries(CODING_IMPORT_HEADER_ALIASES)) {
+      if (!map[field] && aliases.includes(norm)) map[field] = header;
+    }
+  }
+  return map;
+}
+
+// "5->25||3->9" -> [{input:"5",expected:"25"},{input:"3",expected:"9"}]. A malformed pair (no
+// "->") is silently dropped rather than failing the whole row — the row is flagged separately if
+// too few valid pairs survive to meet the hidden-case minimum.
+function parseHiddenTestCases(raw) {
+  return String(raw || "")
+    .split("||")
+    .map((pair) => pair.trim())
+    .filter(Boolean)
+    .map((pair) => {
+      const idx = pair.indexOf("->");
+      if (idx === -1) return null;
+      return { input: pair.slice(0, idx).trim(), expected: pair.slice(idx + 2).trim(), isHidden: true };
+    })
+    .filter(Boolean);
+}
+
+// Bulk-import CODING questions from .xlsx/.csv — see CODING_TEMPLATE_HEADERS for the column
+// layout and the module-level comment above it for the hidden-test-case cell format. Each row can
+// name its own destination Question Bank (created if it doesn't exist yet); a row with no bank
+// name falls back to the `folderId` sent with the upload (the same "Save to Question Bank" picker
+// used for quiz bulk-import), and no bank at all leaves the question unfiled.
+router.post("/bulk-import-coding", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    const defaultFolderId = req.body.folderId || null;
+    if (defaultFolderId) {
+      const folder = await prisma.questionFolder.findUnique({ where: { id: defaultFolderId } });
+      if (!folder || !ownsRow(req.requesterInstituteId, folder)) {
+        return res.status(403).json({ error: "That folder isn't in your institute's question bank" });
+      }
+    }
+
+    let workbook;
+    try {
+      workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    } catch {
+      return res.status(400).json({ error: "Could not read this file. Please upload a valid .xlsx or .csv file." });
+    }
+
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = sheet ? XLSX.utils.sheet_to_json(sheet, { defval: "" }) : [];
+    if (rows.length === 0) return res.status(400).json({ error: "The uploaded file has no data rows." });
+
+    const headerMap = buildCodingHeaderMap(Object.keys(rows[0]));
+    if (!headerMap.title || !headerMap.description) {
+      return res.status(400).json({ error: "Missing required columns. The file must include Question Title and Problem Statement." });
+    }
+
+    const field = (row, key) => (headerMap[key] ? String(row[headerMap[key]] ?? "").trim() : "");
+    const created = [];
+    const skipped = [];
+    const errors = [];
+    const seenTitles = new Set(); // within-file duplicate detection
+    const folderIdByName = new Map(); // bank name (lowercased) -> folderId, resolved/created once per name
+    const existingTitlesByFolder = new Map(); // folderId ("" = unfiled) -> Set of existing titles, loaded lazily
+
+    async function existingTitles(folderId) {
+      const key = folderId || "";
+      if (!existingTitlesByFolder.has(key)) {
+        const rows = await prisma.question.findMany({
+          where: { folderId: folderId || null, questionType: "CODING", ...instituteVisibilityWhere(req.requesterInstituteId) },
+          select: { title: true },
+        });
+        existingTitlesByFolder.set(key, new Set(rows.map((r) => (r.title || "").toLowerCase()).filter(Boolean)));
+      }
+      return existingTitlesByFolder.get(key);
+    }
+
+    async function resolveBankFolder(name) {
+      if (!name) return defaultFolderId;
+      const key = name.toLowerCase();
+      if (folderIdByName.has(key)) return folderIdByName.get(key);
+      let folder = await prisma.questionFolder.findFirst({
+        where: { name: { equals: name, mode: "insensitive" }, ...instituteVisibilityWhere(req.requesterInstituteId) },
+      });
+      if (!folder) {
+        folder = await prisma.questionFolder.create({
+          data: { name, instituteId: req.requesterInstituteId },
+        });
+      }
+      folderIdByName.set(key, folder.id);
+      return folder.id;
+    }
+
+    for (let i = 0; i < rows.length; i++) {
+      const rowNum = i + 2;
+      const row = rows[i];
+      const title = field(row, "title");
+      const description = field(row, "description");
+
+      if (!title && !description) continue; // blank row
+      if (!title) { errors.push({ row: rowNum, reason: "Missing Question Title" }); continue; }
+      if (!description) { errors.push({ row: rowNum, reason: "Missing Problem Statement" }); continue; }
+
+      const titleKey = title.toLowerCase();
+      if (seenTitles.has(titleKey)) {
+        skipped.push({ row: rowNum, reason: `Duplicate title within this file: "${title}"` });
+        continue;
+      }
+
+      const difficultyRaw = field(row, "difficulty");
+      if (difficultyRaw && !DIFFICULTY_ALIASES[normalizeHeader(difficultyRaw)]) {
+        errors.push({ row: rowNum, reason: `Invalid Difficulty "${difficultyRaw}" — use Easy, Medium, or Hard` });
+        continue;
+      }
+      const difficulty = DIFFICULTY_ALIASES[normalizeHeader(difficultyRaw)] || "EASY";
+
+      const timeLimitSecRaw = field(row, "timeLimitSec");
+      const timeLimitSec = timeLimitSecRaw ? Number(timeLimitSecRaw) : 2;
+      if (!Number.isFinite(timeLimitSec) || timeLimitSec <= 0) {
+        errors.push({ row: rowNum, reason: `Invalid Time Limit "${timeLimitSecRaw}"` });
+        continue;
+      }
+
+      const memoryLimitMbRaw = field(row, "memoryLimitMb");
+      let memoryLimitKb = null;
+      if (memoryLimitMbRaw) {
+        const mb = Number(memoryLimitMbRaw);
+        if (!Number.isFinite(mb) || mb <= 0) {
+          errors.push({ row: rowNum, reason: `Invalid Memory Limit "${memoryLimitMbRaw}"` });
+          continue;
+        }
+        memoryLimitKb = Math.round(mb * 1024);
+      }
+
+      const languagesRaw = field(row, "languages");
+      const requestedLanguages = languagesRaw.split(/[,|]/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+      const unsupported = requestedLanguages.filter((l) => !LANGUAGE_ALIASES[l]);
+      if (requestedLanguages.length > 0 && unsupported.length === requestedLanguages.length) {
+        errors.push({ row: rowNum, reason: `Unsupported language(s): ${unsupported.join(", ")}` });
+        continue;
+      }
+
+      const sample1In = field(row, "sampleInput1"), sample1Out = field(row, "sampleOutput1");
+      const sample2In = field(row, "sampleInput2"), sample2Out = field(row, "sampleOutput2");
+      if (!sample1In || !sample1Out || !sample2In || !sample2Out) {
+        errors.push({ row: rowNum, reason: "Each coding question needs 2 complete sample test cases (input + output)" });
+        continue;
+      }
+      const hiddenCases = parseHiddenTestCases(field(row, "hiddenTestCases"));
+      if (hiddenCases.length < 2) {
+        errors.push({ row: rowNum, reason: `Needs at least 2 hidden test cases — found ${hiddenCases.length} (check the "input->output||input->output" format)` });
+        continue;
+      }
+
+      const starterCodeByLanguage = {};
+      const javaCode = field(row, "starterJava");
+      const pyCode = field(row, "starterPython");
+      const cppCode = field(row, "starterCpp");
+      const cCode = field(row, "starterC");
+      if (javaCode) starterCodeByLanguage.java = javaCode;
+      if (pyCode) starterCodeByLanguage.python = pyCode;
+      if (cppCode) starterCodeByLanguage.cpp = cppCode;
+      if (cCode) starterCodeByLanguage.c = cCode;
+
+      const description_ = [
+        description,
+        field(row, "constraints") && `\n\nConstraints:\n${field(row, "constraints")}`,
+        field(row, "inputFormat") && `\n\nInput Format:\n${field(row, "inputFormat")}`,
+        field(row, "outputFormat") && `\n\nOutput Format:\n${field(row, "outputFormat")}`,
+      ].filter(Boolean).join("");
+
+      const tags = field(row, "tags").split(",").map((s) => s.trim()).filter(Boolean);
+      const bankName = field(row, "questionBank");
+
+      try {
+        const folderId = await resolveBankFolder(bankName);
+        const titles = await existingTitles(folderId);
+        if (titles.has(titleKey)) {
+          skipped.push({ row: rowNum, reason: `A question titled "${title}" already exists in that Question Bank` });
+          continue;
+        }
+
+        const question = await prisma.question.create({
+          data: {
+            title,
+            description: description_,
+            questionType: "CODING",
+            difficulty,
+            points: Number(field(row, "points")) || 10,
+            timeLimitMs: Math.round(timeLimitSec * 1000),
+            memoryLimitKb,
+            starterCode: javaCode || pyCode || cppCode || cCode || "",
+            starterCodeByLanguage: Object.keys(starterCodeByLanguage).length > 0 ? starterCodeByLanguage : undefined,
+            tags: tags.length > 0 ? tags : undefined,
+            instituteId: req.requesterInstituteId,
+            folderId,
+            createdById: req.user.id,
+            testCases: {
+              create: [
+                { input: sample1In, expected: sample1Out, isHidden: false, explanation: field(row, "sampleExplanation1") || null },
+                { input: sample2In, expected: sample2Out, isHidden: false, explanation: field(row, "sampleExplanation2") || null },
+                ...hiddenCases,
+              ],
+            },
+          },
+        });
+        seenTitles.add(titleKey);
+        titles.add(titleKey);
+        created.push(question);
+      } catch (err) {
+        errors.push({ row: rowNum, reason: err.message || "Failed to create question" });
+      }
+    }
+
+    res.json({
+      total: rows.length,
+      createdCount: created.length,
+      skippedCount: skipped.length,
+      errorCount: errors.length,
+      skipped,
+      errors,
+      created,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Bulk import failed" });

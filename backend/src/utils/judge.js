@@ -58,7 +58,7 @@ const RUNNERS = {
     // -Xmx bounds the JVM's own heap to the same budget the OS-level ulimit enforces for the
     // other languages. Java runs skip that OS-level ulimit (see the enforceMemory call below) —
     // -Xmx is the JVM's actual memory guard here, not an addition to it.
-    run: (_file, dir) => ({ cmd: "java", args: [`-Xmx${MEMORY_LIMIT_KB}k`, "-cp", dir, "Main"] }),
+    run: (_file, dir, memoryLimitKb) => ({ cmd: "java", args: [`-Xmx${memoryLimitKb}k`, "-cp", dir, "Main"] }),
   },
 };
 
@@ -181,14 +181,14 @@ function classifyRuntimeError(language, rawMessage) {
 // exceeds it gets allocation failures, not just a number we report after the fact) and under
 // `/usr/bin/time -v`, which writes real peak-RSS to a separate file (statsFile) so its report
 // never gets mixed into the submitted program's own stderr.
-function spawnWithTimeout(cmd, args, options, input, timeLimitMs, { enforceMemory = true } = {}) {
+function spawnWithTimeout(cmd, args, options, input, timeLimitMs, { enforceMemory = true, memoryLimitKb = MEMORY_LIMIT_KB } = {}) {
   return new Promise((resolve) => {
     const statsFile = path.join(os.tmpdir(), `judge-time-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
     // The memory ulimit only applies to actually running submitted code, not to compilation —
     // javac in particular needs real JVM headroom well beyond a student program's own budget,
     // and capping it the same way would misreport legitimate compiler memory use as an MLE.
     const wrappedArgs = enforceMemory
-      ? ["-v", "-o", statsFile, "sh", "-c", `ulimit -v ${MEMORY_LIMIT_KB}; exec "$0" "$@"`, cmd, ...args]
+      ? ["-v", "-o", statsFile, "sh", "-c", `ulimit -v ${memoryLimitKb}; exec "$0" "$@"`, cmd, ...args]
       : ["-v", "-o", statsFile, cmd, ...args];
     const child = spawn("/usr/bin/time", wrappedArgs, { ...options, killSignal: "SIGKILL" });
 
@@ -227,7 +227,7 @@ function spawnWithTimeout(cmd, args, options, input, timeLimitMs, { enforceMemor
       const memoryKb = readStatsAndCleanup();
       if (timedOut) return resolve({ ok: false, timedOut: true, timeMs, memoryKb });
       if (codeExit !== 0) {
-        const memoryExceeded = memoryKb != null && memoryKb >= MEMORY_LIMIT_KB * 0.97;
+        const memoryExceeded = memoryKb != null && memoryKb >= memoryLimitKb * 0.97;
         const oom = memoryExceeded || OOM_PATTERNS.test(stderr);
         return resolve({ ok: false, error: stderr || "Runtime error", oom, timeMs, memoryKb });
       }
@@ -268,14 +268,14 @@ async function prepare(language, code) {
 
   return {
     ok: true,
-    async execute(input, timeLimitMs) {
-      const { cmd, args } = runner.run(file, tmpDir);
+    async execute(input, timeLimitMs, memoryLimitKb = MEMORY_LIMIT_KB) {
+      const { cmd, args } = runner.run(file, tmpDir, memoryLimitKb);
       // The OS-level ulimit -v (virtual memory) is skipped for Java: the JVM reserves virtual
       // address space (metaspace, thread stacks, JIT code cache) well beyond this budget just to
       // start up, regardless of the student's code, which made every single Java run fail with a
       // generic "Runtime Error" — the -Xmx flag on the java command above is Java's real memory
       // guard instead, enforced by the JVM itself rather than the OS.
-      const result = await spawnWithTimeout(cmd, args, { cwd: tmpDir, timeout: timeLimitMs }, input, timeLimitMs, { enforceMemory: language !== "java" });
+      const result = await spawnWithTimeout(cmd, args, { cwd: tmpDir, timeout: timeLimitMs }, input, timeLimitMs, { enforceMemory: language !== "java", memoryLimitKb });
       if (!result.ok) return result;
       return { ok: true, stdout: result.stdout.trim(), timeMs: result.timeMs, memoryKb: result.memoryKb };
     },
@@ -289,7 +289,7 @@ async function prepare(language, code) {
  * Runs `code` against a list of test cases: [{ input, expected }]
  * Returns { passedCases, totalCases, verdict, details: [...] }
  */
-async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }) {
+async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000, memoryLimitKb = MEMORY_LIMIT_KB }) {
   const prepared = await prepare(language, code);
   if (!prepared.ok) {
     const details = testCases.map((tc) => ({
@@ -315,7 +315,7 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000 }
     // time lost to process-startup overhead (especially the JVM) rather than
     // raw CPU, which matters most on a low-core instance.
     details = await mapWithConcurrency(testCases, CASE_CONCURRENCY, async (tc) => {
-      const result = await prepared.execute(tc.input, timeLimitMs);
+      const result = await prepared.execute(tc.input, timeLimitMs, memoryLimitKb);
       if (!result.ok) {
         return {
           input: tc.input,
