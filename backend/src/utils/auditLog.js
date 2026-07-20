@@ -46,6 +46,7 @@ const AUDIT_ACTIONS = {
   INSTITUTE_CONFIG_CHANGED: "INSTITUTE_CONFIG_CHANGED",
   SESSION_REVOKED: "SESSION_REVOKED",
   DATABASE_BACKUP_DOWNLOADED: "DATABASE_BACKUP_DOWNLOADED",
+  DATA_EXPORTED: "DATA_EXPORTED",
 };
 
 // Never throws — audit logging is a best-effort side channel (same posture as this codebase's
