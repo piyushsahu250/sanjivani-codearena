@@ -107,7 +107,7 @@ automatically:
 1. Go to https://vercel.com → **Add New** → **Project** → import the same repo.
 2. Set **Root Directory** to `frontend`.
 3. Add an environment variable: `VITE_API_URL` = `https://<your-render-backend-url>/api`
-4. Deploy. Vercel gives you a link like `https://sanjivani-codearena.vercel.app`.
+4. Deploy. Vercel gives you a link like `https://codearena-app.vercel.app`.
 
 **That Vercel link is what you share with students.**
 

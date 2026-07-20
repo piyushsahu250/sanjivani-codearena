@@ -7,7 +7,7 @@ const { sendMail, wrapBranded } = require("../utils/mailer");
 
 const router = express.Router();
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://codearena-app.vercel.app";
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 function hashToken(token) {

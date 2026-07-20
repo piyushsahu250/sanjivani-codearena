@@ -7,7 +7,7 @@
  */
 
 const FROM = process.env.MAIL_FROM || "CodeArena <onboarding@resend.dev>";
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://codearena-app.vercel.app";
 const LOGO_URL = `${FRONTEND_URL}/branding/logo.png`;
 
 // Wraps an email body with a consistent CodeArena-branded header/footer. The logo is referenced

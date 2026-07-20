@@ -64,7 +64,7 @@ gcloud run deploy sanjivani-backend \
 JWT_SECRET="<generate a long random string>",\
 DATABASE_URL="<your Neon pooled connection string>",\
 DIRECT_DATABASE_URL="<your Neon direct connection string>",\
-FRONTEND_URL="https://sanjivani-codearena.vercel.app",\
+FRONTEND_URL="https://codearena-app.vercel.app",\
 JUDGE_CONCURRENCY=4,\
 JUDGE_CASE_CONCURRENCY=3
 ```

@@ -14,7 +14,7 @@ const { generateTempPassword } = require("../utils/password");
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://codearena-app.vercel.app";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MOBILE_RE = /^\+?[0-9]{10,15}$/;
 

@@ -17,7 +17,7 @@ const { cached } = require("../utils/cache");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://sanjivani-codearena.vercel.app";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://codearena-app.vercel.app";
 const CERT_THRESHOLD = 80;
 
 const SESSION_QUESTION_COUNT = { HR: 6, TECHNICAL: 6, APTITUDE: 10, CODING: 3, SYSTEM_DESIGN: 3, BEHAVIORAL: 6, MANAGERIAL: 5 };
