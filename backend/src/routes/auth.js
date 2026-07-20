@@ -1,9 +1,12 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const prisma = require("../prisma");
-const { sendMail, wrapBranded } = require("../utils/mailer");
+const { sendMail, sendMailLogged, wrapBranded } = require("../utils/mailer");
+const { createSession, endSession } = require("../utils/sessions");
+const { logAudit, parseDevice, AUDIT_ACTIONS } = require("../utils/auditLog");
+const { validatePasswordComplexity, isPasswordReused, recordPasswordChange, isPasswordExpired } = require("../utils/password");
+const { authenticate } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -12,6 +15,29 @@ const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+// Best-effort, non-blocking — a login alert failing to send must never fail or slow the login
+// itself. Fires for the account's very first login ever, or a login from a device/browser
+// combination this account hasn't used before (a coarse but useful "new device" signal given
+// this platform has no persistent device-fingerprint cookie).
+async function maybeSendLoginAlert(user, req, isFirstLogin, isNewDevice) {
+  if (!isFirstLogin && !isNewDevice) return;
+  const { summary } = parseDevice(req.headers["user-agent"]);
+  const reason = isFirstLogin ? "This was your first login to CodeArena." : "This login was from a device we haven't seen on your account before.";
+  await sendMailLogged(prisma, {
+    to: user.email,
+    name: user.name,
+    emailType: "LOGIN_ALERT",
+    studentId: user.role === "STUDENT" ? user.id : null,
+    subject: isFirstLogin ? "Welcome — first login to your CodeArena account" : "New device signed in to your CodeArena account",
+    html: wrapBranded(`
+      <p>Hi ${user.name},</p>
+      <p>${reason}</p>
+      <p><strong>Device:</strong> ${summary}<br/><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+      <p>If this wasn't you, reset your password immediately and contact your administrator.</p>
+    `),
+  }).catch((err) => console.error("[auth] login alert email failed:", err.message));
 }
 
 // Self-registration is disabled — all accounts (including students) are
@@ -24,23 +50,52 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email }, include: { institute: true } });
     if (!user) return res.status(401).json({ error: "Email not found." });
     if (!user.isActive) return res.status(403).json({ error: "This account has been deactivated. Contact your administrator." });
 
     const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) return res.status(401).json({ error: "Incorrect password." });
+    if (!valid) {
+      await logAudit({ req, action: AUDIT_ACTIONS.LOGIN_FAILED, actorId: user.id, actorName: user.name, actorRole: user.role, studentId: user.role === "STUDENT" ? user.id : null, instituteId: user.instituteId, details: { email } });
+      return res.status(401).json({ error: "Incorrect password." });
+    }
 
-    const token = jwt.sign(
-      { id: user.id, role: user.role, email: user.email, name: user.name },
-      process.env.JWT_SECRET,
-      { expiresIn: "12h" }
-    );
+    const [priorSessionCount, deviceSeenBefore] = await Promise.all([
+      prisma.loginSession.count({ where: { userId: user.id } }),
+      prisma.loginSession.findFirst({ where: { userId: user.id, browser: parseDevice(req.headers["user-agent"]).browser, os: parseDevice(req.headers["user-agent"]).os } }),
+    ]);
+    const isFirstLogin = priorSessionCount === 0;
+    const isNewDevice = !isFirstLogin && !deviceSeenBefore;
 
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, mustChangePassword: user.mustChangePassword } });
+    const token = await createSession({ user, req, singleSessionOnly: !!user.institute?.singleSessionOnly });
+
+    // Password-expiry is computed live rather than only trusted from the stored flag, so a
+    // newly-expired password is caught the moment the institute's policy window elapses, not
+    // only from whatever value happened to be persisted at account creation/last reset.
+    const expired = isPasswordExpired(user, user.institute?.passwordExpiryDays);
+    const mustChangePassword = user.mustChangePassword || expired;
+    if (expired && !user.mustChangePassword) {
+      await prisma.user.update({ where: { id: user.id }, data: { mustChangePassword: true } }).catch(() => {});
+    }
+
+    await logAudit({ req, action: AUDIT_ACTIONS.LOGIN, actorId: user.id, actorName: user.name, actorRole: user.role, studentId: user.role === "STUDENT" ? user.id : null, instituteId: user.instituteId, details: { isFirstLogin, isNewDevice } });
+    maybeSendLoginAlert(user, req, isFirstLogin, isNewDevice); // fire-and-forget — see comment above
+
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, mustChangePassword } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Login failed" });
+  }
+});
+
+router.post("/logout", authenticate, async (req, res) => {
+  try {
+    await endSession(req.user.jti);
+    await logAudit({ req, action: AUDIT_ACTIONS.LOGOUT, actorId: req.user.id, actorName: req.user.name, actorRole: req.user.role, studentId: req.user.role === "STUDENT" ? req.user.id : null, details: {} });
+    res.json({ message: "Logged out" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Logout failed" });
   }
 });
 
@@ -80,11 +135,16 @@ router.post("/reset-password", async (req, res) => {
   try {
     const { token, newPassword } = req.body;
     if (!token || !newPassword) return res.status(400).json({ error: "token and newPassword are required" });
-    if (newPassword.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+    const complexityError = validatePasswordComplexity(newPassword);
+    if (complexityError) return res.status(400).json({ error: complexityError });
 
-    const user = await prisma.user.findFirst({ where: { resetTokenHash: hashToken(token) } });
+    const user = await prisma.user.findFirst({ where: { resetTokenHash: hashToken(token) }, include: { institute: true } });
     if (!user || !user.resetTokenExpiry || user.resetTokenExpiry < new Date()) {
       return res.status(400).json({ error: "This reset link is invalid or has expired" });
+    }
+
+    if (await isPasswordReused(prisma, user.id, newPassword, user.institute?.passwordHistoryDepth)) {
+      return res.status(400).json({ error: `You've used this password recently. Choose a password you haven't used in your last ${user.institute?.passwordHistoryDepth ?? 3} passwords.` });
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
@@ -92,6 +152,13 @@ router.post("/reset-password", async (req, res) => {
       where: { id: user.id },
       data: { passwordHash, resetTokenHash: null, resetTokenExpiry: null },
     });
+    await recordPasswordChange(prisma, user.id, passwordHash, user.institute?.passwordHistoryDepth);
+
+    sendMail({
+      to: user.email,
+      subject: "Your CodeArena password was changed",
+      html: wrapBranded(`<p>Hi ${user.name},</p><p>Your password was just changed via the "forgot password" link. If this wasn't you, contact your administrator immediately.</p>`),
+    }).catch((err) => console.error("[auth] password-change alert email failed:", err.message));
 
     res.json({ message: "Password updated. You can now sign in." });
   } catch (err) {

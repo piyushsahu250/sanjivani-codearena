@@ -1,6 +1,5 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const XLSX = require("xlsx");
 const prisma = require("../prisma");
@@ -9,7 +8,10 @@ const { attachRequesterInstitute } = require("../middleware/institute");
 const { sendMailLogged, wrapBranded } = require("../utils/mailer");
 const { computeStudentPerformance } = require("../utils/studentPerformance");
 const { generatePerformancePdf } = require("../utils/reportPdf");
-const { generateTempPassword } = require("../utils/password");
+const { generateTempPassword, validatePasswordComplexity, isPasswordReused, recordPasswordChange } = require("../utils/password");
+const { createSession } = require("../utils/sessions");
+const { logAudit, AUDIT_ACTIONS } = require("../utils/auditLog");
+const cache = require("../utils/cache");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -79,25 +81,76 @@ router.patch("/me", authenticate, async (req, res) => {
       if (existing) return res.status(409).json({ error: "Email already in use" });
       data.email = newEmail;
     }
+    const institute = user.instituteId ? await prisma.institute.findUnique({ where: { id: user.instituteId } }) : null;
+    let newPasswordHash = null;
     if (newPassword) {
-      if (newPassword.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
+      const complexityError = validatePasswordComplexity(newPassword);
+      if (complexityError) return res.status(400).json({ error: complexityError });
       if (newPassword === currentPassword) return res.status(400).json({ error: "New password cannot be the same as your current password" });
-      data.passwordHash = await bcrypt.hash(newPassword, 10);
+      if (await isPasswordReused(prisma, user.id, newPassword, institute?.passwordHistoryDepth)) {
+        return res.status(400).json({ error: `You've used this password recently. Choose a password you haven't used in your last ${institute?.passwordHistoryDepth ?? 3} passwords.` });
+      }
+      newPasswordHash = await bcrypt.hash(newPassword, 10);
+      data.passwordHash = newPasswordHash;
       data.mustChangePassword = false;
     }
 
     const updated = await prisma.user.update({ where: { id: user.id }, data, select: SELECT_FIELDS });
+    if (newPasswordHash) {
+      await recordPasswordChange(prisma, user.id, newPasswordHash, institute?.passwordHistoryDepth);
+      sendMailLogged(prisma, {
+        to: updated.email, name: updated.name, emailType: "LOGIN_ALERT",
+        studentId: updated.role === "STUDENT" ? updated.id : null,
+        subject: "Your CodeArena password was changed",
+        html: wrapBranded(`<p>Hi ${updated.name},</p><p>Your password was just changed from your account settings. If this wasn't you, contact your administrator immediately.</p>`),
+      }).catch((err) => console.error("[users] password-change alert email failed:", err.message));
+    }
 
-    const token = jwt.sign(
-      { id: updated.id, role: updated.role, email: updated.email, name: updated.name },
-      process.env.JWT_SECRET,
-      { expiresIn: "12h" }
-    );
+    const token = await createSession({ user: updated, req, singleSessionOnly: false });
+    await logAudit({ req, action: AUDIT_ACTIONS.PASSWORD_CHANGED, actorId: user.id, actorName: user.name, actorRole: user.role, studentId: user.role === "STUDENT" ? user.id : null, instituteId: user.instituteId, details: { self: true, emailChanged: !!data.email, passwordChanged: !!newPasswordHash } });
 
     res.json({ token, user: updated });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to update account" });
+  }
+});
+
+// Any authenticated user: their own login-session history (most recent first), so they can spot
+// a device they don't recognize — "Device Tracking" + "view active sessions" from the enterprise
+// security spec. Capped at 50 rows; this is a personal history view, not an audit export.
+router.get("/me/sessions", authenticate, async (req, res) => {
+  try {
+    const sessions = await prisma.loginSession.findMany({
+      where: { userId: req.user.id },
+      orderBy: { loginAt: "desc" },
+      take: 50,
+      select: { id: true, ip: true, device: true, browser: true, os: true, isActive: true, loginAt: true, logoutAt: true, token: true },
+    });
+    res.json(sessions.map((s) => ({ ...s, isCurrent: s.token === req.user.jti, token: undefined })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load sessions" });
+  }
+});
+
+// Any authenticated user: force-logout one of their OWN other active sessions ("log out from
+// other devices"). Deliberately cannot target another user's session — that's an admin action
+// this platform doesn't expose (no legitimate reason for staff to remotely kill a student's
+// session outside of deactivating the whole account, which already exists).
+router.delete("/me/sessions/:sessionId", authenticate, async (req, res) => {
+  try {
+    const session = await prisma.loginSession.findUnique({ where: { id: req.params.sessionId } });
+    if (!session || session.userId !== req.user.id) return res.status(404).json({ error: "Session not found" });
+    if (session.token === req.user.jti) return res.status(400).json({ error: "Use Sign Out to end your current session" });
+
+    await prisma.loginSession.update({ where: { id: session.id }, data: { isActive: false, logoutAt: new Date() } });
+    cache.invalidate(`session-active:${session.token}`);
+    await logAudit({ req, action: AUDIT_ACTIONS.SESSION_REVOKED, actorId: req.user.id, actorName: req.user.name, actorRole: req.user.role, studentId: req.user.role === "STUDENT" ? req.user.id : null, details: { revokedSessionId: session.id, device: `${session.browser} on ${session.os}` } });
+    res.json({ message: "Session signed out" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to sign out session" });
   }
 });
 
@@ -558,6 +611,57 @@ router.get("/password-reset-history", authenticate, requireRole("ADMIN", "STAFF"
   }
 });
 
+// ADMIN/STAFF: general-purpose, searchable/filterable/exportable audit trail — the enterprise
+// spec's requirement over and above the narrow password-reset-only view above. Staff are scoped
+// to their own institute the same way as everywhere else on this platform; an unscoped platform
+// Admin sees every institute. Same "capped operational log, not a paginated archive" convention
+// as the routes around it, at a slightly higher cap since this view covers every action type.
+router.get("/audit-log", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const { action, studentId, from, to, format } = req.query;
+    const where = {
+      ...(req.requesterInstituteId ? { instituteId: req.requesterInstituteId } : {}),
+      ...(action ? { action } : {}),
+      ...(studentId ? { studentId } : {}),
+      ...(from || to ? { createdAt: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
+    };
+    const logs = await prisma.auditLog.findMany({ where, orderBy: { createdAt: "desc" }, take: 1000 });
+
+    if (format === "csv") {
+      const header = "Timestamp,Action,Actor,Role,IP Address,Device,Student ID,Institute ID,Details\n";
+      const rows = logs.map((l) => [
+        l.createdAt.toISOString(), l.action, l.adminName, l.adminRole || "", l.ipAddress || "", l.deviceInfo || "",
+        l.studentId || "", l.instituteId || "", JSON.stringify(l.details || {}).replace(/"/g, '""'),
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=audit-log.csv");
+      return res.send(header + rows.join("\n"));
+    }
+
+    res.json(logs);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load audit log" });
+  }
+});
+
+// ADMIN/STAFF: distinct action names currently in the log, for the filter dropdown on the audit
+// log page — read from real data rather than hardcoding AUDIT_ACTIONS, since legacy rows (e.g.
+// REATTEMPT_GRANTED, STUDENT_PROFILE_UPDATED) predate that catalogue.
+router.get("/audit-log/actions", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const rows = await prisma.auditLog.findMany({
+      where: req.requesterInstituteId ? { instituteId: req.requesterInstituteId } : {},
+      select: { action: true },
+      distinct: ["action"],
+    });
+    res.json(rows.map((r) => r.action).sort());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load audit actions" });
+  }
+});
+
 // Shared access check for the performance dashboard + both report exports: ADMIN/STAFF can view
 // any student under their own institute (platform-level accounts see everyone); a STUDENT may
 // only view their own. Returns the student's own institute-scope-relevant fields on success, or
@@ -701,6 +805,7 @@ router.post("/:id/reset-password", authenticate, requireRole("ADMIN", "STAFF"), 
       where: { id: req.params.id },
       data: { passwordHash, mustChangePassword: true },
     });
+    await recordPasswordChange(prisma, req.params.id, passwordHash, null); // system-generated — skip reuse-block, still tracked for future dedup
     let emailSent = null; // null = not requested, true/false = requested + outcome
     let emailError = null;
     if (req.body.sendEmail) {
@@ -752,6 +857,7 @@ router.post("/bulk-regenerate-password", authenticate, requireRole("ADMIN"), asy
       const generatedPassword = generateTempPassword();
       const passwordHash = await bcrypt.hash(generatedPassword, 10);
       await prisma.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: true } });
+      await recordPasswordChange(prisma, user.id, passwordHash, null);
       results.push({ id: user.id, name: user.name, email: user.email, rollNumber: user.rollNumber, generatedPassword, emailSent: null, emailError: null });
     }
     if (req.body.sendEmail) {

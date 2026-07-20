@@ -37,6 +37,17 @@ model Institute {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
+  // Certificate branding — stored as a data URL, same pattern as User.profilePhotoUrl (no
+  // external object storage on this platform).
+  logoUrl String?
+
+  // Enterprise security config (Section 2 of the enterprise spec) — per-institute, so one
+  // institute's stricter policy doesn't force it on every other institute sharing the platform.
+  passwordExpiryDays   Int?     // null = passwords never expire
+  passwordHistoryDepth Int      @default(3) // block reuse of this many previous passwords
+  singleSessionOnly    Boolean  @default(false) // true = a new login revokes this account's other active sessions
+  aiHintsEnabled        Boolean @default(false) // Learning Module coding hints — off by default, admin opt-in
+
   classes         Class[]
   users           User[]
   questions       Question[]
@@ -78,6 +89,7 @@ model User {
   isActive     Boolean  @default(true) // false = account is deactivated; blocked at login
   profilePhotoUrl String? // optional; stored as a data URL, no external file storage in use
   mustChangePassword Boolean @default(false)
+  passwordChangedAt  DateTime? // drives per-institute password-expiry enforcement
   createdAt    DateTime @default(now())
 
   institute   Institute? @relation(fields: [instituteId], references: [id])
@@ -108,6 +120,9 @@ model User {
   interviewReports     InterviewReport[]
   interviewCertificate InterviewCertificate?
   emailLogs            EmailLog[]
+
+  passwordHistory PasswordHistory[]
+  loginSessions   LoginSession[]
 
   @@index([instituteId])
   @@index([classId])
@@ -335,9 +350,13 @@ model Submission {
 // Lightweight audit trail for sensitive admin actions (currently just reattempt grants).
 model AuditLog {
   id          String   @id @default(uuid())
-  action      String // e.g. "REATTEMPT_GRANTED"
+  action      String // e.g. "REATTEMPT_GRANTED", "LOGIN", "LOGOUT", "CERTIFICATE_ISSUED" — see
+  // AUDIT_ACTIONS in utils/auditLog.js for the full catalogue this platform writes.
   adminId     String
   adminName   String
+  adminRole   String? // denormalized at write time — Role enum value, nullable so pre-existing rows stay valid
+  ipAddress   String?
+  deviceInfo  String? // short summary, e.g. "Chrome on Windows" — parsed from User-Agent, not stored raw
   studentId   String? // the account acted on, when applicable — lets history views filter per-student
   instituteId String? // denormalized at write time from the acted-on student, so Staff can query
   // their own institute's history directly instead of joining through User for every row
@@ -347,6 +366,36 @@ model AuditLog {
   @@index([action])
   @@index([studentId])
   @@index([instituteId])
+  @@index([createdAt])
+}
+
+model PasswordHistory {
+  id           String   @id @default(uuid())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+// One row per login, kept through logout/expiry (isActive flips to false rather than the row
+// being deleted) so "recent login history" stays queryable, not just the currently-active set.
+model LoginSession {
+  id        String    @id @default(uuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  token     String    @unique // the JWT's jti — lets a revoked session's token be rejected server-side
+  ip        String?
+  device    String?   // "Mobile" | "Tablet" | "Desktop", parsed from User-Agent
+  browser   String?
+  os        String?
+  isActive  Boolean   @default(true)
+  loginAt   DateTime  @default(now())
+  logoutAt  DateTime?
+
+  @@index([userId])
+  @@index([userId, isActive])
 }
 
 enum EmailStatus {
@@ -517,16 +566,46 @@ model CodeDraft {
   @@unique([studentId, contextType, contextId])
 }
 
+enum CertificateType {
+  LEARNING_MODULE
+  CODING_ASSESSMENT
+  MANUAL
+}
+
+enum CertificateStatus {
+  VALID
+  REVOKED
+}
+
+// Unified certificate record covering Learning Module completion, passed Coding Assessments
+// (Module Coding Tests), and manually-issued institute certificates (workshops/FDP/bootcamps/
+// placement prep/etc, which have no underlying enrollment model on this platform — an admin or
+// staff member fills in the program name by hand at issuance time). AI Mock Interview
+// certificates stay on the separate InterviewCertificate model below (already has its own
+// working QR/verify flow) — the student-facing "My Certificates" page reads both tables and
+// presents them as one list rather than migrating working data into this one.
 model Certificate {
-  id              String   @id @default(uuid())
-  certificateCode String   @unique
-  student         User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  id              String            @id @default(uuid())
+  certificateCode String            @unique // format: CA-<year>-<institute code>-<program code>-<sequence>
+  type            CertificateType   @default(LEARNING_MODULE)
+  student         User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId       String
-  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  courseId        String
-  issuedAt        DateTime @default(now())
+  course          Course?           @relation(fields: [courseId], references: [id], onDelete: Cascade) // LEARNING_MODULE only
+  courseId        String?
+  moduleCodingTestId String?        // CODING_ASSESSMENT only — denormalized, no FK (see AuditLog.adminId for the same pattern)
+  title           String            // display name on the certificate PDF, populated for every type
+  programName     String?           // MANUAL only — free text, e.g. "FDP: Advanced Java Workshop"
+  status          CertificateStatus @default(VALID)
+  revokedAt       DateTime?
+  revokedByName   String?
+  revokedReason   String?
+  issuedByName    String?           // MANUAL only — which staff/admin issued it; null = system-issued
+  issuedAt        DateTime          @default(now())
 
   @@unique([studentId, courseId])
+  @@index([studentId])
+  @@index([type])
+  @@index([status])
 }
 
 // ===================================================================

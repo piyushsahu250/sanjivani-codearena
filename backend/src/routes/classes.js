@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
-const { generateTempPassword } = require("../utils/password");
+const { generateTempPassword, recordPasswordChange } = require("../utils/password");
 const { cached, invalidate } = require("../utils/cache");
 
 const router = express.Router();
@@ -185,6 +185,7 @@ router.post("/:id/bulk-reset-password", authenticate, requireRole("ADMIN"), atta
       const newPassword = generateTempPassword();
       const passwordHash = await bcrypt.hash(newPassword, 10);
       await prisma.user.update({ where: { id: student.id }, data: { passwordHash, mustChangePassword: true } });
+      await recordPasswordChange(prisma, student.id, passwordHash, null);
       reset.push({ id: student.id, name: student.name, email: student.email, rollNumber: student.rollNumber, newPassword });
     }
 

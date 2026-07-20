@@ -1,4 +1,5 @@
 import { createContext, useContext, useState } from "react";
+import api from "../api";
 
 const AuthContext = createContext(null);
 
@@ -15,6 +16,10 @@ export function AuthProvider({ children }) {
   }
 
   function logout() {
+    // Best-effort — closes the server-side LoginSession row so an admin's "active sessions" view
+    // and the audit log reflect a real logout, not just the token going stale after 12h. Local
+    // state is cleared unconditionally regardless of whether this call succeeds.
+    api.post("/auth/logout").catch(() => {});
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);

@@ -5,6 +5,7 @@ import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 
 const emptyForm = { name: "", code: "", address: "", contact: "" };
+const emptyEditForm = { name: "", code: "", address: "", contact: "", passwordExpiryDays: "", passwordHistoryDepth: 3, singleSessionOnly: false, aiHintsEnabled: false };
 
 export default function InstituteManagement() {
   const [institutes, setInstitutes] = useState([]);
@@ -12,7 +13,7 @@ export default function InstituteManagement() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState(emptyForm);
+  const [editForm, setEditForm] = useState(emptyEditForm);
 
   function load() {
     api.get("/institutes").then((res) => setInstitutes(res.data));
@@ -37,7 +38,11 @@ export default function InstituteManagement() {
 
   function startEdit(inst) {
     setEditingId(inst.id);
-    setEditForm({ name: inst.name, code: inst.code || "", address: inst.address || "", contact: inst.contact || "" });
+    setEditForm({
+      name: inst.name, code: inst.code || "", address: inst.address || "", contact: inst.contact || "",
+      passwordExpiryDays: inst.passwordExpiryDays ?? "", passwordHistoryDepth: inst.passwordHistoryDepth ?? 3,
+      singleSessionOnly: !!inst.singleSessionOnly, aiHintsEnabled: !!inst.aiHintsEnabled,
+    });
   }
 
   async function saveEdit(id) {
@@ -112,6 +117,29 @@ export default function InstituteManagement() {
                   <input style={inputStyle} value={editForm.code} onChange={(e) => setEditForm({ ...editForm, code: e.target.value })} placeholder="Code" />
                   <input style={inputStyle} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} placeholder="Address" />
                   <input style={inputStyle} value={editForm.contact} onChange={(e) => setEditForm({ ...editForm, contact: e.target.value })} placeholder="Contact" />
+
+                  <div style={{ gridColumn: "1 / -1", marginTop: 8, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--ink-dim)", marginBottom: 8 }}>Security Policy</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <label style={labelStyle}>Password expiry (days, blank = never)</label>
+                        <input style={inputStyle} type="number" min={0} value={editForm.passwordExpiryDays} onChange={(e) => setEditForm({ ...editForm, passwordExpiryDays: e.target.value })} placeholder="Never" />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Block reuse of last N passwords</label>
+                        <input style={inputStyle} type="number" min={0} value={editForm.passwordHistoryDepth} onChange={(e) => setEditForm({ ...editForm, passwordHistoryDepth: e.target.value })} />
+                      </div>
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
+                      <input type="checkbox" checked={editForm.singleSessionOnly} onChange={(e) => setEditForm({ ...editForm, singleSessionOnly: e.target.checked })} />
+                      Single active session per account (new login signs out other devices)
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13 }}>
+                      <input type="checkbox" checked={editForm.aiHintsEnabled} onChange={(e) => setEditForm({ ...editForm, aiHintsEnabled: e.target.checked })} />
+                      Enable AI coding hints in Learning Modules (never shown during formal assessments)
+                    </label>
+                  </div>
+
                   <div style={{ display: "flex", gap: 8, gridColumn: "1 / -1" }}>
                     <button className="btn btn-primary" onClick={() => saveEdit(inst.id)}>Save</button>
                     <button className="btn btn-ghost" onClick={() => setEditingId(null)}>Cancel</button>

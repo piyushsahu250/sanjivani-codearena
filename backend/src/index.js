@@ -24,6 +24,10 @@ const moduleCodingRoutes = require("./routes/moduleCoding");
 const searchRoutes = require("./routes/search");
 
 const app = express();
+// Render sits in front of this service behind a reverse proxy — without trusting it, req.ip
+// resolves to the proxy's own address instead of the real client IP, which breaks IP-keyed rate
+// limiting fairness and makes every audit-log/login-session IP identical and useless.
+app.set("trust proxy", 1);
 app.use(helmet());
 app.use(compression());
 app.use(cors());

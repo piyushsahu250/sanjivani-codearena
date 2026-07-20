@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { cached, invalidate } = require("../utils/cache");
+const { logAudit, AUDIT_ACTIONS } = require("../utils/auditLog");
 
 const router = express.Router();
 
@@ -45,10 +46,16 @@ router.patch("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
     const existing = await prisma.institute.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Institute not found" });
 
-    const { name, code, address, contact, isActive } = req.body;
+    const { name, code, address, contact, isActive, logoUrl, passwordExpiryDays, passwordHistoryDepth, singleSessionOnly, aiHintsEnabled } = req.body;
     if (name && name.trim() !== existing.name) {
       const dup = await prisma.institute.findUnique({ where: { name: name.trim() } });
       if (dup) return res.status(409).json({ error: "An institute with this name already exists" });
+    }
+    if (passwordExpiryDays !== undefined && passwordExpiryDays !== null && (!Number.isFinite(Number(passwordExpiryDays)) || Number(passwordExpiryDays) < 0)) {
+      return res.status(400).json({ error: "Password expiry days must be a non-negative number, or blank for never" });
+    }
+    if (passwordHistoryDepth !== undefined && (!Number.isFinite(Number(passwordHistoryDepth)) || Number(passwordHistoryDepth) < 0)) {
+      return res.status(400).json({ error: "Password history depth must be a non-negative number" });
     }
 
     const institute = await prisma.institute.update({
@@ -59,9 +66,15 @@ router.patch("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
         address: address !== undefined ? (address?.trim() || null) : existing.address,
         contact: contact !== undefined ? (contact?.trim() || null) : existing.contact,
         isActive: isActive ?? existing.isActive,
+        logoUrl: logoUrl !== undefined ? (logoUrl || null) : existing.logoUrl,
+        passwordExpiryDays: passwordExpiryDays !== undefined ? (passwordExpiryDays === null || passwordExpiryDays === "" ? null : Number(passwordExpiryDays)) : existing.passwordExpiryDays,
+        passwordHistoryDepth: passwordHistoryDepth !== undefined ? Number(passwordHistoryDepth) : existing.passwordHistoryDepth,
+        singleSessionOnly: singleSessionOnly !== undefined ? !!singleSessionOnly : existing.singleSessionOnly,
+        aiHintsEnabled: aiHintsEnabled !== undefined ? !!aiHintsEnabled : existing.aiHintsEnabled,
       },
     });
     invalidate("institutes:");
+    await logAudit({ req, action: AUDIT_ACTIONS.INSTITUTE_CONFIG_CHANGED, actorId: req.user.id, actorName: req.user.name, actorRole: req.user.role, instituteId: institute.id, details: { instituteName: institute.name, changedFields: Object.keys(req.body) } });
     res.json(institute);
   } catch (err) {
     console.error(err);
