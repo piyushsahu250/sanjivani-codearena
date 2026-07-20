@@ -15,4 +15,18 @@ function drawReportLogoBadge(doc, { logoWidth = 55 } = {}) {
   doc.image(LOGO_PATH, width - 40 - logoWidth, 30, { width: logoWidth });
 }
 
-module.exports = { LOGO_PATH, drawCertificateLogo, drawReportLogoBadge };
+// Institute logo alongside the CodeArena one, for certificates that need dual branding.
+// `logoDataUrl` is whatever's stored in Institute.logoUrl (a data URL — this platform has no
+// object storage, see the field's schema comment) — pdfkit accepts a data URL string directly,
+// same as the QR codes already embedded elsewhere in these certificate generators. Silently
+// skipped if missing or if pdfkit can't decode it (e.g. an unsupported image format pasted in).
+function drawInstituteLogo(doc, logoDataUrl, { x, y, logoWidth = 70 }) {
+  if (!logoDataUrl) return;
+  try {
+    doc.image(logoDataUrl, x, y, { width: logoWidth });
+  } catch (e) {
+    console.error("Institute logo render failed", e);
+  }
+}
+
+module.exports = { LOGO_PATH, drawCertificateLogo, drawReportLogoBadge, drawInstituteLogo };

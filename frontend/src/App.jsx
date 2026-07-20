@@ -63,6 +63,9 @@ import EmailLogs from "./pages/EmailLogs";
 import PasswordResetHistory from "./pages/PasswordResetHistory";
 import SystemMonitoring from "./pages/SystemMonitoring";
 import AuditLogPage from "./pages/AuditLogPage";
+import MyCertificates from "./pages/MyCertificates";
+import CertificateVerify from "./pages/CertificateVerify";
+import CertificateAdmin from "./pages/CertificateAdmin";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
@@ -112,7 +115,9 @@ export default function App() {
           <Route path="/change-password" element={<ForceChangePassword />} />
           <Route path="/interview/verify/:code" element={<InterviewVerify />} />
           <Route path="/learning/certificate/verify/:code" element={<CourseCertificateVerify />} />
+          <Route path="/certificate/verify/:code" element={<CertificateVerify />} />
           <Route path="/account" element={<Protected><AccountSettings /></Protected>} />
+          <Route path="/certificates" element={<Protected roles={["STUDENT"]}><MyCertificates /></Protected>} />
 
           {/* Student */}
           <Route path="/dashboard" element={<Protected roles={["STUDENT"]}><StudentDashboard /></Protected>} />
@@ -191,6 +196,7 @@ export default function App() {
           <Route path="/staff/students/:id" element={<Protected roles={["ADMIN", "STAFF"]}><Suspense fallback={<LoadingScreen />}><StudentPerformance basePath="/staff" /></Suspense></Protected>} />
           <Route path="/staff/password-reset-history" element={<Protected roles={["ADMIN", "STAFF"]}><PasswordResetHistory basePath="/staff" /></Protected>} />
           <Route path="/staff/audit-log" element={<Protected roles={["ADMIN", "STAFF"]}><AuditLogPage basePath="/staff" /></Protected>} />
+          <Route path="/staff/certificates" element={<Protected roles={["ADMIN", "STAFF"]}><CertificateAdmin basePath="/staff" /></Protected>} />
 
           {/* Admin only: account management */}
           <Route path="/admin" element={<Protected roles={["ADMIN"]}><Suspense fallback={<LoadingScreen />}><AdminDashboard /></Suspense></Protected>} />
@@ -201,6 +207,7 @@ export default function App() {
           <Route path="/admin/email-logs" element={<Protected roles={["ADMIN"]}><EmailLogs /></Protected>} />
           <Route path="/admin/password-reset-history" element={<Protected roles={["ADMIN"]}><PasswordResetHistory basePath="/admin" /></Protected>} />
           <Route path="/admin/audit-log" element={<Protected roles={["ADMIN"]}><AuditLogPage basePath="/admin" /></Protected>} />
+          <Route path="/admin/certificates" element={<Protected roles={["ADMIN"]}><CertificateAdmin basePath="/admin" /></Protected>} />
           <Route path="/admin/monitoring" element={<Protected roles={["ADMIN"]}><SystemMonitoring /></Protected>} />
           <Route path="/admin/students" element={<Protected roles={["ADMIN"]}><StudentSearch basePath="/admin" /></Protected>} />
           <Route path="/admin/students/:id" element={<Protected roles={["ADMIN"]}><Suspense fallback={<LoadingScreen />}><StudentPerformance basePath="/admin" /></Suspense></Protected>} />

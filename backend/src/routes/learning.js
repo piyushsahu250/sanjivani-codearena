@@ -5,6 +5,7 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const { judgeSubmission } = require("../utils/judge");
 const { runQueued } = require("../utils/queue");
 const { generateCertificatePdf } = require("../utils/certificatePdf");
+const { issueCertificate } = require("../utils/certificates");
 const { getModuleLockMap } = require("../utils/learningLock");
 const { processGamification } = require("../utils/gamification");
 
@@ -476,6 +477,26 @@ async function checkCourseCompletion(studentId, course) {
   return { totalLessons, completedLessons, complete: totalLessons > 0 && completedLessons >= totalLessons };
 }
 
+// Auto-issues (idempotently, via the studentId+courseId unique constraint) the LEARNING_MODULE
+// certificate for a fully-completed course, and returns the existing one on any later call.
+async function getOrIssueLearningCertificate(studentId, course) {
+  let cert = await prisma.certificate.findUnique({
+    where: { studentId_courseId: { studentId, courseId: course.id } },
+  });
+  if (!cert) {
+    const student = await prisma.user.findUnique({ where: { id: studentId }, include: { institute: true } });
+    cert = await issueCertificate({
+      type: "LEARNING_MODULE",
+      studentId,
+      courseId: course.id,
+      title: `${course.name} Learning Course`,
+      instituteCode: student.institute?.code,
+      programCode: course.slug,
+    });
+  }
+  return cert;
+}
+
 // STUDENT: fetch (auto-issuing on first call) the certificate for a fully-completed course.
 router.get("/courses/:slug/certificate", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
@@ -487,14 +508,7 @@ router.get("/courses/:slug/certificate", authenticate, requireRole("STUDENT"), a
       return res.status(400).json({ error: "Course not yet completed", totalLessons, completedLessons });
     }
 
-    let cert = await prisma.certificate.findUnique({
-      where: { studentId_courseId: { studentId: req.user.id, courseId: course.id } },
-    });
-    if (!cert) {
-      const code = `SJU-${course.slug.toUpperCase()}-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-      cert = await prisma.certificate.create({ data: { certificateCode: code, studentId: req.user.id, courseId: course.id } });
-    }
-
+    const cert = await getOrIssueLearningCertificate(req.user.id, course);
     const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
     res.json({ ...cert, studentName: student.name, courseName: course.name });
   } catch (err) {
@@ -503,8 +517,9 @@ router.get("/courses/:slug/certificate", authenticate, requireRole("STUDENT"), a
   }
 });
 
-// PUBLIC (no auth) — reached via the certificate's "Verify Certificate" link / QR-equivalent,
-// same pattern as the interview certificate's /certificate/verify/:code.
+// PUBLIC (no auth) — kept for back-compat with existing Learning Module certificate links;
+// GET /api/certificates/verify/:code (routes/certificates.js) is the unified verify endpoint
+// going forward and covers this same Certificate model plus CODING_ASSESSMENT/MANUAL types.
 router.get("/certificate/verify/:code", async (req, res) => {
   try {
     const cert = await prisma.certificate.findUnique({
@@ -512,7 +527,15 @@ router.get("/certificate/verify/:code", async (req, res) => {
       include: { student: { select: { name: true } }, course: { select: { name: true } } },
     });
     if (!cert) return res.status(404).json({ valid: false });
-    res.json({ valid: true, studentName: cert.student.name, courseName: cert.course.name, issuedAt: cert.issuedAt, certificateCode: cert.certificateCode });
+    res.json({
+      valid: true,
+      status: cert.status,
+      revoked: cert.status === "REVOKED",
+      studentName: cert.student.name,
+      courseName: cert.course?.name || cert.title,
+      issuedAt: cert.issuedAt,
+      certificateCode: cert.certificateCode,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ valid: false, error: "Verification failed" });
@@ -528,18 +551,21 @@ router.get("/courses/:slug/certificate/download", authenticate, requireRole("STU
     const { complete } = await checkCourseCompletion(req.user.id, course);
     if (!complete) return res.status(400).json({ error: "Course not yet completed" });
 
-    let cert = await prisma.certificate.findUnique({
-      where: { studentId_courseId: { studentId: req.user.id, courseId: course.id } },
-    });
-    if (!cert) {
-      const code = `SJU-${course.slug.toUpperCase()}-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-      cert = await prisma.certificate.create({ data: { certificateCode: code, studentId: req.user.id, courseId: course.id } });
-    }
-
-    const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
+    const cert = await getOrIssueLearningCertificate(req.user.id, course);
+    const student = await prisma.user.findUnique({ where: { id: req.user.id }, include: { institute: true } });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${course.slug}-certificate.pdf"`);
-    generateCertificatePdf({ studentName: student.name, courseName: course.name, certificateCode: cert.certificateCode, issuedAt: cert.issuedAt }, res);
+    await generateCertificatePdf({
+      studentName: student.name,
+      title: cert.title,
+      programName: course.name,
+      certificateCode: cert.certificateCode,
+      issuedAt: cert.issuedAt,
+      status: cert.status,
+      verifyUrl: `${process.env.FRONTEND_URL || "https://codearena-app.vercel.app"}/certificate/verify/${cert.certificateCode}`,
+      instituteName: student.institute?.name,
+      instituteLogoUrl: student.institute?.logoUrl,
+    }, res);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to generate certificate" });

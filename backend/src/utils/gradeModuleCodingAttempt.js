@@ -1,6 +1,7 @@
 const prisma = require("../prisma");
 const { judgeSubmission } = require("./judge");
 const { runQueued } = require("./queue");
+const { issueCertificate } = require("./certificates");
 
 // Grades one ModuleCodingSubmission row against its question's hidden test cases (falling back to
 // the full case set for a legacy question predating the admin CMS's >=2-hidden-cases requirement)
@@ -37,9 +38,10 @@ async function gradeModuleCodingAttempt(attemptId, { reason } = {}) {
   const attempt = await prisma.moduleCodingAttempt.findUnique({
     where: { id: attemptId },
     include: {
-      moduleCodingTest: true,
+      moduleCodingTest: { include: { module: { include: { course: true } } } },
       questions: { include: { question: { include: { testCases: true } } } },
       submissions: true,
+      student: { include: { institute: true } },
     },
   });
   if (!attempt) return null;
@@ -92,6 +94,30 @@ async function gradeModuleCodingAttempt(attemptId, { reason } = {}) {
       autoSubmitReason: reason || null,
     },
   });
+
+  // Auto-issue a CODING_ASSESSMENT certificate the first time this student passes this
+  // particular ModuleCodingTest. No DB-level unique constraint backs this (unlike the
+  // studentId+courseId one for LEARNING_MODULE certs) since a moduleCodingTestId isn't a real FK
+  // column here — findFirst is the idempotency check, and a pass is permanent per this
+  // platform's existing "no downgrade on retake" convention, so this only ever fires once.
+  if (passed) {
+    const already = await prisma.certificate.findFirst({
+      where: { type: "CODING_ASSESSMENT", studentId: attempt.studentId, moduleCodingTestId: attempt.moduleCodingTestId },
+    });
+    if (!already) {
+      const courseName = attempt.moduleCodingTest.module?.course?.name;
+      const title = `${attempt.moduleCodingTest.title}${courseName ? ` (${courseName})` : ""}`;
+      await issueCertificate({
+        type: "CODING_ASSESSMENT",
+        studentId: attempt.studentId,
+        moduleCodingTestId: attempt.moduleCodingTestId,
+        title,
+        instituteCode: attempt.student.institute?.code,
+        programCode: attempt.moduleCodingTest.module?.course?.slug || attempt.moduleCodingTest.title,
+      }).catch((err) => console.error("Coding-assessment certificate issuance failed:", err));
+    }
+  }
+
   return { ...updated, questionBreakdown };
 }
 
