@@ -8,6 +8,7 @@ const { generateCertificatePdf } = require("../utils/certificatePdf");
 const { issueCertificate } = require("../utils/certificates");
 const { getModuleLockMap } = require("../utils/learningLock");
 const { processGamification } = require("../utils/gamification");
+const { askClaude } = require("../utils/aiClient");
 
 // True once every lesson in a module (including its practice test) is COMPLETED for this
 // student — used to fire the one-time MODULE_COMPLETE XP award at the exact moment the last
@@ -24,6 +25,8 @@ async function isModuleNowComplete(studentId, moduleId) {
 const router = express.Router();
 
 const runLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: (req) => req.user.id });
+// Tighter than runLimiter — each call is a real Claude API request, not a free local judge run.
+const hintLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, keyGenerator: (req) => req.user.id });
 
 // Strips answer-revealing fields from a practice question before sending it to a student. For
 // CODING questions this includes the sample (non-hidden) test cases, so a student can see what
@@ -431,6 +434,46 @@ router.post("/practice/:id/submit", authenticate, requireRole("STUDENT"), runLim
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Submission failed" });
+  }
+});
+
+// STUDENT: a short, non-answer-revealing hint after a wrong practice submission — gated on
+// Institute.aiHintsEnabled (admin opt-in, default off) and only ever wired into Practice Coding,
+// never Coding Tests / Module Coding Tests / exams, which stay 100% unassisted. Requires the
+// student's most recent logged attempt on this question to be a non-ACCEPTED verdict, so a hint
+// can't be requested before actually trying (or after already solving it).
+router.post("/practice/:id/hint", authenticate, requireRole("STUDENT"), hintLimiter, async (req, res) => {
+  try {
+    const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { institute: { select: { aiHintsEnabled: true } } } });
+    if (!student?.institute?.aiHintsEnabled) {
+      return res.status(403).json({ error: "AI hints aren't enabled for your institute" });
+    }
+
+    const q = await prisma.practiceQuestion.findUnique({ where: { id: req.params.id } });
+    if (!q || q.type !== "CODING") return res.status(400).json({ error: "Not a coding question" });
+
+    const lastAttempt = await prisma.practiceRunLog.findFirst({
+      where: { studentId: req.user.id, questionId: q.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!lastAttempt || lastAttempt.verdict === "ACCEPTED") {
+      return res.status(400).json({ error: "Hints are only available after a wrong submission attempt" });
+    }
+
+    const { code, language } = req.body;
+    if (!code || !code.trim()) return res.status(400).json({ error: "code is required" });
+
+    const hint = await askClaude({
+      system: "You are a patient programming tutor. Give a short, specific hint that nudges the student toward finding and fixing their own bug — never write corrected code, never give the full solution. 2-4 sentences.",
+      prompt: `Question: ${q.title || ""}\n${q.description}\n\nStudent's ${language || "code"} submission (verdict: ${lastAttempt.verdict}):\n\`\`\`\n${code.slice(0, 4000)}\n\`\`\`\n\nGive one concise hint.`,
+      maxTokens: 300,
+      temperature: 0.5,
+    });
+    res.json({ hint });
+  } catch (err) {
+    if (err.notConfigured) return res.status(503).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to generate hint" });
   }
 });
 

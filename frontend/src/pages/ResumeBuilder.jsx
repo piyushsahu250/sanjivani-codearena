@@ -76,7 +76,23 @@ export default function ResumeBuilder() {
   const [reviewPending, setReviewPending] = useState(false);
   const [pendingAts, setPendingAts] = useState(null);
   const [reviewChecks, setReviewChecks] = useState({});
+  const [aiReview, setAiReview] = useState(null);
+  const [aiReviewing, setAiReviewing] = useState(false);
+  const [aiReviewError, setAiReviewError] = useState("");
   const fileInputRef = useRef(null);
+
+  async function getAiReview() {
+    setAiReviewing(true);
+    setAiReviewError("");
+    try {
+      const { data: review } = await api.post("/resume/me/ai-review");
+      setAiReview(review);
+    } catch (err) {
+      setAiReviewError(err.response?.data?.error || "AI review failed");
+    } finally {
+      setAiReviewing(false);
+    }
+  }
 
   function load() {
     api.get("/resume/me").then((res) => setData(res.data)).catch(() => setError("Failed to load resume"));
@@ -508,6 +524,42 @@ export default function ResumeBuilder() {
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* AI Review — a real Claude call, distinct from the rule-based "Improve with AI" text
+                rewriter above; augments the ATS score above rather than replacing it. */}
+            <div className="card" style={{ padding: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>AI Resume Review</div>
+                <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={getAiReview} disabled={aiReviewing || reviewPending}>
+                  {aiReviewing ? "Reviewing…" : aiReview ? "Regenerate" : "Get AI Review"}
+                </button>
+              </div>
+              {reviewPending && (
+                <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 8 }}>Complete the "Review Extracted Data" step above first.</p>
+              )}
+              {aiReviewError && <p style={{ color: "var(--rust)", fontSize: 12, marginTop: 8 }}>{aiReviewError}</p>}
+              {aiReview && (
+                <div style={{ marginTop: 12, fontSize: 13 }}>
+                  <p>{aiReview.overallFeedback}</p>
+                  {aiReview.strengths?.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>Strengths</div>
+                      <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                        {aiReview.strengths.map((s, i) => <li key={i} style={{ fontSize: 12, color: "var(--mint)" }}>{s}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {aiReview.improvements?.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>Suggested improvements</div>
+                      <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                        {aiReview.improvements.map((s, i) => <li key={i} style={{ fontSize: 12, color: "var(--ink-dim)" }}>{s}</li>)}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

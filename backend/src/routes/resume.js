@@ -9,6 +9,7 @@ const { generateResumeDocx } = require("../utils/resumeDocx");
 const { buildAutofillData } = require("../utils/resumeAutofill");
 const { parseResumeFile } = require("../utils/resumeParser");
 const { improveText } = require("../utils/resumeImprove");
+const { askClaudeJson } = require("../utils/aiClient");
 const { ROLE_KEYWORDS, analyzeForRole } = require("../utils/resumeJobRoles");
 
 const router = express.Router();
@@ -270,6 +271,30 @@ router.post("/me/improve", authenticate, requireRole("STUDENT"), (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to generate improvement" });
+  }
+});
+
+// STUDENT: whole-resume qualitative review via Claude — augments the existing rule-based
+// completion/ATS scoring above rather than replacing it (that heuristic system stays the
+// always-available default; this is an optional richer pass on top, same graceful-degradation
+// posture as every other AI feature on this platform). Read-only — never saves anything.
+router.post("/me/ai-review", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
+    if (!resume) return res.status(404).json({ error: "No resume found — build one first" });
+
+    const { id, studentId, createdAt, updatedAt, photoUrl, ...content } = resume;
+    const review = await askClaudeJson({
+      system: "You are a career coach reviewing a student's resume for placement readiness. Be specific and concrete — reference their actual content, don't give generic advice. Return only JSON matching the requested schema.",
+      prompt: `Review this resume${resume.targetRole ? ` for a ${resume.targetRole} role` : ""}:\n\n${JSON.stringify(content, null, 2)}\n\nReturn JSON exactly shaped: {"overallFeedback": string (2-3 sentences), "strengths": string[] (2-4 items), "improvements": string[] (3-5 specific, actionable items referencing actual resume content)}.`,
+      maxTokens: 1200,
+      temperature: 0.4,
+    });
+    res.json(review);
+  } catch (err) {
+    if (err.notConfigured) return res.status(503).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "AI review failed — try again later" });
   }
 });
 

@@ -43,6 +43,55 @@ export default function CreateQuestion() {
   const [previewLang, setPreviewLang] = useState("java");
   const [previewError, setPreviewError] = useState("");
 
+  const [aiConfigured, setAiConfigured] = useState(true); // optimistic until checked, avoids a flash of "unavailable"
+  const [aiSubject, setAiSubject] = useState("");
+  const [aiTopic, setAiTopic] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [aiError, setAiError] = useState("");
+
+  useEffect(() => {
+    api.get("/ai/questions/status").then((res) => setAiConfigured(res.data.configured)).catch(() => {});
+  }, []);
+
+  // Drafts a question via Claude into the form for review — never saves directly. The admin/staff
+  // member is expected to read, edit, and only then click the existing Save button, same as if
+  // they'd typed it themselves. SQL / fill-in-the-blank / subjective aren't offered here since
+  // this platform has no execution or grading path for them (see backend/src/routes/aiQuestions.js).
+  async function generateWithAI() {
+    const subject = (aiSubject || form.subject).trim();
+    if (!subject) return setAiError("Enter a subject to generate from");
+    setGenerating(true);
+    setAiError("");
+    try {
+      const { data } = await api.post("/ai/questions/generate-question", {
+        questionType: form.questionType,
+        subject,
+        topic: (aiTopic || form.topic).trim(),
+        difficulty: form.difficulty,
+      });
+      setForm((f) => ({
+        ...f,
+        title: data.title || f.title,
+        description: data.description || f.description,
+        explanation: data.explanation || f.explanation,
+        subject: f.subject || subject,
+        topic: f.topic || (aiTopic || "").trim(),
+      }));
+      if (form.questionType === "CODING") {
+        if (Array.isArray(data.testCases) && data.testCases.length > 0) {
+          setTestCases(data.testCases.map((tc) => ({ input: tc.input ?? "", expected: tc.expected ?? "", isHidden: !!tc.isHidden, explanation: "" })));
+        }
+      } else {
+        if (Array.isArray(data.options) && data.options.length > 0) setOptions(data.options);
+        if (Array.isArray(data.correctAnswer)) setCorrectIndices(data.correctAnswer);
+      }
+    } catch (err) {
+      setAiError(err.response?.data?.error || "AI generation failed");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   useEffect(() => {
     if (!isEdit) return;
     api.get(`/questions/${id}`).then((res) => {
@@ -193,6 +242,29 @@ export default function CreateQuestion() {
           <select style={inputStyle} value={form.questionType} onChange={(e) => changeType(e.target.value)}>
             {QUESTION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
+
+          <div className="card" style={{ padding: 14, marginTop: 10, marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>Generate with AI</div>
+            {!aiConfigured ? (
+              <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 4 }}>
+                AI generation isn't configured on this server yet.
+              </p>
+            ) : (
+              <>
+                <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 4 }}>
+                  Drafts a {QUESTION_TYPES.find((t) => t.value === form.questionType)?.label.toLowerCase()} question below for you to review and edit — nothing is saved until you click Save.
+                </p>
+                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <input style={{ ...inputStyle, marginTop: 0, flex: "1 1 160px" }} placeholder="Subject (e.g. Java, DBMS)" value={aiSubject} onChange={(e) => setAiSubject(e.target.value)} />
+                  <input style={{ ...inputStyle, marginTop: 0, flex: "1 1 160px" }} placeholder="Topic (optional)" value={aiTopic} onChange={(e) => setAiTopic(e.target.value)} />
+                  <button type="button" className="btn btn-primary" disabled={generating} onClick={generateWithAI}>
+                    {generating ? "Generating…" : "Generate"}
+                  </button>
+                </div>
+                {aiError && <p style={{ color: "var(--rust)", fontSize: 12, marginTop: 6 }}>{aiError}</p>}
+              </>
+            )}
+          </div>
 
           <label style={labelStyle}>Question Name (optional)</label>
           <input style={inputStyle} value={form.title} onChange={updateField("title")} />

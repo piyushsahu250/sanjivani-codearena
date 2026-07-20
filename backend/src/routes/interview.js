@@ -13,6 +13,7 @@ const { generateResumeQuestions } = require("../utils/resumeInterviewQuestions")
 const { generateInterviewCertificatePdf } = require("../utils/interviewCertificatePdf");
 const { generateInterviewReportPdf } = require("../utils/interviewReportPdf");
 const { sendMailLogged, wrapBranded } = require("../utils/mailer");
+const { askClaudeJson } = require("../utils/aiClient");
 const { cached } = require("../utils/cache");
 
 const router = express.Router();
@@ -244,6 +245,41 @@ router.get("/sessions/:id", authenticate, requireRole("STUDENT"), async (req, re
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load session" });
+  }
+});
+
+// STUDENT: qualitative narrative analysis via Claude — augments the existing rule-based
+// InterviewReport (score/scoreBreakdown/strongAreas/weakAreas/recommendations, computed in
+// utils/interviewEvaluation.js) rather than replacing it. That heuristic scoring stays the
+// authoritative, always-available number; this is a read-only, on-demand richer pass reading
+// the same transcript. Never stored — recomputed fresh each time it's requested.
+router.get("/sessions/:id/ai-insights", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const session = await prisma.interviewSession.findUnique({
+      where: { id: req.params.id },
+      include: { answers: { orderBy: { createdAt: "asc" } }, report: true },
+    });
+    if (!session || session.studentId !== req.user.id) return res.status(404).json({ error: "Session not found" });
+    if (!session.report) return res.status(400).json({ error: "This interview hasn't been submitted yet" });
+
+    const questions = await prisma.interviewQuestion.findMany({ where: { id: { in: session.answers.map((a) => a.questionId) } } });
+    const transcript = session.answers.map((a) => {
+      const q = questions.find((qq) => qq.id === a.questionId);
+      const answer = a.skipped ? "(skipped)" : a.code ? `[${a.language} code]\n${a.code}` : (a.answerText || "(no answer)");
+      return `Q: ${q?.prompt || "?"}\nA: ${answer}\nScore: ${a.score}/100`;
+    }).join("\n\n");
+
+    const insights = await askClaudeJson({
+      system: "You are an interview coach analyzing a completed mock interview transcript. Be specific — reference the candidate's actual answers, not generic advice. Return only JSON matching the requested schema.",
+      prompt: `Overall score: ${session.report.overallScore}%. Transcript:\n\n${transcript.slice(0, 8000)}\n\nReturn JSON exactly shaped: {"narrative": string (3-4 sentence performance summary), "recommendations": string[] (3-5 specific, actionable next steps referencing the actual answers)}.`,
+      maxTokens: 1000,
+      temperature: 0.4,
+    });
+    res.json(insights);
+  } catch (err) {
+    if (err.notConfigured) return res.status(503).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "AI analysis failed — try again later" });
   }
 });
 

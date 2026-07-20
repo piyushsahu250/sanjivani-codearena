@@ -348,6 +348,9 @@ function PracticeQuestionCard({ question }) {
   const [submitting, setSubmitting] = useState(false);
   const [history, setHistory] = useState(null); // { totalAttempts, solved, latestVerdict }
   const [draftLoaded, setDraftLoaded] = useState(false);
+  const [hint, setHint] = useState("");
+  const [hintError, setHintError] = useState("");
+  const [gettingHint, setGettingHint] = useState(false);
   const autosaveTimerRef = useRef(null);
   const codeRef = useRef(code);
   const languageRef = useRef(language);
@@ -428,6 +431,8 @@ function PracticeQuestionCard({ question }) {
   async function submitCode() {
     setSubmitting(true);
     setSubmitResult(null);
+    setHint("");
+    setHintError("");
     try {
       const { data } = await api.post(`/learning/practice/${question.id}/submit`, { language, code });
       setSubmitResult(data);
@@ -437,6 +442,19 @@ function PracticeQuestionCard({ question }) {
       alert(err.response?.data?.error || "Submission failed");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function getHint() {
+    setGettingHint(true);
+    setHintError("");
+    try {
+      const { data } = await api.post(`/learning/practice/${question.id}/hint`, { language, code });
+      setHint(data.hint);
+    } catch (err) {
+      setHintError(err.response?.data?.error || "Failed to get a hint");
+    } finally {
+      setGettingHint(false);
     }
   }
 
@@ -487,6 +505,22 @@ function PracticeQuestionCard({ question }) {
           {submitResult && (
             <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: submitResult.verdict === "ACCEPTED" ? "#E7F3EB" : "#F7E4E0" }}>
               <CodeResultBlock title="Submission result" result={submitResult} />
+              {submitResult.verdict !== "ACCEPTED" && (
+                <div style={{ marginTop: 10 }}>
+                  {!hint && (
+                    <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} disabled={gettingHint} onClick={getHint}>
+                      {gettingHint ? "Thinking…" : "Get a Hint"}
+                    </button>
+                  )}
+                  {hint && (
+                    <div className="card" style={{ padding: 10, marginTop: 6, fontSize: 13 }}>
+                      <strong style={{ fontSize: 11, color: "var(--ink-dim)" }}>HINT</strong>
+                      <p style={{ marginTop: 4 }}>{hint}</p>
+                    </div>
+                  )}
+                  {hintError && <p style={{ color: "var(--rust)", fontSize: 12, marginTop: 6 }}>{hintError}</p>}
+                </div>
+              )}
             </div>
           )}
         </>

@@ -18,6 +18,22 @@ export default function InterviewReport() {
   const [sessionStatus, setSessionStatus] = useState(null);
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
+  const [aiInsights, setAiInsights] = useState(null);
+  const [aiInsightsError, setAiInsightsError] = useState("");
+  const [loadingInsights, setLoadingInsights] = useState(false);
+
+  async function getAiInsights() {
+    setLoadingInsights(true);
+    setAiInsightsError("");
+    try {
+      const { data } = await api.get(`/interview/sessions/${id}/ai-insights`);
+      setAiInsights(data);
+    } catch (err) {
+      setAiInsightsError(err.response?.data?.error || "AI analysis failed");
+    } finally {
+      setLoadingInsights(false);
+    }
+  }
 
   useEffect(() => {
     api.get(`/interview/sessions/${id}`).then((res) => {
@@ -103,6 +119,26 @@ export default function InterviewReport() {
           <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 13 }}>
             {(report.recommendations || []).map((r, i) => <li key={i}>{r}</li>)}
           </ul>
+        </div>
+
+        <div className="ip-glass" style={{ padding: 16, marginTop: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>AI Performance Analysis</div>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={getAiInsights} disabled={loadingInsights}>
+              {loadingInsights ? "Analyzing…" : aiInsights ? "Regenerate" : "Get AI Analysis"}
+            </button>
+          </div>
+          {aiInsightsError && <p style={{ color: "var(--rust)", fontSize: 12, marginTop: 8 }}>{aiInsightsError}</p>}
+          {aiInsights && (
+            <div style={{ marginTop: 10, fontSize: 13 }}>
+              <p>{aiInsights.narrative}</p>
+              {aiInsights.recommendations?.length > 0 && (
+                <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                  {aiInsights.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
 
         {recommendedLearning?.length > 0 && (
