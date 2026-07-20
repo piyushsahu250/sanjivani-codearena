@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BookOpen, BarChart3, Mic, FileText, History, Award, Trophy, Settings,
   Users, FileQuestion, Building2, School, Upload, ChevronLeft, ChevronRight, ClipboardList,
-  Mail, Activity,
+  Mail, Activity, Download,
 } from "lucide-react";
 import { useSidebarUI } from "../context/SidebarContext";
 
@@ -66,6 +66,7 @@ const MENU = {
       { label: "Audit Log", to: "/admin/audit-log", icon: History },
       { label: "Certificates", to: "/admin/certificates", icon: Award },
       { label: "Monitoring", to: "/admin/monitoring", icon: Activity },
+      { label: "Backups", to: "/admin/backups", icon: Download },
     ] },
     { group: "", items: [{ label: "Settings", to: "/account", icon: Settings }] },
   ],

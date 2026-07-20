@@ -66,6 +66,7 @@ import AuditLogPage from "./pages/AuditLogPage";
 import MyCertificates from "./pages/MyCertificates";
 import CertificateVerify from "./pages/CertificateVerify";
 import CertificateAdmin from "./pages/CertificateAdmin";
+import Backups from "./pages/Backups";
 
 const HOME_BY_ROLE = { STUDENT: "/dashboard", STAFF: "/staff", ADMIN: "/admin" };
 
@@ -208,6 +209,7 @@ export default function App() {
           <Route path="/admin/password-reset-history" element={<Protected roles={["ADMIN"]}><PasswordResetHistory basePath="/admin" /></Protected>} />
           <Route path="/admin/audit-log" element={<Protected roles={["ADMIN"]}><AuditLogPage basePath="/admin" /></Protected>} />
           <Route path="/admin/certificates" element={<Protected roles={["ADMIN"]}><CertificateAdmin basePath="/admin" /></Protected>} />
+          <Route path="/admin/backups" element={<Protected roles={["ADMIN"]}><Backups /></Protected>} />
           <Route path="/admin/monitoring" element={<Protected roles={["ADMIN"]}><SystemMonitoring /></Protected>} />
           <Route path="/admin/students" element={<Protected roles={["ADMIN"]}><StudentSearch basePath="/admin" /></Protected>} />
           <Route path="/admin/students/:id" element={<Protected roles={["ADMIN"]}><Suspense fallback={<LoadingScreen />}><StudentPerformance basePath="/admin" /></Suspense></Protected>} />
