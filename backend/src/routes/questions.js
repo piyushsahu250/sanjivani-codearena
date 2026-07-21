@@ -36,9 +36,7 @@ const TEMPLATE_HEADERS = [
 // Coding-question bulk import. A flat spreadsheet cell can't hold a nested test-case list, so
 // "Hidden Test Cases" packs multiple cases into one cell as `input->output` pairs separated by
 // `||` (e.g. "5->25||3->9||10->100") — documented in the template's own header note + sample row.
-// Constraints/Input Format/Output Format have no dedicated Question fields (the manual question
-// form doesn't either — see CreateQuestion.jsx), so they're appended into the stored description
-// as labeled sections rather than silently dropped.
+// Constraints/Input Format/Output Format map onto Question.constraints/inputFormat/outputFormat.
 const CODING_TEMPLATE_HEADERS = [
   "Question Title", "Problem Statement", "Difficulty", "Programming Languages",
   "Time Limit (seconds)", "Memory Limit (MB)", "Marks", "Constraints", "Input Format", "Output Format",
@@ -194,6 +192,8 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterIns
       title, description, subject, topic, questionType, difficulty, points, explanation,
       timeLimitMs, starterCode, testCases, options, correctAnswer, folderId,
       evaluationType, functionSignature, starterCodeByLanguage, memoryLimitKb, tags, sqlSchema,
+      estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes,
+      edgeCases, problemExplanation,
     } = req.body;
 
     if (!description) return res.status(400).json({ error: "Question text is required" });
@@ -218,6 +218,14 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterIns
       instituteId: req.requesterInstituteId,
       folderId: folderId || null,
       createdById: req.user.id,
+      estimatedTimeMin: estimatedTimeMin ?? null,
+      realWorldScenario: realWorldScenario || null,
+      constraints: constraints || null,
+      inputFormat: inputFormat || null,
+      outputFormat: outputFormat || null,
+      notes: notes || null,
+      edgeCases: edgeCases || null,
+      problemExplanation: problemExplanation || null,
     };
 
     if (type === "CODING") {
@@ -229,8 +237,8 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterIns
       if (cases.filter((tc) => !tc.isHidden).length < 2) {
         return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
       }
-      if (cases.filter((tc) => tc.isHidden).length < 2) {
-        return res.status(400).json({ error: "Each coding question needs at least 2 hidden test cases for final evaluation" });
+      if (cases.filter((tc) => tc.isHidden).length < 10) {
+        return res.status(400).json({ error: "Each coding question needs at least 10 hidden test cases for final evaluation" });
       }
       data.timeLimitMs = timeLimitMs ?? 2000;
       data.memoryLimitKb = memoryLimitKb || null;
@@ -256,8 +264,12 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterIns
       if (cases.filter((tc) => !tc.isHidden).length < 1) {
         return res.status(400).json({ error: "Each SQL question needs at least 1 visible sample test case" });
       }
-      if (cases.filter((tc) => tc.isHidden).length < 1) {
-        return res.status(400).json({ error: "Each SQL question needs at least 1 hidden test case for final evaluation" });
+      // SQL hidden cases each carry their own additional setup SQL (see the sqlSchema comment on
+      // the Question model) — authoring 10+ meaningfully distinct ones is a much heavier lift than
+      // for STDIO/FUNCTION cases, so the bar is raised less far here (1 -> 5) rather than to the
+      // general 10 used for CODING questions below.
+      if (cases.filter((tc) => tc.isHidden).length < 5) {
+        return res.status(400).json({ error: "Each SQL question needs at least 5 hidden test cases for final evaluation" });
       }
       data.sqlSchema = sqlSchema;
       data.timeLimitMs = timeLimitMs ?? 3000;
@@ -816,8 +828,8 @@ router.post("/bulk-import-coding", authenticate, requireRole("ADMIN", "STAFF"), 
         continue;
       }
       const hiddenCases = parseHiddenTestCases(field(row, "hiddenTestCases"));
-      if (hiddenCases.length < 2) {
-        errors.push({ row: rowNum, reason: `Needs at least 2 hidden test cases — found ${hiddenCases.length} (check the "input->output||input->output" format)` });
+      if (hiddenCases.length < 10) {
+        errors.push({ row: rowNum, reason: `Needs at least 10 hidden test cases — found ${hiddenCases.length} (check the "input->output||input->output" format)` });
         continue;
       }
 
@@ -830,13 +842,6 @@ router.post("/bulk-import-coding", authenticate, requireRole("ADMIN", "STAFF"), 
       if (pyCode) starterCodeByLanguage.python = pyCode;
       if (cppCode) starterCodeByLanguage.cpp = cppCode;
       if (cCode) starterCodeByLanguage.c = cCode;
-
-      const description_ = [
-        description,
-        field(row, "constraints") && `\n\nConstraints:\n${field(row, "constraints")}`,
-        field(row, "inputFormat") && `\n\nInput Format:\n${field(row, "inputFormat")}`,
-        field(row, "outputFormat") && `\n\nOutput Format:\n${field(row, "outputFormat")}`,
-      ].filter(Boolean).join("");
 
       const tags = field(row, "tags").split(",").map((s) => s.trim()).filter(Boolean);
       const bankName = field(row, "questionBank");
@@ -852,7 +857,7 @@ router.post("/bulk-import-coding", authenticate, requireRole("ADMIN", "STAFF"), 
         const question = await prisma.question.create({
           data: {
             title,
-            description: description_,
+            description,
             questionType: "CODING",
             difficulty,
             points: Number(field(row, "points")) || 10,
@@ -861,6 +866,9 @@ router.post("/bulk-import-coding", authenticate, requireRole("ADMIN", "STAFF"), 
             starterCode: javaCode || pyCode || cppCode || cCode || "",
             starterCodeByLanguage: Object.keys(starterCodeByLanguage).length > 0 ? starterCodeByLanguage : undefined,
             tags: tags.length > 0 ? tags : undefined,
+            constraints: field(row, "constraints") || null,
+            inputFormat: field(row, "inputFormat") || null,
+            outputFormat: field(row, "outputFormat") || null,
             instituteId: req.requesterInstituteId,
             folderId,
             createdById: req.user.id,
@@ -917,6 +925,8 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
       title, description, subject, topic, questionType, difficulty, points, explanation,
       timeLimitMs, starterCode, testCases, options, correctAnswer, folderId,
       evaluationType, functionSignature, starterCodeByLanguage, memoryLimitKb, tags, sqlSchema,
+      estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes,
+      edgeCases, problemExplanation,
     } = req.body;
 
     if (folderId !== undefined && folderId !== null && folderId !== existing.folderId) {
@@ -938,6 +948,14 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
       points: points ?? existing.points,
       explanation: explanation ?? existing.explanation,
       folderId: folderId !== undefined ? folderId : existing.folderId,
+      estimatedTimeMin: estimatedTimeMin !== undefined ? estimatedTimeMin : existing.estimatedTimeMin,
+      realWorldScenario: realWorldScenario !== undefined ? realWorldScenario : existing.realWorldScenario,
+      constraints: constraints !== undefined ? constraints : existing.constraints,
+      inputFormat: inputFormat !== undefined ? inputFormat : existing.inputFormat,
+      outputFormat: outputFormat !== undefined ? outputFormat : existing.outputFormat,
+      notes: notes !== undefined ? notes : existing.notes,
+      edgeCases: edgeCases !== undefined ? edgeCases : existing.edgeCases,
+      problemExplanation: problemExplanation !== undefined ? problemExplanation : existing.problemExplanation,
     };
 
     if (type === "CODING") {
@@ -962,8 +980,8 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
         if (testCases.filter((tc) => !tc.isHidden).length < 2) {
           return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
         }
-        if (testCases.filter((tc) => tc.isHidden).length < 2) {
-          return res.status(400).json({ error: "Each coding question needs at least 2 hidden test cases for final evaluation" });
+        if (testCases.filter((tc) => tc.isHidden).length < 10) {
+          return res.status(400).json({ error: "Each coding question needs at least 10 hidden test cases for final evaluation" });
         }
         await prisma.testCase.deleteMany({ where: { questionId: existing.id } });
         data.testCases = {
@@ -987,8 +1005,8 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
         if (testCases.filter((tc) => !tc.isHidden).length < 1) {
           return res.status(400).json({ error: "Each SQL question needs at least 1 visible sample test case" });
         }
-        if (testCases.filter((tc) => tc.isHidden).length < 1) {
-          return res.status(400).json({ error: "Each SQL question needs at least 1 hidden test case for final evaluation" });
+        if (testCases.filter((tc) => tc.isHidden).length < 5) {
+          return res.status(400).json({ error: "Each SQL question needs at least 5 hidden test cases for final evaluation" });
         }
         await prisma.testCase.deleteMany({ where: { questionId: existing.id } });
         data.testCases = {

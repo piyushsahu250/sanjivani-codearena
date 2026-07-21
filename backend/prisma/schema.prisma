@@ -125,6 +125,9 @@ model User {
   passwordHistory PasswordHistory[]
   loginSessions   LoginSession[]
 
+  dailyChallengeSubmissions  DailyChallengeSubmission[]
+  weeklyChallengeSubmissions WeeklyChallengeSubmission[]
+
   @@index([instituteId])
   @@index([classId])
   @@index([role])
@@ -140,6 +143,9 @@ model Test {
   durationMin  Int      @default(60)
   passingMarks Int?
   showResults  Boolean  @default(true)
+  // Set only for a company-specific placement round (e.g. "TCS", "Amazon") — reuses this same
+  // Test/TestTaking pipeline rather than a parallel one; null = a regular test, not company-tagged.
+  company      String?
   startTime    DateTime
   endTime      DateTime
   isPublished  Boolean  @default(false)
@@ -169,6 +175,7 @@ model Test {
   @@index([createdById])
   @@index([isPublished])
   @@index([startTime, endTime])
+  @@index([company])
 }
 
 // Join table: which classes a test is assigned to
@@ -202,6 +209,20 @@ model Question {
   starterCodeByLanguage Json? // { java, python, cpp, c, javascript } — preferred when present
   tags          Json?   // string[], e.g. ["Arrays","Dynamic Programming"]
 
+  // "Professional structure" fields (LeetCode/HackerRank-style problem statement) — all optional
+  // so existing/legacy questions render fine with these simply omitted. problemExplanation is
+  // distinct from the pre-existing `explanation` field above, which is a staff-only note never
+  // shown to students (see CreateQuestion.jsx) — this one IS shown to students, as a beginner-
+  // friendly walkthrough of the problem, so the two must never be conflated.
+  estimatedTimeMin  Int?
+  realWorldScenario String?
+  constraints       String?
+  inputFormat       String?
+  outputFormat      String?
+  notes             String?
+  edgeCases         String?
+  problemExplanation String?
+
   // "STDIO" (default): the student's submitted code IS the whole program — reads stdin, writes
   // stdout, same as it always has been. "FUNCTION": LeetCode-style — the student writes only a
   // method/function body matching functionSignature; the judge auto-generates the surrounding
@@ -224,6 +245,8 @@ model Question {
 
   testCases TestCase[]
   testLinks TestQuestion[]
+  dailyChallenges  DailyChallenge[]
+  weeklyChallenges WeeklyChallenge[]
 
   // Set only when this question belongs to a Learning Module's proctored coding-test pool
   // (reusing this same Question/TestCase model — hidden test cases, judge grading — rather
@@ -522,6 +545,7 @@ model PracticeQuestion {
   lesson        Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   lessonId      String
   type          String
+  title         String? // problem title, e.g. "Two Sum" — added for parity with Question, optional so existing rows (prompt-only) keep working
   prompt        String
   options       Json?
   correctAnswer Json?
@@ -530,6 +554,19 @@ model PracticeQuestion {
   testCases     Json? // CODING: [{input, expected, isHidden?}] — isHidden absent/false = sample case
   language      String?
   difficulty    Difficulty @default(EASY) // CODING only — drives the tiered solve-XP amount
+  tags          Json?   // string[] — parity with Question.tags
+
+  // "Professional structure" fields — see the identically-named block on Question above for the
+  // full rationale; kept in sync field-for-field so ProblemStatement.jsx can render either shape.
+  estimatedTimeMin   Int?
+  realWorldScenario  String?
+  constraints        String?
+  inputFormat        String?
+  outputFormat       String?
+  notes              String?
+  edgeCases          String?
+  problemExplanation String?
+
   order         Int      @default(0)
   createdAt     DateTime @default(now())
 
@@ -817,6 +854,76 @@ model StudentStreak {
 }
 
 // ===================================================================
+// Daily/Weekly Challenge — a LeetCode-style "problem of the day/week", drawn from the existing
+// Question bank (admin schedules an existing Question onto a date, no separate authoring
+// surface). Solving one routes through the same gamification hook (processGamification) and
+// StudentStreak used everywhere else, so it counts toward the student's existing streak — no
+// parallel streak system.
+model DailyChallenge {
+  id         String   @id @default(uuid())
+  date       DateTime @unique // truncated to the day — "today's" challenge is looked up by date
+  question   Question @relation(fields: [questionId], references: [id])
+  questionId String
+  createdAt  DateTime @default(now())
+
+  submissions DailyChallengeSubmission[]
+
+  @@index([questionId])
+}
+
+model DailyChallengeSubmission {
+  id               String         @id @default(uuid())
+  dailyChallenge   DailyChallenge @relation(fields: [dailyChallengeId], references: [id], onDelete: Cascade)
+  dailyChallengeId String
+  student          User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId        String
+  language         String
+  code             String
+  verdict          String   @default("PENDING")
+  passedCases      Int      @default(0)
+  totalCases       Int      @default(0)
+  timeMs           Int?
+  memoryKb         Int?
+  solvedAt         DateTime? // set only once verdict becomes ACCEPTED — drives the streak/history checkmark
+  updatedAt        DateTime @updatedAt
+
+  @@unique([dailyChallengeId, studentId])
+  @@index([studentId])
+}
+
+model WeeklyChallenge {
+  id         String   @id @default(uuid())
+  weekStart  DateTime @unique // Monday of the ISO week this challenge belongs to
+  question   Question @relation(fields: [questionId], references: [id])
+  questionId String
+  createdAt  DateTime @default(now())
+
+  submissions WeeklyChallengeSubmission[]
+
+  @@index([questionId])
+}
+
+model WeeklyChallengeSubmission {
+  id                String          @id @default(uuid())
+  weeklyChallenge   WeeklyChallenge @relation(fields: [weeklyChallengeId], references: [id], onDelete: Cascade)
+  weeklyChallengeId String
+  student           User            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId         String
+  language          String
+  code              String
+  verdict           String   @default("PENDING")
+  passedCases       Int      @default(0)
+  totalCases        Int      @default(0)
+  timeMs            Int?
+  memoryKb          Int?
+  solvedAt          DateTime?
+  updatedAt         DateTime @updatedAt
+
+  @@unique([weeklyChallengeId, studentId])
+  @@index([studentId])
+}
+
+// ===================================================================
 // Resume Builder — one resume per student. The repeating sub-sections
 // (education, skills, projects, experience, certifications, achievements,
 // languages) are stored as JSON arrays rather than separate join tables:
@@ -940,6 +1047,7 @@ model InterviewQuestion {
   company               String? // e.g. "TCS", "Amazon" — set only for company-specific question-bank entries; null = general pool
   aptitudeCategory       AptitudeCategory?
   difficulty            Difficulty @default(EASY)
+  title                 String? // Coding: problem title — parity with Question, optional so existing prompt-only rows keep working
   prompt                String
   expectedKeywords      Json?   // HR/Technical: string[] of concepts to look for in a free-text answer
   modelAnswer           String? // HR/Technical: shown after the student answers
@@ -949,6 +1057,19 @@ model InterviewQuestion {
   starterCode           String? // Coding
   testCases             Json?   // Coding: [{input, expected, isHidden?}] — isHidden absent/false = sample case
   language               String? // Coding: default language
+  tags                  Json?   // Coding: string[] — parity with Question.tags
+
+  // "Professional structure" fields (Coding category only) — see the identically-named block on
+  // Question above for the full rationale; kept in sync field-for-field.
+  estimatedTimeMin   Int?
+  realWorldScenario  String?
+  constraints        String?
+  inputFormat        String?
+  outputFormat       String?
+  notes              String?
+  edgeCases          String?
+  problemExplanation String?
+
   generatedForStudentId String? // set only for ephemeral resume-based questions
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())

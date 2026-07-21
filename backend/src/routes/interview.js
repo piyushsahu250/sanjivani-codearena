@@ -60,8 +60,17 @@ function splitInterviewCases(testCases) {
 function sanitizeQuestion(q) {
   return {
     id: q.id, category: q.category, subject: q.subject, company: q.company, aptitudeCategory: q.aptitudeCategory,
-    difficulty: q.difficulty, prompt: q.prompt, options: q.options,
-    starterCode: q.starterCode, language: q.language,
+    difficulty: q.difficulty, title: q.title || null, prompt: q.prompt, options: q.options,
+    starterCode: q.starterCode, language: q.language, tags: q.tags || null,
+    // Descriptive-only fields (CODING category), never reveal an answer — safe to send.
+    estimatedTimeMin: q.estimatedTimeMin ?? null,
+    realWorldScenario: q.realWorldScenario || null,
+    constraints: q.constraints || null,
+    inputFormat: q.inputFormat || null,
+    outputFormat: q.outputFormat || null,
+    notes: q.notes || null,
+    edgeCases: q.edgeCases || null,
+    problemExplanation: q.problemExplanation || null,
     // Sample cases only — hidden ones (used for real scoring) never leave the server.
     testCases: q.category === "CODING" ? splitInterviewCases(q.testCases).visible : undefined,
   };
@@ -754,14 +763,35 @@ router.get("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asyn
 
 router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { category, subject, company, aptitudeCategory, difficulty, prompt, expectedKeywords, modelAnswer, options, correctAnswer, explanation, starterCode, testCases, language, followUpQuestionId } = req.body;
+    const {
+      category, subject, company, aptitudeCategory, difficulty, title, prompt, expectedKeywords, modelAnswer, options, correctAnswer, explanation, starterCode, testCases, language, tags, followUpQuestionId,
+      estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes, edgeCases, problemExplanation,
+    } = req.body;
     if (!category || !prompt) return res.status(400).json({ error: "category and prompt are required" });
+    // CODING was previously the one category with no minimum test-case check at all (every other
+    // coding surface on the platform enforces this) — same 2 visible / 10 hidden bar as Question/
+    // PracticeQuestion. Unconditional (not gated on testCases being present) since this is
+    // creation — a CODING question with no test cases at all must never be allowed to exist,
+    // not just one with too few.
+    if (category === "CODING") {
+      const cases = Array.isArray(testCases) ? testCases : [];
+      if (cases.filter((tc) => !tc.isHidden).length < 2) {
+        return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
+      }
+      if (cases.filter((tc) => tc.isHidden).length < 10) {
+        return res.status(400).json({ error: "Each coding question needs at least 10 hidden test cases for final evaluation" });
+      }
+    }
     const q = await prisma.interviewQuestion.create({
       data: {
         category, subject: subject || null, company: company || null, aptitudeCategory: aptitudeCategory || null, difficulty: difficulty || "EASY",
-        prompt, expectedKeywords: expectedKeywords ?? undefined, modelAnswer: modelAnswer || null,
+        title: title || null, prompt, expectedKeywords: expectedKeywords ?? undefined, modelAnswer: modelAnswer || null,
         options: options ?? undefined, correctAnswer: correctAnswer ?? undefined, explanation: explanation || null,
         starterCode: starterCode || null, testCases: testCases ?? undefined, language: language || null,
+        tags: Array.isArray(tags) && tags.length > 0 ? tags : undefined,
+        estimatedTimeMin: estimatedTimeMin ?? null, realWorldScenario: realWorldScenario || null,
+        constraints: constraints || null, inputFormat: inputFormat || null, outputFormat: outputFormat || null,
+        notes: notes || null, edgeCases: edgeCases || null, problemExplanation: problemExplanation || null,
         followUpQuestionId: followUpQuestionId || null,
       },
     });
@@ -774,7 +804,21 @@ router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asy
 
 router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const fields = ["category", "subject", "company", "aptitudeCategory", "difficulty", "prompt", "expectedKeywords", "modelAnswer", "options", "correctAnswer", "explanation", "starterCode", "testCases", "language", "isActive", "followUpQuestionId"];
+    const existing = await prisma.interviewQuestion.findUnique({ where: { id: req.params.id }, select: { category: true } });
+    const effectiveCategory = req.body.category !== undefined ? req.body.category : existing?.category;
+    if (effectiveCategory === "CODING" && Array.isArray(req.body.testCases)) {
+      if (req.body.testCases.filter((tc) => !tc.isHidden).length < 2) {
+        return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
+      }
+      if (req.body.testCases.filter((tc) => tc.isHidden).length < 10) {
+        return res.status(400).json({ error: "Each coding question needs at least 10 hidden test cases for final evaluation" });
+      }
+    }
+    const fields = [
+      "category", "subject", "company", "aptitudeCategory", "difficulty", "title", "prompt", "expectedKeywords", "modelAnswer",
+      "options", "correctAnswer", "explanation", "starterCode", "testCases", "language", "tags", "isActive", "followUpQuestionId",
+      "estimatedTimeMin", "realWorldScenario", "constraints", "inputFormat", "outputFormat", "notes", "edgeCases", "problemExplanation",
+    ];
     const data = {};
     for (const f of fields) if (req.body[f] !== undefined) data[f] = f === "isActive" ? !!req.body[f] : req.body[f];
     const q = await prisma.interviewQuestion.update({ where: { id: req.params.id }, data });
@@ -842,6 +886,14 @@ router.post("/admin/questions/import", authenticate, requireRole("ADMIN", "STAFF
         errors.push({ row: rowNum, reason: "Missing prompt" });
         continue;
       }
+      const parsedTestCases = row.testCases ? (() => { try { return JSON.parse(row.testCases); } catch { return null; } })() : null;
+      if (category === "CODING") {
+        const cases = Array.isArray(parsedTestCases) ? parsedTestCases : [];
+        if (cases.filter((tc) => !tc.isHidden).length < 2 || cases.filter((tc) => tc.isHidden).length < 10) {
+          errors.push({ row: rowNum, reason: "Coding questions need testCases as a JSON array with at least 2 visible and 10 hidden cases" });
+          continue;
+        }
+      }
       try {
         await prisma.interviewQuestion.create({
           data: {
@@ -853,7 +905,7 @@ router.post("/admin/questions/import", authenticate, requireRole("ADMIN", "STAFF
             options: row.options ? String(row.options).split("|").map((s) => s.trim()).filter(Boolean) : undefined,
             correctAnswer: row.correctAnswer !== "" && row.correctAnswer !== undefined ? Number(row.correctAnswer) : undefined,
             explanation: row.explanation || null, starterCode: row.starterCode || null,
-            testCases: row.testCases ? (() => { try { return JSON.parse(row.testCases); } catch { return undefined; } })() : undefined,
+            testCases: parsedTestCases ?? undefined,
             language: row.language || null,
           },
         });

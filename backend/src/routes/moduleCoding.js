@@ -25,7 +25,16 @@ function sanitizeQuestion(q) {
     // editor load the actually-correct template per language instead of showing one language's
     // starter code regardless of which language the student picked.
     starterCodeByLanguage: q.starterCodeByLanguage || null,
-    testCases: (q.testCases || []).filter((tc) => !tc.isHidden).map((tc) => ({ input: tc.input, expected: tc.expected })),
+    tags: q.tags || null,
+    estimatedTimeMin: q.estimatedTimeMin ?? null,
+    realWorldScenario: q.realWorldScenario || null,
+    constraints: q.constraints || null,
+    inputFormat: q.inputFormat || null,
+    outputFormat: q.outputFormat || null,
+    notes: q.notes || null,
+    edgeCases: q.edgeCases || null,
+    problemExplanation: q.problemExplanation || null,
+    testCases: (q.testCases || []).filter((tc) => !tc.isHidden).map((tc) => ({ input: tc.input, expected: tc.expected, explanation: tc.explanation || null })),
   };
 }
 
@@ -442,22 +451,35 @@ router.delete("/admin/tests/:id", authenticate, requireRole("ADMIN"), async (req
 
 router.post("/admin/tests/:id/questions", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { title, description, difficulty, timeLimitMs, starterCode, starterCodeByLanguage, testCases } = req.body;
+    const {
+      title, description, difficulty, timeLimitMs, starterCode, starterCodeByLanguage, testCases,
+      estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes,
+      edgeCases, problemExplanation, tags,
+    } = req.body;
     if (!description) return res.status(400).json({ error: "description is required" });
     const cases = Array.isArray(testCases) ? testCases : [];
     if (cases.filter((tc) => !tc.isHidden).length < 2) {
       return res.status(400).json({ error: "Each question needs at least 2 visible sample test cases" });
     }
-    if (cases.filter((tc) => tc.isHidden).length < 2) {
-      return res.status(400).json({ error: "Each question needs at least 2 hidden test cases for final evaluation" });
+    if (cases.filter((tc) => tc.isHidden).length < 10) {
+      return res.status(400).json({ error: "Each question needs at least 10 hidden test cases for final evaluation" });
     }
     const q = await prisma.question.create({
       data: {
         title: title || null, description, difficulty: difficulty || "EASY",
         questionType: "CODING", timeLimitMs: Number(timeLimitMs) || 2000, starterCode: starterCode || null,
         starterCodeByLanguage: starterCodeByLanguage && Object.keys(starterCodeByLanguage).length > 0 ? starterCodeByLanguage : undefined,
+        tags: Array.isArray(tags) && tags.length > 0 ? tags : undefined,
+        estimatedTimeMin: estimatedTimeMin ?? null,
+        realWorldScenario: realWorldScenario || null,
+        constraints: constraints || null,
+        inputFormat: inputFormat || null,
+        outputFormat: outputFormat || null,
+        notes: notes || null,
+        edgeCases: edgeCases || null,
+        problemExplanation: problemExplanation || null,
         moduleCodingTestId: req.params.id,
-        testCases: { create: cases.map((tc) => ({ input: tc.input || "", expected: tc.expected || "", isHidden: !!tc.isHidden })) },
+        testCases: { create: cases.map((tc) => ({ input: tc.input || "", expected: tc.expected || "", isHidden: !!tc.isHidden, explanation: tc.explanation || null })) },
       },
       include: { testCases: true },
     });
@@ -470,7 +492,11 @@ router.post("/admin/tests/:id/questions", authenticate, requireRole("ADMIN", "ST
 
 router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { title, description, difficulty, timeLimitMs, starterCode, starterCodeByLanguage, testCases } = req.body;
+    const {
+      title, description, difficulty, timeLimitMs, starterCode, starterCodeByLanguage, testCases,
+      estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes,
+      edgeCases, problemExplanation, tags,
+    } = req.body;
     const data = {};
     if (title !== undefined) data.title = title;
     if (description !== undefined) data.description = description;
@@ -478,16 +504,25 @@ router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF")
     if (timeLimitMs !== undefined) data.timeLimitMs = Number(timeLimitMs);
     if (starterCode !== undefined) data.starterCode = starterCode;
     if (starterCodeByLanguage !== undefined) data.starterCodeByLanguage = starterCodeByLanguage;
+    if (tags !== undefined) data.tags = Array.isArray(tags) && tags.length > 0 ? tags : null;
+    if (estimatedTimeMin !== undefined) data.estimatedTimeMin = estimatedTimeMin;
+    if (realWorldScenario !== undefined) data.realWorldScenario = realWorldScenario;
+    if (constraints !== undefined) data.constraints = constraints;
+    if (inputFormat !== undefined) data.inputFormat = inputFormat;
+    if (outputFormat !== undefined) data.outputFormat = outputFormat;
+    if (notes !== undefined) data.notes = notes;
+    if (edgeCases !== undefined) data.edgeCases = edgeCases;
+    if (problemExplanation !== undefined) data.problemExplanation = problemExplanation;
 
     if (Array.isArray(testCases)) {
       if (testCases.filter((tc) => !tc.isHidden).length < 2) {
         return res.status(400).json({ error: "Each question needs at least 2 visible sample test cases" });
       }
-      if (testCases.filter((tc) => tc.isHidden).length < 2) {
-        return res.status(400).json({ error: "Each question needs at least 2 hidden test cases for final evaluation" });
+      if (testCases.filter((tc) => tc.isHidden).length < 10) {
+        return res.status(400).json({ error: "Each question needs at least 10 hidden test cases for final evaluation" });
       }
       await prisma.testCase.deleteMany({ where: { questionId: req.params.id } });
-      data.testCases = { create: testCases.map((tc) => ({ input: tc.input || "", expected: tc.expected || "", isHidden: !!tc.isHidden })) };
+      data.testCases = { create: testCases.map((tc) => ({ input: tc.input || "", expected: tc.expected || "", isHidden: !!tc.isHidden, explanation: tc.explanation || null })) };
     }
     const q = await prisma.question.update({ where: { id: req.params.id }, data, include: { testCases: true } });
     res.json(q);

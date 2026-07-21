@@ -36,6 +36,16 @@ function sanitizeQuestion(q) {
     id: q.id, type: q.type, prompt: q.prompt, options: q.options,
     starterCode: q.starterCode, language: q.language, order: q.order,
     testCases: q.type === "CODING" ? (Array.isArray(q.testCases) ? q.testCases.filter((tc) => !tc.isHidden) : []) : undefined,
+    // Descriptive-only fields, never reveal an answer — safe to send to every student.
+    title: q.title || null, tags: q.tags || null, difficulty: q.difficulty,
+    estimatedTimeMin: q.estimatedTimeMin ?? null,
+    realWorldScenario: q.realWorldScenario || null,
+    constraints: q.constraints || null,
+    inputFormat: q.inputFormat || null,
+    outputFormat: q.outputFormat || null,
+    notes: q.notes || null,
+    edgeCases: q.edgeCases || null,
+    problemExplanation: q.problemExplanation || null,
   };
 }
 
@@ -756,23 +766,37 @@ router.delete("/lessons/:id", authenticate, requireRole("ADMIN", "STAFF"), async
 
 router.post("/lessons/:id/questions", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { type, prompt, options, correctAnswer, explanation, starterCode, testCases, language, order } = req.body;
+    const {
+      type, prompt, options, correctAnswer, explanation, starterCode, testCases, language, order,
+      title, tags, estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat,
+      notes, edgeCases, problemExplanation,
+    } = req.body;
     if (!type || !prompt) return res.status(400).json({ error: "type and prompt are required" });
     if (type === "CODING") {
       const cases = Array.isArray(testCases) ? testCases : [];
       if (cases.filter((tc) => !tc.isHidden).length < 2) {
         return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
       }
-      if (cases.filter((tc) => tc.isHidden).length < 2) {
-        return res.status(400).json({ error: "Each coding question needs at least 2 hidden test cases for final evaluation" });
+      if (cases.filter((tc) => tc.isHidden).length < 10) {
+        return res.status(400).json({ error: "Each coding question needs at least 10 hidden test cases for final evaluation" });
       }
     }
     const q = await prisma.practiceQuestion.create({
       data: {
         lessonId: req.params.id, type, prompt,
+        title: title || null,
         options: options ?? undefined, correctAnswer: correctAnswer ?? undefined,
         explanation: explanation || null, starterCode: starterCode || null,
         testCases: testCases ?? undefined, language: language || null, order: Number(order) || 0,
+        tags: Array.isArray(tags) && tags.length > 0 ? tags : undefined,
+        estimatedTimeMin: estimatedTimeMin ?? null,
+        realWorldScenario: realWorldScenario || null,
+        constraints: constraints || null,
+        inputFormat: inputFormat || null,
+        outputFormat: outputFormat || null,
+        notes: notes || null,
+        edgeCases: edgeCases || null,
+        problemExplanation: problemExplanation || null,
       },
     });
     res.json(q);
@@ -784,7 +808,11 @@ router.post("/lessons/:id/questions", authenticate, requireRole("ADMIN", "STAFF"
 
 router.patch("/practice/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { type, prompt, options, correctAnswer, explanation, starterCode, testCases, language, order } = req.body;
+    const {
+      type, prompt, options, correctAnswer, explanation, starterCode, testCases, language, order,
+      title, tags, estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat,
+      notes, edgeCases, problemExplanation,
+    } = req.body;
     if (testCases !== undefined) {
       const existing = await prisma.practiceQuestion.findUnique({ where: { id: req.params.id }, select: { type: true } });
       const effectiveType = type !== undefined ? type : existing?.type;
@@ -793,8 +821,8 @@ router.patch("/practice/:id", authenticate, requireRole("ADMIN", "STAFF"), async
         if (cases.filter((tc) => !tc.isHidden).length < 2) {
           return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
         }
-        if (cases.filter((tc) => tc.isHidden).length < 2) {
-          return res.status(400).json({ error: "Each coding question needs at least 2 hidden test cases for final evaluation" });
+        if (cases.filter((tc) => tc.isHidden).length < 10) {
+          return res.status(400).json({ error: "Each coding question needs at least 10 hidden test cases for final evaluation" });
         }
       }
     }
@@ -803,6 +831,7 @@ router.patch("/practice/:id", authenticate, requireRole("ADMIN", "STAFF"), async
       data: {
         ...(type !== undefined ? { type } : {}),
         ...(prompt !== undefined ? { prompt } : {}),
+        ...(title !== undefined ? { title } : {}),
         ...(options !== undefined ? { options } : {}),
         ...(correctAnswer !== undefined ? { correctAnswer } : {}),
         ...(explanation !== undefined ? { explanation } : {}),
@@ -810,6 +839,15 @@ router.patch("/practice/:id", authenticate, requireRole("ADMIN", "STAFF"), async
         ...(testCases !== undefined ? { testCases } : {}),
         ...(language !== undefined ? { language } : {}),
         ...(order !== undefined ? { order: Number(order) } : {}),
+        ...(tags !== undefined ? { tags: Array.isArray(tags) && tags.length > 0 ? tags : null } : {}),
+        ...(estimatedTimeMin !== undefined ? { estimatedTimeMin } : {}),
+        ...(realWorldScenario !== undefined ? { realWorldScenario } : {}),
+        ...(constraints !== undefined ? { constraints } : {}),
+        ...(inputFormat !== undefined ? { inputFormat } : {}),
+        ...(outputFormat !== undefined ? { outputFormat } : {}),
+        ...(notes !== undefined ? { notes } : {}),
+        ...(edgeCases !== undefined ? { edgeCases } : {}),
+        ...(problemExplanation !== undefined ? { problemExplanation } : {}),
       },
     });
     res.json(q);
