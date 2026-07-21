@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   PlayCircle, Code2, LineChart, Trophy, FileText, Mic, UserCircle,
@@ -34,16 +34,45 @@ export default function StudentDashboard() {
   const [gami, setGami] = useState(null);
   const [interviewSummary, setInterviewSummary] = useState(null);
   const [resumeCompletion, setResumeCompletion] = useState(null);
-  const [error, setError] = useState("");
+  // Distinct from "still loading" — the summary cards are the one piece of this page with no
+  // sane empty-state fallback (every other section already tolerates its own fetch failing
+  // silently, per the individual .catch()es below), so a failure here gets its own retry UI
+  // instead of leaving the skeleton spinning forever alongside a raw error string.
+  const [dashError, setDashError] = useState(false);
+  const [dashRetrying, setDashRetrying] = useState(false);
+  const autoRetriedRef = useRef(false);
+
+  function loadDashSummary() {
+    setDashError(false);
+    return api.get("/dashboard/student").then((res) => setDash(res.data)).catch(() => {
+      // One silent automatic retry (transient network blips are the common case) before
+      // surfacing anything to the student — never the raw backend error message.
+      if (!autoRetriedRef.current) {
+        autoRetriedRef.current = true;
+        return new Promise((resolve) => setTimeout(resolve, 1500))
+          .then(() => api.get("/dashboard/student"))
+          .then((res) => setDash(res.data))
+          .catch(() => setDashError(true));
+      }
+      setDashError(true);
+    });
+  }
 
   useEffect(() => {
-    api.get("/dashboard/student").then((res) => setDash(res.data)).catch(() => setError("Failed to load dashboard summary"));
+    loadDashSummary();
     api.get("/tests").then((res) => setTests(res.data)).catch(() => setTests([]));
     api.get("/learning/courses/java").then((res) => setLearning(res.data)).catch(() => setLearning(null));
     api.get("/gamification/me").then((res) => setGami(res.data)).catch(() => setGami(null));
     api.get("/interview/summary").then((res) => setInterviewSummary(res.data)).catch(() => setInterviewSummary(null));
     api.get("/resume/me").then((res) => setResumeCompletion(res.data.completion?.percent ?? 0)).catch(() => setResumeCompletion(0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function retryDashSummary() {
+    setDashRetrying(true);
+    autoRetriedRef.current = true; // manual retry counts as the one retry too — no auto-retry loop after this
+    loadDashSummary().finally(() => setDashRetrying(false));
+  }
 
   // Placement Readiness Score — a genuine composite of real signals already on this page (no
   // separate "AI model," consistent with every other "recommendation"/"score" on this platform):
@@ -81,7 +110,7 @@ export default function StudentDashboard() {
     .filter((t) => !statusOf(t).completed)
     .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 
-  const loading = !dash || tests === null;
+  const loading = (!dash && !dashError) || tests === null;
 
   return (
     <div>
@@ -94,8 +123,6 @@ export default function StudentDashboard() {
           </div>
           <QuickActions learningResumeId={learning?.resumeLessonId} />
         </div>
-
-        {error && <p style={{ color: "var(--rust)", marginTop: 16 }}>{error}</p>}
 
         {/* Placement Readiness Score — composite of average score, learning progress, certificates,
             resume completeness, and interview average (see comment near readinessScore above) */}
@@ -145,60 +172,66 @@ export default function StudentDashboard() {
         )}
 
         {/* Summary cards */}
-        <div style={{ display: loading ? "block" : "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 24 }}>
-          {loading
-            ? <SkeletonGrid count={10} minWidth={150} />
-            : CARD_DEFS.map((c) => (
-                <DashboardCard
-                  key={c.key}
-                  icon={c.icon}
-                  label={c.label}
-                  color={c.color}
-                  value={
-                    c.key === "rank"
-                      ? dash.cards.rank ? `#${dash.cards.rank}/${dash.cards.totalStudentsInClass}` : "—"
-                      : `${dash.cards[c.key] ?? 0}${c.suffix || ""}`
-                  }
-                />
-              ))}
-        </div>
+        {dashError ? (
+          <DashSummaryError onRetry={retryDashSummary} retrying={dashRetrying} style={{ marginTop: 24 }} />
+        ) : (
+          <>
+            <div style={{ display: loading ? "block" : "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 24 }}>
+              {loading
+                ? <SkeletonGrid count={10} minWidth={150} />
+                : CARD_DEFS.map((c) => (
+                    <DashboardCard
+                      key={c.key}
+                      icon={c.icon}
+                      label={c.label}
+                      color={c.color}
+                      value={
+                        c.key === "rank"
+                          ? dash.cards.rank ? `#${dash.cards.rank}/${dash.cards.totalStudentsInClass}` : "—"
+                          : `${dash.cards[c.key] ?? 0}${c.suffix || ""}`
+                      }
+                    />
+                  ))}
+            </div>
 
-        {/* Recent activity + notifications */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 20, marginTop: 32 }}>
-          <Section title="Recent Activity">
-            {loading ? (
-              <SkeletonLines count={4} />
-            ) : dash.recentActivity.length === 0 ? (
-              <EmptyState text="No activity yet — start a test or a lesson to see it here." />
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {dash.recentActivity.map((a, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
-                    <span>{a.text}</span>
-                    <span className="mono" style={{ color: "var(--ink-dim)", fontSize: 11, whiteSpace: "nowrap" }}>{new Date(a.date).toLocaleString()}</span>
+            {/* Recent activity + notifications */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 20, marginTop: 32 }}>
+              <Section title="Recent Activity">
+                {loading ? (
+                  <SkeletonLines count={4} />
+                ) : dash.recentActivity.length === 0 ? (
+                  <EmptyState text="No activity yet — start a test or a lesson to see it here." />
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {dash.recentActivity.map((a, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
+                        <span>{a.text}</span>
+                        <span className="mono" style={{ color: "var(--ink-dim)", fontSize: 11, whiteSpace: "nowrap" }}>{new Date(a.date).toLocaleString()}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </Section>
+                )}
+              </Section>
 
-          <Section title="Notifications">
-            {loading ? (
-              <SkeletonLines count={4} />
-            ) : dash.notifications.length === 0 ? (
-              <EmptyState text="You're all caught up — no new notifications." />
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {dash.notifications.map((n, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
-                    <span><NotificationIcon type={n.type} />{n.text}</span>
-                    <span className="mono" style={{ color: "var(--ink-dim)", fontSize: 11, whiteSpace: "nowrap" }}>{new Date(n.date).toLocaleDateString()}</span>
+              <Section title="Notifications">
+                {loading ? (
+                  <SkeletonLines count={4} />
+                ) : dash.notifications.length === 0 ? (
+                  <EmptyState text="You're all caught up — no new notifications." />
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {dash.notifications.map((n, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
+                        <span><NotificationIcon type={n.type} />{n.text}</span>
+                        <span className="mono" style={{ color: "var(--ink-dim)", fontSize: 11, whiteSpace: "nowrap" }}>{new Date(n.date).toLocaleDateString()}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </Section>
-        </div>
+                )}
+              </Section>
+            </div>
+          </>
+        )}
 
         {/* Upcoming tests */}
         <Section title="Upcoming Tests" style={{ marginTop: 24 }}>
@@ -259,6 +292,8 @@ export default function StudentDashboard() {
         <Section title="Performance Summary" style={{ marginTop: 24 }}>
           {loading ? (
             <SkeletonLines count={2} />
+          ) : dashError ? (
+            <EmptyState text="Performance summary is unavailable right now." />
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16 }}>
               <MiniStat label="Highest Score" value={dash.performanceSummary.highest ? `${dash.performanceSummary.highest.percentage}%` : "—"} />
@@ -274,6 +309,8 @@ export default function StudentDashboard() {
         <Section title="Recent Test Results" style={{ marginTop: 24 }}>
           {loading ? (
             <SkeletonLines count={3} />
+          ) : dashError ? (
+            <EmptyState text="Recent test results are unavailable right now." />
           ) : dash.recentTestResults.length === 0 ? (
             <EmptyState text="No completed tests yet." />
           ) : (
@@ -348,6 +385,20 @@ function Section({ title, children, style }) {
 
 function EmptyState({ text }) {
   return <p style={{ color: "var(--ink-dim)", fontSize: 13, textAlign: "center", padding: "12px 0" }}>{text}</p>;
+}
+
+function DashSummaryError({ onRetry, retrying, style }) {
+  return (
+    <div className="card" style={{ padding: 28, textAlign: "center", ...style }}>
+      <p style={{ fontSize: 14, fontWeight: 600 }}>Unable to load your dashboard right now.</p>
+      <p style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 4 }}>
+        Please refresh the page or try again in a few moments.
+      </p>
+      <button className="btn btn-dark" style={{ marginTop: 14 }} onClick={onRetry} disabled={retrying}>
+        {retrying ? "Retrying…" : "Try again"}
+      </button>
+    </div>
+  );
 }
 
 function SkeletonLines({ count }) {

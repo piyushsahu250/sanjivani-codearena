@@ -50,8 +50,11 @@ async function buildAutofillData(studentId) {
     });
   }
 
+  // course is only populated for LEARNING_MODULE-type certificates — MANUAL and
+  // CODING_ASSESSMENT certs have no course, so this falls back to the certificate's own
+  // title/programName (and a generic label, never "undefined") instead of crashing.
   const certifications = certificates.map((c) => ({
-    name: `${c.course.name} Course Completion`,
+    name: c.course ? `${c.course.name} Course Completion` : (c.programName || c.title || "CodeArena Certificate"),
     org: "CodeArena",
     issueDate: new Date(c.issuedAt).toISOString().slice(0, 10),
     expiryDate: "",

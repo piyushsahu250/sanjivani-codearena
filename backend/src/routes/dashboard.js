@@ -36,7 +36,7 @@ async function getRecentActivity(studentId) {
     }),
     prisma.certificate.findMany({
       where: { studentId },
-      select: { issuedAt: true, course: { select: { name: true } } },
+      select: { issuedAt: true, title: true, programName: true, course: { select: { name: true } } },
       orderBy: { issuedAt: "desc" }, take: 3,
     }),
     prisma.practiceRunLog.findMany({
@@ -53,7 +53,10 @@ async function getRecentActivity(studentId) {
       text: p.lesson.isModuleTest ? `Passed the "${p.lesson.module.title}" practice test` : `Finished "${p.lesson.title}" (${p.lesson.module.title})`,
       date: p.completedAt,
     })),
-    ...certificates.map((c) => ({ type: "certificate", text: `Earned the ${c.course.name} certificate`, date: c.issuedAt })),
+    // course is only populated for LEARNING_MODULE-type certificates — MANUAL and
+    // CODING_ASSESSMENT certs (added when Certificates were unified across types) have no
+    // course, so this falls back to the certificate's own title/programName instead of crashing.
+    ...certificates.map((c) => ({ type: "certificate", text: `Earned the ${c.course?.name || c.programName || c.title} certificate`, date: c.issuedAt })),
     ...runs.map((r) => ({
       type: "coding",
       text: `Solved a coding practice problem: "${r.question.prompt.length > 60 ? `${r.question.prompt.slice(0, 60)}…` : r.question.prompt}"`,
@@ -111,10 +114,10 @@ async function getNotifications(student) {
 
   const recentCerts = await prisma.certificate.findMany({
     where: { studentId: student.id, issuedAt: { gte: last7d } },
-    select: { issuedAt: true, course: { select: { name: true } } },
+    select: { issuedAt: true, title: true, programName: true, course: { select: { name: true } } },
   });
   for (const c of recentCerts) {
-    notifications.push({ type: "certificate", text: `You earned the ${c.course.name} certificate!`, date: c.issuedAt });
+    notifications.push({ type: "certificate", text: `You earned the ${c.course?.name || c.programName || c.title} certificate!`, date: c.issuedAt });
   }
 
   return notifications.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
@@ -140,6 +143,10 @@ router.get("/student", authenticate, requireRole("STUDENT"), async (req, res) =>
       getNotifications(student),
       prisma.course.findUnique({ where: { slug: "java" } }),
     ]);
+    // computeStudentPerformance only returns null if the student row vanished between the
+    // findUnique above and this call (e.g. deleted by an admin mid-request) — vanishingly rare,
+    // but worth a clear error over a null-dereference crash a few lines down.
+    if (!perf) return res.status(404).json({ error: "Student not found" });
 
     let learningProgressPercent = 0;
     if (javaCourse) {
@@ -179,7 +186,12 @@ router.get("/student", authenticate, requireRole("STUDENT"), async (req, res) =>
       notifications,
     });
   } catch (err) {
-    console.error(err);
+    // Detailed context server-side only — the client only ever sees the generic message below,
+    // never a stack trace or internal field names.
+    console.error("[dashboard/student] failed", {
+      userId: req.user?.id, role: req.user?.role, endpoint: req.originalUrl,
+      timestamp: new Date().toISOString(), error: err.message, stack: err.stack,
+    });
     res.status(500).json({ error: "Failed to load dashboard" });
   }
 });
