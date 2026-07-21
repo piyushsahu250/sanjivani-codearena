@@ -170,6 +170,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Methods": {
+    title: "Module 4 Coding Assessment",
+    instructions: "Solve every question by implementing the given method, applying the parameters/return-types/recursion concepts from this module.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Sum of Digits (Recursive)",
+        description: "Return the sum of the digits of the given non-negative integer, computed using recursion.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "123", expected: "6" },
+          { input: "9", expected: "9" },
+          { input: "1000", expected: "1" },
+        ],
+      },
+      {
+        title: "Power of a Number",
+        description: "Return base raised to the power exp (exp is a non-negative integer).",
+        difficulty: "EASY",
+        testCases: [
+          { input: "2\n10", expected: "1024" },
+          { input: "3\n0", expected: "1" },
+          { input: "5\n3", expected: "125" },
+        ],
+      },
+      {
+        title: "Palindrome Number Check",
+        description: "Return true if the given integer reads the same forwards and backwards. Negative numbers are never palindromes.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "121", expected: "true" },
+          { input: "123", expected: "false" },
+          { input: "-121", expected: "false" },
+        ],
+      },
+      {
+        title: "Sum of Array (Recursive)",
+        description: "Return the sum of all elements in the given array, computed using recursion.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "1 2 3 4 5", expected: "15" },
+          { input: "0", expected: "0" },
+          { input: "10", expected: "10" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {

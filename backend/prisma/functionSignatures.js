@@ -28,6 +28,10 @@ const MODULE_CODING_SIGNATURES = {
   "Day Number to Name": { methodName: "dayName", returnType: "string", params: [{ name: "day", type: "int" }] },
   "FizzBuzz": { methodName: "fizzBuzz", returnType: "string", params: [{ name: "n", type: "int" }] },
   "Prime Check": { methodName: "isPrime", returnType: "boolean", params: [{ name: "n", type: "int" }] },
+  "Sum of Digits (Recursive)": { methodName: "sumOfDigitsRecursive", returnType: "int", params: [{ name: "n", type: "int" }] },
+  "Power of a Number": { methodName: "power", returnType: "long", params: [{ name: "base", type: "int" }, { name: "exp", type: "int" }] },
+  "Palindrome Number Check": { methodName: "isPalindromeNumber", returnType: "boolean", params: [{ name: "n", type: "int" }] },
+  "Sum of Array (Recursive)": { methodName: "sumOfArrayRecursive", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -41,6 +45,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "gradeForScore", returnType: "string", params: [{ name: "score", type: "int" }] },
   "Read one integer N and print the sum of all even numbers from 1 to N (inclusive).":
     { methodName: "sumOfEvens", returnType: "int", params: [{ name: "n", type: "int" }] },
+  "Read two integers M and N and print their greatest common divisor (GCD), computed using recursion (Euclidean algorithm).":
+    { methodName: "gcd", returnType: "int", params: [{ name: "a", type: "int" }, { name: "b", type: "int" }] },
+  "Read one integer and print \"true\" if it is a power of two, or \"false\" otherwise.":
+    { methodName: "isPowerOfTwo", returnType: "boolean", params: [{ name: "n", type: "int" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {

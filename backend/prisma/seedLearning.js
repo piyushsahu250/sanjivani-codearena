@@ -610,12 +610,186 @@ const MODULE3_CODING = [
   },
 ];
 
-// Modules 4-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE4_LESSONS = [
+  {
+    title: "Methods",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation:
+        "A method is a named, reusable block of code that performs a specific task. Methods let you break a program into smaller, testable pieces and avoid repeating the same code (DRY — Don't Repeat Yourself).",
+      syntax: "accessModifier returnType methodName(parameterList) {\n    // method body\n    return value; // only if returnType is not void\n}",
+      example:
+        "public class Calculator {\n    public static int square(int n) {\n        return n * n;\n    }\n\n    public static void main(String[] args) {\n        int result = square(5); // calling the method\n        System.out.println(result); // 25\n    }\n}",
+      notes: [
+        "A method must be declared inside a class — Java has no free-standing functions.",
+        "<code>static</code> methods (like <code>main</code>) can be called without creating an object; instance methods require an object of the class.",
+      ],
+      mistakes: ["Forgetting parentheses when calling a method with no arguments — a method name alone, without <code>()</code>, refers to the method itself, not a call, and is a compile error in that position."],
+      bestPractices: ["Keep each method focused on a single task — if you find yourself describing a method with \"and\", it's a sign to split it into two."],
+    }),
+  },
+  {
+    title: "Parameters",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "Parameters are the inputs a method accepts, declared in its signature. The values passed in when calling the method are called arguments.",
+      syntax: "returnType methodName(type1 param1, type2 param2) {\n    // use param1, param2 inside the method\n}",
+      example: "public static int add(int a, int b) {\n    return a + b;\n}\n\nint sum = add(3, 4); // 3 and 4 are the arguments; a and b are the parameters",
+      notes: [
+        "Java is strictly pass-by-value: for primitives, a COPY of the value is passed, so changes to a parameter inside the method never affect the caller's original variable.",
+        "For objects/arrays, the reference itself is passed by value — the method can modify the object's contents through that reference, but reassigning the parameter to a new object inside the method doesn't affect the caller's reference.",
+      ],
+      mistakes: ["Assuming Java passes objects \"by reference\" the way some other languages do — Java always passes the reference by value; you can mutate the object it points to, but you can't make the caller's variable point to a different object."],
+    }),
+  },
+  {
+    title: "Return Types",
+    estimatedMinutes: 8,
+    content: lessonHTML({
+      explanation: "A method's return type, declared before its name, specifies what kind of value it gives back to the caller. <code>void</code> means the method returns nothing.",
+      syntax: "returnType methodName(...) {\n    return value; // value's type must match returnType\n}\n\nvoid methodName(...) {\n    // no return statement needed, or a bare 'return;' to exit early\n}",
+      example:
+        "public static boolean isEven(int n) {\n    return n % 2 == 0;\n}\n\npublic static void printGreeting(String name) {\n    System.out.println(\"Hello, \" + name);\n    // no return needed — void method\n}",
+      notes: [
+        "Every code path in a non-void method must return a value, or the code fails to compile (\"missing return statement\").",
+        "A <code>return</code> statement immediately exits the method — any code after it in the same block never runs.",
+      ],
+      mistakes: ["Writing an if-else where only one branch returns a value and forgetting the other branch also needs one — the compiler rejects this as a missing return statement on the path where the condition is false."],
+    }),
+  },
+  {
+    title: "Method Overloading",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation:
+        "Method overloading lets a class have multiple methods with the SAME name but DIFFERENT parameter lists (different number, type, or order of parameters). The compiler picks the right one to call based on the arguments provided.",
+      syntax: "returnType methodName(int a) { ... }\nreturnType methodName(int a, int b) { ... }\nreturnType methodName(double a) { ... }",
+      example:
+        "public static int max(int a, int b) {\n    return a > b ? a : b;\n}\n\npublic static double max(double a, double b) {\n    return a > b ? a : b;\n}\n\nmax(3, 5);      // calls the int version\nmax(3.5, 2.1);  // calls the double version",
+      notes: [
+        "Overloading is resolved at COMPILE time based on the argument types — this is different from overriding (a subclass changing an inherited method's behavior), which is resolved at runtime.",
+        "The return type ALONE is not enough to distinguish two overloads — two methods with the same name and parameter list but different return types will not compile.",
+      ],
+      mistakes: ["Trying to overload two methods that differ only in return type, e.g. <code>int getValue()</code> and <code>double getValue()</code> — this is a compile error because the compiler can't tell them apart from a call site."],
+    }),
+  },
+  {
+    title: "Recursion",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation:
+        "A recursive method is one that calls itself to solve a smaller instance of the same problem. Every recursive method needs a <strong>base case</strong> (a condition that stops the recursion) — without one, it recurses forever and eventually crashes with a <code>StackOverflowError</code>.",
+      syntax: "returnType recursiveMethod(params) {\n    if (baseCase) {\n        return baseResult; // stops the recursion\n    }\n    return recursiveMethod(smallerParams); // the recursive call\n}",
+      example: "public static long factorial(int n) {\n    if (n <= 1) {\n        return 1; // base case\n    }\n    return n * factorial(n - 1); // recursive case\n}\n\nfactorial(5); // 5 * 4 * 3 * 2 * 1 = 120",
+      notes: [
+        "Each recursive call adds a new frame to the call stack; very deep recursion (thousands of levels) can exhaust the stack even with a correct base case.",
+        "Any recursive solution can also be written iteratively (with a loop) — recursion is often more readable for naturally recursive problems (trees, divide-and-conquer) but isn't always the more efficient choice.",
+      ],
+      mistakes: ["Forgetting the base case entirely, or writing one that's never actually reached (e.g. the recursive call doesn't move the input closer to the base case) — both produce infinite recursion and a StackOverflowError."],
+    }),
+  },
+  {
+    title: "Variable Scope",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation:
+        "A variable's scope is the region of code where it can be accessed. Java has <strong>local</strong> scope (inside a method or block), <strong>instance</strong> scope (a non-static field, one copy per object), and <strong>static/class</strong> scope (a static field, one copy shared by the whole class).",
+      syntax: "public class Example {\n    static int classVar;    // static scope — shared by all instances\n    int instanceVar;        // instance scope — one copy per object\n\n    void method() {\n        int localVar = 5;   // local scope — exists only inside this method\n        {\n            int blockVar = 10; // block scope — exists only inside these braces\n        }\n    }\n}",
+      example:
+        "public static void main(String[] args) {\n    int x = 10;\n    if (x > 5) {\n        int y = 20; // y only exists inside this if-block\n        System.out.println(x + y); // 30 — x is visible here too\n    }\n    // System.out.println(y); // compile error — y is out of scope here\n}",
+      notes: [
+        "A local variable's scope ends at the closing brace of the block it's declared in — it doesn't exist outside that block.",
+        "A local variable with the same name as an instance/static field \"shadows\" the field inside that method — use <code>this.fieldName</code> to refer to the field explicitly when both exist.",
+      ],
+      mistakes: ["Trying to use a variable declared inside an if/for/while block outside of that block — the variable simply doesn't exist there, and this is a compile error, not a runtime surprise."],
+      bestPractices: ["Declare variables in the narrowest scope that works — a variable only needed inside a loop shouldn't be declared at the top of the whole method."],
+    }),
+  },
+];
+
+const MODULE4_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "Which of these is NOT one of Java's named variable scopes?",
+    options: ["Local", "Instance", "Static", "Global"],
+    correctAnswer: 3,
+    explanation: "Java has local, instance, and static scope — there is no \"global\" variable scope; the closest equivalent is a public static field, which is still class-scoped, not truly global.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\npublic static void modify(int x) {\n    x = 100;\n}\n\npublic static void main(String[] args) {\n    int a = 5;\n    modify(a);\n    System.out.println(a);\n}",
+    options: ["100", "5", "0", "Compile error"],
+    correctAnswer: 1,
+    explanation: "Java passes primitives by value — modify() receives a COPY of a's value. Reassigning the parameter x inside modify() has no effect on the caller's variable a.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What happens if a non-void method has a code path that doesn't reach a return statement?",
+    options: ["It returns null automatically", "It returns a default value (0/false) automatically", "Compile error: missing return statement", "Runtime exception when that path is hit"],
+    correctAnswer: 2,
+    explanation: "Java checks this at compile time — every path through a non-void method must return a value, or the code fails to compile.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which of these correctly distinguishes two overloaded methods?",
+    options: ["Same parameter list, different return type only", "Different number or types of parameters", "Different access modifier only (public vs private)", "Different method body only"],
+    correctAnswer: 1,
+    explanation: "Overload resolution is based on the parameter list (number, types, order) — return type alone, access modifier alone, or body alone cannot distinguish two overloads.",
+  },
+  {
+    type: "DEBUG",
+    prompt: "What is wrong with this recursive method?\n\npublic static int countDown(int n) {\n    System.out.println(n);\n    return countDown(n - 1);\n}",
+    options: ["Nothing, it works correctly", "It has no base case, so it recurses forever and throws StackOverflowError", "It won't compile without a for loop", "The return type should be void"],
+    correctAnswer: 1,
+    explanation: "There is no condition that stops the recursion, so countDown keeps calling itself with smaller values forever, eventually exhausting the call stack.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\npublic static int factorial(int n) {\n    if (n <= 1) return 1;\n    return n * factorial(n - 1);\n}\n\nSystem.out.println(factorial(4));",
+    options: ["24", "10", "4", "1"],
+    correctAnswer: 0,
+    explanation: "factorial(4) = 4 * 3 * 2 * 1 = 24.",
+  },
+  {
+    type: "MCQ",
+    prompt: "A local variable declared inside a for loop's body is accessible:",
+    options: ["Anywhere in the enclosing method", "Only inside that loop's block", "Anywhere in the class", "Only after the loop ends"],
+    correctAnswer: 1,
+    explanation: "A local variable's scope is limited to the block (the braces) it's declared in — it ceases to exist once that block ends.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "Given these two overloaded methods:\n\nstatic String describe(int x) { return \"int: \" + x; }\nstatic String describe(double x) { return \"double: \" + x; }\n\nWhat does describe(7) return?",
+    options: ["\"int: 7\"", "\"double: 7.0\"", "Compile error — ambiguous call", "Both methods run"],
+    correctAnswer: 0,
+    explanation: "7 is an int literal, which exactly matches the int overload — Java prefers an exact match over a widening conversion to double.",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as MODULE2_CODING/MODULE3_CODING — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below.
+const MODULE4_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read two integers M and N and print their greatest common divisor (GCD), computed using recursion (Euclidean algorithm).",
+    language: "java",
+    testCases: [{ input: "12\n18", expected: "6" }, { input: "17\n5", expected: "1" }, { input: "48\n18", expected: "6" }],
+    explanation: "gcd(a, b) = a when b is 0, otherwise gcd(b, a % b) — the classic recursive Euclidean algorithm.",
+  },
+  {
+    type: "CODING",
+    prompt: "Read one integer and print \"true\" if it is a power of two, or \"false\" otherwise.",
+    language: "java",
+    testCases: [{ input: "16", expected: "true" }, { input: "18", expected: "false" }, { input: "1", expected: "true" }],
+    explanation: "Repeatedly divide by 2 while the number is even and greater than 1 — if you land on exactly 1, it was a power of two.",
+  },
+];
+
+// Modules 5-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Methods", topics: ["Methods", "Parameters", "Return Types", "Method Overloading", "Recursion", "Variable Scope"], practiceLabel: "Practice Problems" },
   { title: "Arrays", topics: ["1D Arrays", "2D Arrays", "Array Operations", "Searching", "Sorting"], practiceLabel: "Coding Exercises" },
   { title: "Strings", topics: ["String", "StringBuilder", "StringBuffer", "String Methods", "Regular Expressions"], practiceLabel: "Coding Problems" },
   { title: "Object-Oriented Programming (OOP)", topics: ["Classes", "Objects", "Constructors", "Inheritance", "Polymorphism", "Abstraction", "Encapsulation", "Interfaces"], practiceLabel: "Mini Quiz & Coding Exercises" },
@@ -787,13 +961,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 4-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 4: full hand-authored content ---
+  const module4 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Methods" } },
+    update: {},
+    create: { courseId: course.id, title: "Methods", order: 3 },
+  });
+
+  for (let i = 0; i < MODULE4_LESSONS.length; i++) {
+    const l = MODULE4_LESSONS[i];
+    await upsertLessonContent(prisma, module4.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module4PracticeLesson = await upsertLessonContent(prisma, module4.id, "Practice Problems", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE4_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule4Practice = await prisma.practiceQuestion.count({ where: { lessonId: module4PracticeLesson.id } });
+  if (existingModule4Practice === 0) {
+    let order = 0;
+    for (const q of MODULE4_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module4PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE4_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module4PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 5-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 3 },
+      create: { courseId: course.id, title: spec.title, order: m + 4 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -815,7 +1029,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 3, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 4, "modules.");
 }
 
 module.exports = { seedLearningModule };
