@@ -1304,12 +1304,184 @@ const MODULE7_CODING = [
   },
 ];
 
-// Modules 8-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE8_LESSONS = [
+  {
+    title: "try",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "A <code>try</code> block wraps code that might throw an exception (a runtime error) — Java monitors this block, and if an exception occurs anywhere inside it, execution immediately jumps to a matching catch block instead of crashing the program.",
+      syntax: "try {\n    // code that might throw an exception\n} catch (ExceptionType e) {\n    // handle the exception\n}",
+      example: "try {\n    int result = 10 / 0; // throws ArithmeticException\n    System.out.println(\"This line never runs\");\n} catch (ArithmeticException e) {\n    System.out.println(\"Cannot divide by zero!\");\n}",
+      notes: [
+        "A try block MUST be followed by at least one catch block, a finally block, or both — a lone try with neither is a compile error.",
+        "The instant an exception is thrown inside a try block, ALL remaining code in that block is skipped — execution jumps straight to a matching catch.",
+      ],
+      mistakes: ["Wrapping an enormous amount of code in a single try block \"just in case\" — this makes it hard to tell which specific line could actually throw, and can accidentally swallow unrelated bugs. Keep try blocks focused on the risky operation."],
+    }),
+  },
+  {
+    title: "catch",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "A <code>catch</code> block handles a specific exception type thrown inside its try block. You can chain multiple catch blocks after one try to handle different exception types differently.",
+      syntax:
+        "try {\n    // risky code\n} catch (ArithmeticException e) {\n    // handles division by zero, etc.\n} catch (NullPointerException e) {\n    // handles null dereference\n} catch (Exception e) {\n    // catches anything else — must come LAST, since Exception is a supertype of the others\n}",
+      example: "try {\n    int[] arr = new int[3];\n    System.out.println(arr[5]);\n} catch (ArrayIndexOutOfBoundsException e) {\n    System.out.println(\"Invalid index: \" + e.getMessage());\n}",
+      notes: [
+        "Catch blocks are checked top to bottom, and only the FIRST matching one runs — order them from most specific to most general.",
+        "<code>e.getMessage()</code> returns a human-readable description of what went wrong; <code>e.printStackTrace()</code> prints the full call chain, useful for debugging.",
+      ],
+      mistakes: ["Ordering <code>catch (Exception e)</code> BEFORE a more specific catch like <code>catch (ArithmeticException e)</code> — this is actually a COMPILE ERROR in Java, since the specific catch becomes unreachable code."],
+      bestPractices: ["Never write an empty catch block (<code>catch (Exception e) {}</code>) — silently swallowing an exception hides real bugs. At minimum, log it."],
+    }),
+  },
+  {
+    title: "finally",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "A <code>finally</code> block, if present, ALWAYS runs after the try/catch — whether an exception was thrown or not, and even if the try or catch block returns early. It's the standard place to release resources (close files, database connections, etc.).",
+      syntax: "try {\n    // risky code\n} catch (Exception e) {\n    // handle it\n} finally {\n    // ALWAYS runs — cleanup code goes here\n}",
+      example:
+        "try {\n    System.out.println(\"Trying...\");\n    throw new RuntimeException(\"Oops\");\n} catch (RuntimeException e) {\n    System.out.println(\"Caught: \" + e.getMessage());\n} finally {\n    System.out.println(\"Finally block always runs\");\n}\n// Trying...\n// Caught: Oops\n// Finally block always runs",
+      notes: [
+        "finally runs even if the try or catch block contains a return statement — the return value is computed first, then finally runs, THEN the method actually returns.",
+        "The only way finally does NOT run is if the JVM itself exits (<code>System.exit()</code>) or crashes during the try/catch.",
+      ],
+      mistakes: ["Putting a return statement inside <code>finally</code> — this silently overrides any return value from the try or catch block, which is almost always a bug, not an intentional design choice."],
+    }),
+  },
+  {
+    title: "throw",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "The <code>throw</code> keyword manually raises an exception — used when your own code detects an invalid state and wants to signal an error, rather than waiting for the JVM to raise one on its own.",
+      syntax: "if (age < 0) {\n    throw new IllegalArgumentException(\"Age cannot be negative\");\n}",
+      example: "static int divide(int a, int b) {\n    if (b == 0) {\n        throw new ArithmeticException(\"Division by zero is not allowed\");\n    }\n    return a / b;\n}",
+      notes: [
+        "<code>throw</code> is followed by an actual exception OBJECT (<code>new SomeException(\"message\")</code>), not just a class name.",
+        "Once thrown, an exception propagates up the call stack until some caller's catch block handles it — if none does, the program terminates with a stack trace.",
+      ],
+      mistakes: ["Confusing <code>throw</code> (used inside a method body to actually raise an exception) with <code>throws</code> (used in a method signature to declare that it might raise one) — they look similar but do completely different things."],
+    }),
+  },
+  {
+    title: "throws",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "The <code>throws</code> keyword appears in a method's signature to declare that it might propagate a CHECKED exception to its caller, without handling it itself. This is Java's way of forcing callers to acknowledge the possibility.",
+      syntax:
+        "void readFile(String path) throws IOException {\n    // code that might throw IOException, not caught here\n}\n\n// the caller must either catch it or declare throws itself:\nvoid caller() throws IOException {\n    readFile(\"data.txt\");\n}",
+      example: "import java.io.*;\n\nstatic void readConfig() throws FileNotFoundException {\n    FileReader fr = new FileReader(\"config.txt\"); // can throw FileNotFoundException\n}",
+      notes: [
+        "Java distinguishes CHECKED exceptions (like <code>IOException</code>) — which the compiler forces you to either catch or declare with throws — from UNCHECKED exceptions (<code>RuntimeException</code> and its subclasses, like <code>ArithmeticException</code>/<code>NullPointerException</code>), which require neither.",
+        "A method can declare multiple exception types: <code>void method() throws IOException, SQLException</code>.",
+      ],
+      mistakes: ["Adding <code>throws Exception</code> to every method \"to be safe\" — this defeats the purpose of checked exceptions, since it tells callers nothing specific about what could actually go wrong."],
+    }),
+  },
+  {
+    title: "Custom Exceptions",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "You can define your own exception class by extending <code>Exception</code> (checked) or <code>RuntimeException</code> (unchecked), for errors specific to your application's domain that no built-in exception describes well.",
+      syntax: "class InsufficientFundsException extends Exception {\n    public InsufficientFundsException(String message) {\n        super(message); // pass the message up to Exception's constructor\n    }\n}",
+      example:
+        "class InsufficientFundsException extends Exception {\n    public InsufficientFundsException(String message) { super(message); }\n}\n\nstatic void withdraw(double balance, double amount) throws InsufficientFundsException {\n    if (amount > balance) {\n        throw new InsufficientFundsException(\"Cannot withdraw \" + amount + \", balance is only \" + balance);\n    }\n}",
+      notes: [
+        "Extend <code>Exception</code> when callers SHOULD be forced to handle the error (checked); extend <code>RuntimeException</code> when it represents a programming bug that shouldn't require every caller to catch it (unchecked).",
+        "A custom exception class is otherwise just a normal class — you can add extra fields (e.g. an error code) and methods beyond what Exception already provides.",
+      ],
+      mistakes: ["Extending <code>Throwable</code> or <code>Error</code> instead of <code>Exception</code>/<code>RuntimeException</code> — <code>Error</code> is reserved for serious JVM-level problems (like <code>OutOfMemoryError</code>) that application code should never try to handle."],
+      bestPractices: ["Give a custom exception a name ending in \"Exception\" and always call the <code>super(message)</code> constructor so <code>getMessage()</code> works correctly."],
+    }),
+  },
+];
+
+const MODULE8_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "What must follow a try block?",
+    options: ["Nothing, try can stand alone", "At least a catch block, a finally block, or both", "Only a catch block, never finally", "Only a finally block, never catch"],
+    correctAnswer: 1,
+    explanation: "A try block by itself is a compile error — it needs at least one catch, a finally, or both.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\ntry {\n    System.out.println(\"A\");\n    int x = 10 / 0;\n    System.out.println(\"B\");\n} catch (ArithmeticException e) {\n    System.out.println(\"C\");\n}",
+    options: ["A\nB\nC", "A\nC", "A\nB", "C"],
+    correctAnswer: 1,
+    explanation: "\"A\" prints, then 10/0 throws ArithmeticException immediately — \"B\" is skipped entirely, and the catch block prints \"C\".",
+  },
+  {
+    type: "MCQ",
+    prompt: "In a chain of catch blocks, what determines which one runs?",
+    options: ["The LAST matching catch block, checked bottom to top", "The FIRST matching catch block, checked top to bottom", "All matching catch blocks run", "A random matching catch block"],
+    correctAnswer: 1,
+    explanation: "Catch blocks are evaluated top to bottom, and execution enters the first one whose type matches the thrown exception.",
+  },
+  {
+    type: "DEBUG",
+    prompt: "Why won't this compile?\n\ntry {\n    riskyCall();\n} catch (Exception e) {\n    System.out.println(\"generic\");\n} catch (ArithmeticException e) {\n    System.out.println(\"specific\");\n}",
+    options: ["It compiles fine", "The ArithmeticException catch is unreachable — Exception already matches it, and it comes first", "catch blocks can't be chained", "Exception isn't a valid catch type"],
+    correctAnswer: 1,
+    explanation: "Since ArithmeticException IS-A Exception, the first catch (Exception e) would always match first, making the second catch block dead code — Java flags this as a compile error rather than silently allowing unreachable code.",
+  },
+  {
+    type: "MCQ",
+    prompt: "When does a finally block run?",
+    options: ["Only if an exception was thrown", "Only if no exception was thrown", "Always, whether or not an exception was thrown (except for JVM exit/crash)", "Only if the catch block doesn't handle the exception"],
+    correctAnswer: 2,
+    explanation: "finally is guaranteed to run in virtually every case — its purpose is reliable cleanup regardless of what happened in try/catch.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What is the difference between `throw` and `throws`?",
+    options: ["They are identical, interchangeable keywords", "throw actually raises an exception inside a method body; throws declares in a method's signature that it might propagate one", "throw is for checked exceptions, throws is for unchecked", "throws actually raises an exception; throw declares it"],
+    correctAnswer: 1,
+    explanation: "throw is an executable statement that raises an exception object; throws is signature metadata declaring a possible checked exception to callers.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which category of exception does the compiler force you to catch or declare with `throws`?",
+    options: ["Unchecked exceptions like NullPointerException", "Checked exceptions like IOException", "Errors like OutOfMemoryError", "All exceptions, with no distinction"],
+    correctAnswer: 1,
+    explanation: "Checked exceptions (subclasses of Exception that aren't RuntimeException) must be caught or declared; unchecked exceptions and Errors require neither.",
+  },
+  {
+    type: "MCQ",
+    prompt: "When creating a custom exception, which class should you extend to make it an unchecked exception?",
+    options: ["Exception", "RuntimeException", "Throwable", "Error"],
+    correctAnswer: 1,
+    explanation: "RuntimeException and its subclasses are unchecked — the compiler doesn't force callers to catch or declare them.",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below. The judge
+// only checks the returned value, so these are written to naturally invite an internal try/catch
+// even though the grader can't verify the implementation technique itself.
+const MODULE8_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read two integers a and b, and print a / b as an integer. If b is 0, print \"Error: division by zero\" instead of crashing.",
+    language: "java",
+    testCases: [{ input: "10\n2", expected: "5" }, { input: "5\n0", expected: "Error: division by zero" }, { input: "-9\n3", expected: "-3" }],
+    explanation: "Wrap the division in a try/catch for ArithmeticException (or check b == 0 directly) and return the error message instead of letting the division throw.",
+  },
+  {
+    type: "CODING",
+    prompt: "Read space-separated integers on one line and an index on the next line. If the index is valid, print the element at that index; otherwise print \"Error: index out of bounds\".",
+    language: "java",
+    testCases: [{ input: "1 2 3\n1", expected: "2" }, { input: "1 2 3\n5", expected: "Error: index out of bounds" }, { input: "5\n0", expected: "5" }],
+    explanation: "Wrap the array access in a try/catch for ArrayIndexOutOfBoundsException (or validate the index range directly) and return the error message instead of letting it crash.",
+  },
+];
+
+// Modules 9-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Exception Handling", topics: ["try", "catch", "finally", "throw", "throws", "Custom Exceptions"], practiceLabel: "Coding Problems" },
   { title: "Collections Framework", topics: ["ArrayList", "LinkedList", "HashMap", "HashSet", "TreeMap", "Queue", "Stack", "PriorityQueue"], practiceLabel: "Practice Questions" },
   { title: "File Handling", topics: ["Reading Files", "Writing Files", "BufferedReader", "FileWriter", "Scanner"], practiceLabel: "Coding Problems" },
   { title: "Multithreading", topics: ["Threads", "Runnable", "Synchronization", "Thread Lifecycle"], practiceLabel: "Practice" },
@@ -1637,13 +1809,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 8-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 8: full hand-authored content ---
+  const module8 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Exception Handling" } },
+    update: {},
+    create: { courseId: course.id, title: "Exception Handling", order: 7 },
+  });
+
+  for (let i = 0; i < MODULE8_LESSONS.length; i++) {
+    const l = MODULE8_LESSONS[i];
+    await upsertLessonContent(prisma, module8.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module8PracticeLesson = await upsertLessonContent(prisma, module8.id, "Coding Problems", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE8_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule8Practice = await prisma.practiceQuestion.count({ where: { lessonId: module8PracticeLesson.id } });
+  if (existingModule8Practice === 0) {
+    let order = 0;
+    for (const q of MODULE8_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module8PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE8_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module8PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 9-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 7 },
+      create: { courseId: course.id, title: spec.title, order: m + 8 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -1665,7 +1877,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 7, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 8, "modules.");
 }
 
 module.exports = { seedLearningModule };

@@ -374,6 +374,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Exception Handling": {
+    title: "Module 8 Coding Assessment",
+    instructions: "Solve every question by implementing the given method, handling invalid input gracefully (internally, with try/catch) instead of letting the program crash.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Validate Age",
+        description: "Return \"Valid\" if the given age is between 0 and 150 inclusive, or \"Invalid\" otherwise.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "25", expected: "Valid" },
+          { input: "-5", expected: "Invalid" },
+          { input: "200", expected: "Invalid" },
+        ],
+      },
+      {
+        title: "Safe Parse Integer",
+        description: "Return the string parsed as an integer, or -1 if it cannot be parsed as a valid integer.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "123", expected: "123" },
+          { input: "abc", expected: "-1" },
+          { input: "-45", expected: "-45" },
+        ],
+      },
+      {
+        title: "Safe Square Root",
+        description: "Return the floor of the square root of the given integer, or -1 if the integer is negative (instead of producing NaN).",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "16", expected: "4" },
+          { input: "-9", expected: "-1" },
+          { input: "2", expected: "1" },
+        ],
+      },
+      {
+        title: "Bank Withdrawal Validator",
+        description: "Given an account balance and a withdrawal amount, return \"Approved\" if the amount is positive and does not exceed the balance, or \"Denied\" otherwise.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "500\n200", expected: "Approved" },
+          { input: "100\n150", expected: "Denied" },
+          { input: "300\n-50", expected: "Denied" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {

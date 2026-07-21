@@ -44,6 +44,10 @@ const MODULE_CODING_SIGNATURES = {
   "Employee Bonus Eligibility": { methodName: "isEligibleForBonus", returnType: "boolean", params: [{ name: "years", type: "int" }, { name: "rating", type: "int" }] },
   "Compare Circle Areas": { methodName: "isFirstCircleLarger", returnType: "boolean", params: [{ name: "r1", type: "double" }, { name: "r2", type: "double" }] },
   "Price After Discount": { methodName: "priceAfterDiscount", returnType: "long", params: [{ name: "price", type: "double" }, { name: "discountPercent", type: "int" }] },
+  "Validate Age": { methodName: "validateAge", returnType: "string", params: [{ name: "age", type: "int" }] },
+  "Safe Parse Integer": { methodName: "safeParseInt", returnType: "int", params: [{ name: "s", type: "string" }] },
+  "Safe Square Root": { methodName: "safeSqrt", returnType: "int", params: [{ name: "n", type: "int" }] },
+  "Bank Withdrawal Validator": { methodName: "validateWithdrawal", returnType: "string", params: [{ name: "balance", type: "double" }, { name: "amount", type: "double" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -73,6 +77,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "rectangleAreaPerimeter", returnType: "int[]", params: [{ name: "length", type: "int" }, { name: "width", type: "int" }] },
   "Read the radius of a circle and print the floor of its area (using pi) as an integer.":
     { methodName: "circleAreaFloor", returnType: "int", params: [{ name: "radius", type: "double" }] },
+  "Read two integers a and b, and print a / b as an integer. If b is 0, print \"Error: division by zero\" instead of crashing.":
+    { methodName: "safeDivide", returnType: "string", params: [{ name: "a", type: "int" }, { name: "b", type: "int" }] },
+  "Read space-separated integers on one line and an index on the next line. If the index is valid, print the element at that index; otherwise print \"Error: index out of bounds\".":
+    { methodName: "safeGet", returnType: "string", params: [{ name: "nums", type: "int[]" }, { name: "index", type: "int" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {
