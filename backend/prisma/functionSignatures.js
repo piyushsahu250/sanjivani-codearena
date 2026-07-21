@@ -48,6 +48,10 @@ const MODULE_CODING_SIGNATURES = {
   "Safe Parse Integer": { methodName: "safeParseInt", returnType: "int", params: [{ name: "s", type: "string" }] },
   "Safe Square Root": { methodName: "safeSqrt", returnType: "int", params: [{ name: "n", type: "int" }] },
   "Bank Withdrawal Validator": { methodName: "validateWithdrawal", returnType: "string", params: [{ name: "balance", type: "double" }, { name: "amount", type: "double" }] },
+  "First Unique Element": { methodName: "firstUnique", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
+  "Balanced Parentheses": { methodName: "isBalancedParens", returnType: "boolean", params: [{ name: "s", type: "string" }] },
+  "Front After K Dequeues": { methodName: "frontAfterDequeues", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "k", type: "int" }] },
+  "Merge Two Sorted Arrays": { methodName: "mergeSorted", returnType: "int[]", params: [{ name: "a", type: "int[]" }, { name: "b", type: "int[]" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -81,6 +85,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "safeDivide", returnType: "string", params: [{ name: "a", type: "int" }, { name: "b", type: "int" }] },
   "Read space-separated integers on one line and an index on the next line. If the index is valid, print the element at that index; otherwise print \"Error: index out of bounds\".":
     { methodName: "safeGet", returnType: "string", params: [{ name: "nums", type: "int[]" }, { name: "index", type: "int" }] },
+  "Read space-separated integers and print the value that appears most frequently (there is a unique winner).":
+    { methodName: "mostFrequent", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
+  "Read space-separated integers on one line and an integer K on the next line. Print the Kth largest value.":
+    { methodName: "kthLargest", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "k", type: "int" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {

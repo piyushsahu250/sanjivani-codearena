@@ -1477,12 +1477,216 @@ const MODULE8_CODING = [
   },
 ];
 
-// Modules 9-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE9_LESSONS = [
+  {
+    title: "ArrayList",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "<code>ArrayList</code> is a resizable array implementation of the <code>List</code> interface — unlike a plain array, it grows automatically as elements are added, and it stores objects (not primitives directly — primitives are auto-boxed to their wrapper types).",
+      syntax:
+        "import java.util.ArrayList;\n\nArrayList<String> names = new ArrayList<>();\nnames.add(\"Alice\");             // append\nnames.add(0, \"Bob\");             // insert at index\nnames.get(0);                    // read by index\nnames.set(1, \"Carol\");           // update by index\nnames.remove(0);                 // remove by index (or by value with remove(Object))\nnames.size();                    // current element count\nnames.contains(\"Alice\");         // search\nfor (String n : names) { /* ... */ }   // iterate",
+      example: "ArrayList<Integer> nums = new ArrayList<>();\nnums.add(10);\nnums.add(20);\nnums.add(30);\nSystem.out.println(nums); // [10, 20, 30]\nnums.remove(Integer.valueOf(20)); // removes the VALUE 20, not index 20\nSystem.out.println(nums); // [10, 30]",
+      notes: [
+        "<code>ArrayList&lt;int&gt;</code> is illegal — generics only work with reference types, so you must use the wrapper class <code>ArrayList&lt;Integer&gt;</code> (Java auto-boxes int↔Integer for you).",
+        "<code>remove(int index)</code> and <code>remove(Object o)</code> are OVERLOADED — <code>remove(5)</code> removes the element AT index 5, while <code>remove(Integer.valueOf(5))</code> removes the first element EQUAL TO 5. This is a classic gotcha.",
+      ],
+      mistakes: ["Calling <code>list.remove(5)</code> expecting to remove the value 5 — for an <code>ArrayList&lt;Integer&gt;</code>, this removes whatever is at INDEX 5, since the int literal matches the <code>remove(int index)</code> overload, not <code>remove(Object o)</code>."],
+      bestPractices: ["Prefer ArrayList over a plain array whenever the collection's size isn't fixed or known in advance."],
+    }),
+  },
+  {
+    title: "LinkedList",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "<code>LinkedList</code> is a doubly-linked-list implementation of both the <code>List</code> and <code>Deque</code> interfaces — it supports the same List operations as ArrayList, plus efficient insertion/removal at both ends (<code>addFirst</code>/<code>addLast</code>/<code>removeFirst</code>/<code>removeLast</code>).",
+      syntax: "import java.util.LinkedList;\n\nLinkedList<String> queue = new LinkedList<>();\nqueue.addFirst(\"A\");\nqueue.addLast(\"B\");\nqueue.removeFirst();\nqueue.peekFirst();  // read without removing\nqueue.get(0);        // still supports List-style index access, but it's O(n)",
+      example: "LinkedList<Integer> list = new LinkedList<>();\nlist.add(1);\nlist.add(2);\nlist.addFirst(0);\nSystem.out.println(list); // [0, 1, 2]",
+      notes: [
+        "ArrayList has O(1) random access (<code>get(i)</code>) but O(n) insertion/removal in the middle; LinkedList has O(1) insertion/removal at the ends but O(n) random access — pick based on your access pattern.",
+        "LinkedList implements <code>Deque</code>, so it can be used as a stack (push/pop) or a queue (offer/poll) directly.",
+      ],
+      bestPractices: ["Default to ArrayList unless you specifically need frequent insertion/removal at the ends (or in the middle via an iterator) — for most everyday use, ArrayList's better cache locality makes it faster in practice."],
+    }),
+  },
+  {
+    title: "HashMap",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "<code>HashMap</code> stores key-value pairs, giving average O(1) lookup, insertion, and removal by key. Keys are unique (adding an existing key overwrites its value); iteration order is NOT guaranteed.",
+      syntax:
+        "import java.util.HashMap;\n\nHashMap<String, Integer> ages = new HashMap<>();\nages.put(\"Alice\", 30);          // insert/update\nages.get(\"Alice\");               // 30 — read (null if key absent)\nages.getOrDefault(\"Bob\", 0);     // 0 — safe read with a fallback\nages.containsKey(\"Alice\");       // true\nages.remove(\"Alice\");\nfor (Map.Entry<String, Integer> e : ages.entrySet()) {\n    System.out.println(e.getKey() + \" -> \" + e.getValue());\n}",
+      example:
+        "HashMap<String, Integer> wordCount = new HashMap<>();\nString[] words = {\"a\", \"b\", \"a\", \"c\", \"a\"};\nfor (String w : words) {\n    wordCount.put(w, wordCount.getOrDefault(w, 0) + 1);\n}\nSystem.out.println(wordCount.get(\"a\")); // 3",
+      notes: [
+        "<code>get()</code> on a missing key returns <code>null</code> (not an exception) — always check with <code>containsKey()</code> or use <code>getOrDefault()</code> to avoid a surprise NullPointerException when you later use the result.",
+        "Two objects that are <code>.equals()</code> to each other MUST have the same <code>hashCode()</code> for HashMap to work correctly — this is why custom key classes need both methods overridden consistently.",
+      ],
+      mistakes: ["Calling <code>get()</code> on a key that might not exist and immediately using the result without a null check — this is one of the most common sources of NullPointerException in real Java code."],
+    }),
+  },
+  {
+    title: "HashSet",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "<code>HashSet</code> stores a collection of UNIQUE elements with no defined order, backed internally by a HashMap. Adding a duplicate element is silently a no-op — <code>add()</code> returns <code>false</code> but doesn't throw.",
+      syntax:
+        "import java.util.HashSet;\n\nHashSet<String> visited = new HashSet<>();\nvisited.add(\"A\");\nvisited.add(\"B\");\nvisited.add(\"A\");    // no-op — A is already present\nvisited.contains(\"A\"); // true — O(1) average lookup\nvisited.size();          // 2, not 3\nvisited.remove(\"A\");",
+      example: "int[] nums = {1, 2, 2, 3, 3, 3};\nHashSet<Integer> unique = new HashSet<>();\nfor (int n : nums) { unique.add(n); }\nSystem.out.println(unique.size()); // 3 — duplicates automatically collapsed",
+      notes: [
+        "The classic use case is deduplication and O(1) average membership testing — checking <code>contains()</code> on a HashSet is far faster than scanning a List with <code>contains()</code>, which is O(n).",
+        "Like HashMap, HashSet gives no guarantee about iteration order — don't rely on elements coming out in insertion order.",
+      ],
+      mistakes: ["Using an ArrayList and calling <code>contains()</code> repeatedly in a loop to check for duplicates — this is O(n) per check, O(n²) overall; a HashSet does the same job in O(n) total."],
+    }),
+  },
+  {
+    title: "TreeMap",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "<code>TreeMap</code> is a Map implementation that keeps its keys sorted (by natural ordering, or a custom Comparator), backed by a red-black tree. Operations are O(log n) rather than HashMap's average O(1), in exchange for guaranteed sorted order.",
+      syntax:
+        "import java.util.TreeMap;\n\nTreeMap<String, Integer> scores = new TreeMap<>();\nscores.put(\"Charlie\", 70);\nscores.put(\"Alice\", 90);\nscores.put(\"Bob\", 80);\nfor (String key : scores.keySet()) {\n    System.out.println(key); // Alice, Bob, Charlie — sorted, not insertion order\n}\nscores.firstKey();  // \"Alice\" — smallest key\nscores.lastKey();   // \"Charlie\" — largest key",
+      example: "TreeMap<Integer, String> map = new TreeMap<>();\nmap.put(3, \"three\");\nmap.put(1, \"one\");\nmap.put(2, \"two\");\nSystem.out.println(map.keySet()); // [1, 2, 3] — always sorted",
+      notes: [
+        "Use TreeMap when you need entries sorted by key (e.g. a leaderboard, a range query) — otherwise HashMap's faster average performance makes it the default choice.",
+        "Keys must be mutually comparable — either they implement <code>Comparable</code>, or you supply a <code>Comparator</code> when constructing the TreeMap.",
+      ],
+      mistakes: ["Defaulting to TreeMap \"just to be safe\" when sorted order isn't actually needed — this pays an unnecessary O(log n) cost on every operation compared to HashMap's average O(1)."],
+    }),
+  },
+  {
+    title: "Queue",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "<code>Queue</code> is an interface representing a First-In-First-Out (FIFO) collection — elements are added at the tail and removed from the head, like a line at a checkout counter. LinkedList and ArrayDeque are common implementations.",
+      syntax:
+        "import java.util.Queue;\nimport java.util.LinkedList;\n\nQueue<Integer> queue = new LinkedList<>();\nqueue.offer(1);       // add to the tail (preferred over add() — returns false instead of throwing if the queue is full/bounded)\nqueue.offer(2);\nqueue.poll();          // removes and returns the head (1) — returns null if empty, instead of throwing\nqueue.peek();          // reads the head without removing it — null if empty",
+      example: "Queue<String> line = new LinkedList<>();\nline.offer(\"Alice\");\nline.offer(\"Bob\");\nline.offer(\"Carol\");\nSystem.out.println(line.poll()); // Alice — first in, first out\nSystem.out.println(line.poll()); // Bob",
+      notes: [
+        "<code>poll()</code>/<code>peek()</code> return null on an empty queue instead of throwing, unlike <code>remove()</code>/<code>element()</code> which DO throw — prefer poll()/peek() unless you specifically want the exception-throwing behavior.",
+        "A classic use case: breadth-first search (BFS) uses a Queue to process nodes level by level.",
+      ],
+      mistakes: ["Using <code>remove()</code> or <code>element()</code> on a possibly-empty queue and being surprised by a <code>NoSuchElementException</code> — <code>poll()</code>/<code>peek()</code> are the null-safe alternatives."],
+    }),
+  },
+  {
+    title: "Stack",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "A stack is a Last-In-First-Out (LIFO) collection — the last element added is the first one removed, like a stack of plates. Java's legacy <code>Stack</code> class exists, but <code>ArrayDeque</code> is now the recommended implementation for stack behavior.",
+      syntax:
+        "import java.util.ArrayDeque;\nimport java.util.Deque;\n\nDeque<Integer> stack = new ArrayDeque<>();\nstack.push(1);    // add to the top\nstack.push(2);\nstack.push(3);\nstack.pop();       // removes and returns the top (3)\nstack.peek();      // reads the top without removing it\n\n// The legacy alternative, still widely seen in older code and interview questions:\nimport java.util.Stack;\nStack<Integer> legacyStack = new Stack<>();\nlegacyStack.push(1);\nlegacyStack.pop();",
+      example: "Deque<Character> stack = new ArrayDeque<>();\nfor (char c : \"(()\".toCharArray()) {\n    if (c == '(') stack.push(c);\n    else stack.pop();\n}\nSystem.out.println(stack.size()); // 1 — one unmatched '('",
+      notes: [
+        "The legacy <code>java.util.Stack</code> extends <code>Vector</code> and is synchronized (thread-safe but slower) — for single-threaded code, <code>ArrayDeque</code> used as a stack is faster and is the modern recommendation.",
+        "Classic use cases: undo functionality, expression evaluation, matching brackets/parentheses, and function call stacks (which is literally how recursion works under the hood).",
+      ],
+      mistakes: ["Calling <code>pop()</code> or <code>peek()</code> on an empty stack — both throw an exception (<code>EmptyStackException</code> for legacy Stack, <code>NoSuchElementException</code> for ArrayDeque) rather than returning null, unlike Queue's poll()/peek()."],
+    }),
+  },
+  {
+    title: "PriorityQueue",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "<code>PriorityQueue</code> is a queue where elements come out in PRIORITY order (smallest first, by default) rather than insertion order — internally backed by a binary heap, giving O(log n) insertion and removal.",
+      syntax:
+        "import java.util.PriorityQueue;\n\nPriorityQueue<Integer> pq = new PriorityQueue<>();  // min-heap by default\npq.offer(5);\npq.offer(1);\npq.offer(3);\npq.poll();   // 1 — the SMALLEST element comes out first, not insertion order\n\n// Max-heap: supply a reverse-order comparator\nPriorityQueue<Integer> maxHeap = new PriorityQueue<>((a, b) -> b - a);\nmaxHeap.offer(5);\nmaxHeap.offer(1);\nmaxHeap.poll();  // 5 — the LARGEST comes out first",
+      example: "PriorityQueue<Integer> pq = new PriorityQueue<>();\npq.offer(10);\npq.offer(4);\npq.offer(7);\nwhile (!pq.isEmpty()) {\n    System.out.print(pq.poll() + \" \");\n}\n// 4 7 10 — always ascending, regardless of insertion order",
+      notes: [
+        "Iterating a PriorityQueue directly (with a for-each loop) does NOT visit elements in priority order — only repeated <code>poll()</code> calls guarantee sorted removal order.",
+        "Classic use cases: Dijkstra's shortest-path algorithm, task scheduling by priority, and finding the k largest/smallest elements in a stream.",
+      ],
+      mistakes: ["Assuming a for-each loop over a PriorityQueue processes elements smallest-to-largest — the internal heap array isn't stored in sorted order, only the ROOT (accessible via <code>peek()</code>/<code>poll()</code>) is guaranteed to be the minimum."],
+    }),
+  },
+];
+
+const MODULE9_QUIZ = [
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\nArrayList<Integer> list = new ArrayList<>();\nlist.add(10);\nlist.add(20);\nlist.add(30);\nlist.remove(1);\nSystem.out.println(list);",
+    options: ["[10, 20, 30]", "[10, 30]", "[20, 30]", "[10, 20]"],
+    correctAnswer: 1,
+    explanation: "remove(1) matches the remove(int index) overload — it removes the element AT index 1 (the value 20), leaving [10, 30].",
+  },
+  {
+    type: "MCQ",
+    prompt: "What is the key performance trade-off between ArrayList and LinkedList?",
+    options: ["ArrayList has O(1) random access but O(n) middle insertion; LinkedList has O(n) random access but O(1) end insertion", "They have identical performance characteristics", "LinkedList always outperforms ArrayList", "ArrayList cannot store more than 100 elements"],
+    correctAnswer: 0,
+    explanation: "ArrayList's backing array gives fast indexed access but shifts elements on insertion; LinkedList's node links give fast end insertion but require O(n) traversal for indexed access.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does `map.get(\"missing\")` return on a HashMap that doesn't contain the key \"missing\"?",
+    options: ["Throws an exception", "0", "null", "An empty string"],
+    correctAnswer: 2,
+    explanation: "HashMap.get() on an absent key returns null rather than throwing — this is why get() results should be null-checked or getOrDefault() should be used instead.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What happens when you add a value to a HashSet that already contains an equal element?",
+    options: ["Throws an exception", "The add() call is a silent no-op — the set is unchanged, add() returns false", "The old element is duplicated", "The HashSet automatically converts to a List"],
+    correctAnswer: 1,
+    explanation: "HashSet guarantees uniqueness — adding a duplicate is a harmless no-op that returns false rather than throwing or duplicating.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What guarantee does TreeMap provide that HashMap does not?",
+    options: ["Faster average lookup", "Keys are always iterated in sorted order", "It allows duplicate keys", "It uses less memory"],
+    correctAnswer: 1,
+    explanation: "TreeMap keeps its keys in sorted order at the cost of O(log n) operations, versus HashMap's unordered but average-O(1) operations.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which ordering does a Queue follow?",
+    options: ["LIFO — last in, first out", "FIFO — first in, first out", "Random order", "Sorted order, always"],
+    correctAnswer: 1,
+    explanation: "Queue is First-In-First-Out — elements are removed in the same order they were added.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\nDeque<Integer> stack = new ArrayDeque<>();\nstack.push(1);\nstack.push(2);\nstack.push(3);\nSystem.out.println(stack.pop());",
+    options: ["1", "2", "3", "Throws an exception"],
+    correctAnswer: 2,
+    explanation: "A stack is LIFO — the last element pushed (3) is the first one popped.",
+  },
+  {
+    type: "MCQ",
+    prompt: "By default, what order does PriorityQueue.poll() return elements in?",
+    options: ["Insertion order", "Largest first", "Smallest first (natural ordering)", "Random order"],
+    correctAnswer: 2,
+    explanation: "PriorityQueue is a min-heap by default — poll() always removes and returns the smallest remaining element, unless a custom Comparator reverses the order.",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below. True List/
+// Map/Set/Queue parameter types aren't supported by the judge's FUNCTION-mode harness, so these use
+// arrays/strings to model the same Collections-Framework thinking (frequency counting, priority
+// ordering) that a HashMap/PriorityQueue would provide.
+const MODULE9_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read space-separated integers and print the value that appears most frequently (there is a unique winner).",
+    language: "java",
+    testCases: [{ input: "1 3 2 3 3 2", expected: "3" }, { input: "5 5 6 6 6", expected: "6" }, { input: "7", expected: "7" }],
+    explanation: "Count occurrences with a HashMap<Integer, Integer> (or an equivalent frequency array), then find the key with the highest count.",
+  },
+  {
+    type: "CODING",
+    prompt: "Read space-separated integers on one line and an integer K on the next line. Print the Kth largest value.",
+    language: "java",
+    testCases: [{ input: "3 1 4 1 5\n2", expected: "4" }, { input: "7 7 7\n1", expected: "7" }, { input: "10 20 30 40\n3", expected: "20" }],
+    explanation: "Sort descending (or use a min-heap PriorityQueue of size K) and take the element at position K-1.",
+  },
+];
+
+// Modules 10-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Collections Framework", topics: ["ArrayList", "LinkedList", "HashMap", "HashSet", "TreeMap", "Queue", "Stack", "PriorityQueue"], practiceLabel: "Practice Questions" },
   { title: "File Handling", topics: ["Reading Files", "Writing Files", "BufferedReader", "FileWriter", "Scanner"], practiceLabel: "Coding Problems" },
   { title: "Multithreading", topics: ["Threads", "Runnable", "Synchronization", "Thread Lifecycle"], practiceLabel: "Practice" },
   { title: "Java 8 Features", topics: ["Lambda Expressions", "Stream API", "Functional Interfaces", "Optional", "Method References"], practiceLabel: "Practice" },
@@ -1849,13 +2053,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 9-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 9: full hand-authored content ---
+  const module9 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Collections Framework" } },
+    update: {},
+    create: { courseId: course.id, title: "Collections Framework", order: 8 },
+  });
+
+  for (let i = 0; i < MODULE9_LESSONS.length; i++) {
+    const l = MODULE9_LESSONS[i];
+    await upsertLessonContent(prisma, module9.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module9PracticeLesson = await upsertLessonContent(prisma, module9.id, "Practice Questions", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE9_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule9Practice = await prisma.practiceQuestion.count({ where: { lessonId: module9PracticeLesson.id } });
+  if (existingModule9Practice === 0) {
+    let order = 0;
+    for (const q of MODULE9_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module9PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE9_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module9PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 10-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 8 },
+      create: { courseId: course.id, title: spec.title, order: m + 9 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -1877,7 +2121,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 8, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 9, "modules.");
 }
 
 module.exports = { seedLearningModule };

@@ -425,6 +425,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Collections Framework": {
+    title: "Module 9 Coding Assessment",
+    instructions: "Solve every question by implementing the given method, applying the List/Map/Set/Queue/Stack thinking from this module (arrays and strings stand in for the collection types, since the judge tests one static method at a time).",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "First Unique Element",
+        description: "Return the first element in the array that appears exactly once (in a map/frequency-count sense), or -1 if every element repeats.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "2 3 2 4 3", expected: "4" },
+          { input: "1 1 2 2 3 3", expected: "-1" },
+          { input: "5", expected: "5" },
+        ],
+      },
+      {
+        title: "Balanced Parentheses",
+        description: "Return true if the given string of only '(' and ')' characters is balanced (every opening bracket has a matching closing bracket in the correct order), false otherwise. An empty string is balanced.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "(())", expected: "true" },
+          { input: "(()", expected: "false" },
+          { input: "", expected: "true" },
+        ],
+      },
+      {
+        title: "Front After K Dequeues",
+        description: "Given an array representing a queue (front to back) and a number of dequeue operations K, return the element that would be at the front after K dequeues, or -1 if K is greater than or equal to the array's length.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "10 20 30 40\n2", expected: "30" },
+          { input: "5 6\n0", expected: "5" },
+          { input: "1 2 3\n5", expected: "-1" },
+        ],
+      },
+      {
+        title: "Merge Two Sorted Arrays",
+        description: "Given two arrays that are each already sorted in ascending order, return a single merged array in ascending order.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "1 3 5\n2 4 6", expected: "1 2 3 4 5 6" },
+          { input: "1 5 9\n2 3", expected: "1 2 3 5 9" },
+          { input: "4 5\n1 2 3", expected: "1 2 3 4 5" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {
