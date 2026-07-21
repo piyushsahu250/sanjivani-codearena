@@ -465,7 +465,7 @@ router.post("/practice/:id/hint", authenticate, requireRole("STUDENT"), hintLimi
 
     const hint = await askClaude({
       system: "You are a patient programming tutor. Give a short, specific hint that nudges the student toward finding and fixing their own bug — never write corrected code, never give the full solution. 2-4 sentences.",
-      prompt: `Question: ${q.title || ""}\n${q.description}\n\nStudent's ${language || "code"} submission (verdict: ${lastAttempt.verdict}):\n\`\`\`\n${code.slice(0, 4000)}\n\`\`\`\n\nGive one concise hint.`,
+      prompt: `Question: ${q.prompt}\n\nStudent's ${language || "code"} submission (verdict: ${lastAttempt.verdict}):\n\`\`\`\n${code.slice(0, 4000)}\n\`\`\`\n\nGive one concise hint.`,
       maxTokens: 300,
       temperature: 0.5,
     });

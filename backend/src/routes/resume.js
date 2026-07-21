@@ -1,5 +1,6 @@
 const express = require("express");
 const multer = require("multer");
+const rateLimit = require("express-rate-limit");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
@@ -13,6 +14,9 @@ const { askClaudeJson } = require("../utils/aiClient");
 const { ROLE_KEYWORDS, analyzeForRole } = require("../utils/resumeJobRoles");
 
 const router = express.Router();
+// Real, billed Claude API calls — tighter than the global per-user limiter, same rationale as
+// learning.js's hintLimiter.
+const aiReviewLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, keyGenerator: (req) => req.user.id });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const ALLOWED_FIELDS = [
@@ -278,7 +282,7 @@ router.post("/me/improve", authenticate, requireRole("STUDENT"), (req, res) => {
 // completion/ATS scoring above rather than replacing it (that heuristic system stays the
 // always-available default; this is an optional richer pass on top, same graceful-degradation
 // posture as every other AI feature on this platform). Read-only — never saves anything.
-router.post("/me/ai-review", authenticate, requireRole("STUDENT"), async (req, res) => {
+router.post("/me/ai-review", authenticate, requireRole("STUDENT"), aiReviewLimiter, async (req, res) => {
   try {
     const resume = await prisma.resume.findUnique({ where: { studentId: req.user.id } });
     if (!resume) return res.status(404).json({ error: "No resume found — build one first" });

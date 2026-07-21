@@ -21,9 +21,27 @@ router.get("/database", authenticate, requireRole("ADMIN"), attachRequesterInsti
   if (!dbUrl) return res.status(500).json({ error: "DATABASE_URL is not configured on this server" });
 
   try {
+    // Parsed into components rather than passed as one argv string — process arguments are
+    // readable by any other process on the host (e.g. /proc/<pid>/cmdline), which would otherwise
+    // briefly expose the DB password outside this Node process. The password goes via PGPASSWORD
+    // in the child's environment instead, the standard libpq-recommended way to avoid that.
+    const parsed = new URL(dbUrl);
+    const pgEnv = {
+      ...process.env,
+      PGPASSWORD: decodeURIComponent(parsed.password || ""),
+      PGSSLMODE: parsed.searchParams.get("sslmode") || "require",
+    };
+    const pgArgs = [
+      "-h", parsed.hostname,
+      "-p", parsed.port || "5432",
+      "-U", decodeURIComponent(parsed.username || ""),
+      "-d", decodeURIComponent(parsed.pathname.replace(/^\//, "")),
+      "--no-owner", "--no-privileges",
+    ];
+
     const stdoutChunks = [];
     const stderrChunks = [];
-    const child = spawn("pg_dump", [dbUrl, "--no-owner", "--no-privileges"]);
+    const child = spawn("pg_dump", pgArgs, { env: pgEnv });
 
     child.stdout.on("data", (d) => stdoutChunks.push(d));
     child.stderr.on("data", (d) => stderrChunks.push(d));

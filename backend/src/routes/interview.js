@@ -1,5 +1,6 @@
 const express = require("express");
 const multer = require("multer");
+const rateLimit = require("express-rate-limit");
 const XLSX = require("xlsx");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
@@ -18,6 +19,9 @@ const { cached } = require("../utils/cache");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+// Real, billed Claude API calls — tighter than the global per-user limiter, same rationale as
+// learning.js's hintLimiter and resume.js's aiReviewLimiter.
+const aiInsightsLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, keyGenerator: (req) => req.user.id });
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://codearena-app.vercel.app";
 const CERT_THRESHOLD = 80;
 
@@ -253,7 +257,7 @@ router.get("/sessions/:id", authenticate, requireRole("STUDENT"), async (req, re
 // utils/interviewEvaluation.js) rather than replacing it. That heuristic scoring stays the
 // authoritative, always-available number; this is a read-only, on-demand richer pass reading
 // the same transcript. Never stored — recomputed fresh each time it's requested.
-router.get("/sessions/:id/ai-insights", authenticate, requireRole("STUDENT"), async (req, res) => {
+router.get("/sessions/:id/ai-insights", authenticate, requireRole("STUDENT"), aiInsightsLimiter, async (req, res) => {
   try {
     const session = await prisma.interviewSession.findUnique({
       where: { id: req.params.id },

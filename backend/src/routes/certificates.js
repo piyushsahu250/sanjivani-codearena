@@ -158,10 +158,15 @@ router.post("/manual", authenticate, requireRole("ADMIN", "STAFF"), attachReques
 
 // ADMIN: revoke any Certificate-model certificate. Revocation is a status flip, never a delete —
 // the certificate stays verifiable (showing "revoked") rather than the QR code just breaking.
-router.post("/:id/revoke", authenticate, requireRole("ADMIN"), async (req, res) => {
+// Institute-scoped the same way /manual and /admin are — an institute-scoped ADMIN may only
+// revoke certificates belonging to their own institute's students.
+router.post("/:id/revoke", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
   try {
-    const existing = await prisma.certificate.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.certificate.findUnique({ where: { id: req.params.id }, include: { student: { select: { instituteId: true } } } });
     if (!existing) return res.status(404).json({ error: "Certificate not found" });
+    if (req.requesterInstituteId && existing.student.instituteId !== req.requesterInstituteId) {
+      return res.status(403).json({ error: "You can only revoke certificates belonging to your own institute" });
+    }
     if (existing.status === "REVOKED") return res.status(400).json({ error: "This certificate is already revoked" });
 
     const cert = await revokeCertificate(existing.id, { revokedByName: req.user.name, reason: req.body.reason });
