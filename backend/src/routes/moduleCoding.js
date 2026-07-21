@@ -21,6 +21,10 @@ function sanitizeQuestion(q) {
     difficulty: q.difficulty,
     timeLimitMs: q.timeLimitMs,
     starterCode: q.starterCode,
+    // Preferred over the single-language starterCode above when present — this is what lets the
+    // editor load the actually-correct template per language instead of showing one language's
+    // starter code regardless of which language the student picked.
+    starterCodeByLanguage: q.starterCodeByLanguage || null,
     testCases: (q.testCases || []).filter((tc) => !tc.isHidden).map((tc) => ({ input: tc.input, expected: tc.expected })),
   };
 }
@@ -438,7 +442,7 @@ router.delete("/admin/tests/:id", authenticate, requireRole("ADMIN"), async (req
 
 router.post("/admin/tests/:id/questions", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { title, description, difficulty, timeLimitMs, starterCode, testCases } = req.body;
+    const { title, description, difficulty, timeLimitMs, starterCode, starterCodeByLanguage, testCases } = req.body;
     if (!description) return res.status(400).json({ error: "description is required" });
     const cases = Array.isArray(testCases) ? testCases : [];
     if (cases.filter((tc) => !tc.isHidden).length < 2) {
@@ -451,6 +455,7 @@ router.post("/admin/tests/:id/questions", authenticate, requireRole("ADMIN", "ST
       data: {
         title: title || null, description, difficulty: difficulty || "EASY",
         questionType: "CODING", timeLimitMs: Number(timeLimitMs) || 2000, starterCode: starterCode || null,
+        starterCodeByLanguage: starterCodeByLanguage && Object.keys(starterCodeByLanguage).length > 0 ? starterCodeByLanguage : undefined,
         moduleCodingTestId: req.params.id,
         testCases: { create: cases.map((tc) => ({ input: tc.input || "", expected: tc.expected || "", isHidden: !!tc.isHidden })) },
       },
@@ -465,13 +470,14 @@ router.post("/admin/tests/:id/questions", authenticate, requireRole("ADMIN", "ST
 
 router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { title, description, difficulty, timeLimitMs, starterCode, testCases } = req.body;
+    const { title, description, difficulty, timeLimitMs, starterCode, starterCodeByLanguage, testCases } = req.body;
     const data = {};
     if (title !== undefined) data.title = title;
     if (description !== undefined) data.description = description;
     if (difficulty !== undefined) data.difficulty = difficulty;
     if (timeLimitMs !== undefined) data.timeLimitMs = Number(timeLimitMs);
     if (starterCode !== undefined) data.starterCode = starterCode;
+    if (starterCodeByLanguage !== undefined) data.starterCodeByLanguage = starterCodeByLanguage;
 
     if (Array.isArray(testCases)) {
       if (testCases.filter((tc) => !tc.isHidden).length < 2) {

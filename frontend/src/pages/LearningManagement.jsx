@@ -613,7 +613,19 @@ function ConfigFields({ form, setForm, toggleLanguage }) {
   );
 }
 
-const EMPTY_CODING_Q = { title: "", description: "", difficulty: "EASY", starterCode: "", timeLimitMs: 3000, testCases: [{ input: "", expected: "", isHidden: false }] };
+const EMPTY_CODING_Q = { title: "", description: "", difficulty: "EASY", starterCodeByLanguage: {}, timeLimitMs: 3000, testCases: [{ input: "", expected: "", isHidden: false }] };
+
+// Every language a Module Coding Test can allow (Test.allowedLanguages) — shown unconditionally
+// here since this panel isn't scoped to one test's specific language selection. Leaving one blank
+// isn't an error: the platform falls back to a generic-but-language-correct default template for
+// any language with no admin-authored one, so students never see another language's code.
+const CODING_LANGS = [
+  { id: "java", label: "Java" },
+  { id: "python", label: "Python" },
+  { id: "cpp", label: "C++" },
+  { id: "c", label: "C" },
+  { id: "javascript", label: "JavaScript" },
+];
 
 function CodingQuestionsPanel({ testId, questions, onRefresh }) {
   const [adding, setAdding] = useState(false);
@@ -624,7 +636,16 @@ function CodingQuestionsPanel({ testId, questions, onRefresh }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post(`/module-coding/admin/tests/${testId}/questions`, form);
+      const entries = Object.entries(form.starterCodeByLanguage).filter(([, v]) => v && v.trim());
+      // The legacy single-language starterCode field is still populated (as whichever language
+      // was authored first) purely for backward compatibility with any code path that hasn't
+      // been updated to read starterCodeByLanguage yet — it's never the primary source anymore.
+      const payload = {
+        ...form,
+        starterCode: entries[0]?.[1] || "",
+        starterCodeByLanguage: entries.length > 0 ? Object.fromEntries(entries) : undefined,
+      };
+      await api.post(`/module-coding/admin/tests/${testId}/questions`, payload);
       setForm(EMPTY_CODING_Q);
       setAdding(false);
       onRefresh();
@@ -657,6 +678,10 @@ function CodingQuestionsPanel({ testId, questions, onRefresh }) {
               <div style={{ marginTop: 4, color: "var(--ink-dim)" }}>{q.description}</div>
               <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 4 }}>
                 {q.testCases.length} test case(s) — {q.testCases.filter((tc) => tc.isHidden).length} hidden
+                {" — templates: "}
+                {q.starterCodeByLanguage && Object.keys(q.starterCodeByLanguage).length > 0
+                  ? Object.keys(q.starterCodeByLanguage).join(", ")
+                  : "none (generic defaults used)"}
               </div>
             </div>
             <button style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 12 }} onClick={() => remove(q)}>Delete</button>
@@ -675,8 +700,17 @@ function CodingQuestionsPanel({ testId, questions, onRefresh }) {
           <select style={inputStyle} value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })}>
             <option value="EASY">Easy</option><option value="MEDIUM">Medium</option><option value="HARD">Hard</option>
           </select>
-          <label style={labelStyle}>Starter code (optional)</label>
-          <textarea style={{ ...inputStyle, minHeight: 80, fontFamily: "var(--font-mono)", fontSize: 12 }} value={form.starterCode} onChange={(e) => setForm({ ...form, starterCode: e.target.value })} />
+          <label style={labelStyle}>Starter code per language (optional — languages left blank fall back to a generic default template instead of another language's code)</label>
+          {CODING_LANGS.map((l) => (
+            <div key={l.id} style={{ marginTop: 6 }}>
+              <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginBottom: 2 }}>{l.label}</div>
+              <textarea
+                style={{ ...inputStyle, minHeight: 60, fontFamily: "var(--font-mono)", fontSize: 12, marginTop: 0 }}
+                value={form.starterCodeByLanguage[l.id] || ""}
+                onChange={(e) => setForm({ ...form, starterCodeByLanguage: { ...form.starterCodeByLanguage, [l.id]: e.target.value } })}
+              />
+            </div>
+          ))}
           <label style={labelStyle}>Test cases</label>
           {form.testCases.map((tc, i) => (
             <div key={i} style={{ display: "flex", gap: 8, marginTop: 6, alignItems: "center" }}>

@@ -20,6 +20,24 @@ const LANGUAGES = [
 
 const TYPE_LABEL = { MCQ: "Multiple Choice", FILL_BLANK: "Fill in the Blank", CODING: "Coding", DEBUG: "Debugging", OUTPUT_PREDICTION: "Output Prediction" };
 
+// PracticeQuestion only has a single starterCode+language pair (no per-language template
+// support), so any language other than the question's own authored one falls back to this
+// generic-but-language-correct boilerplate instead of showing the authored language's code.
+function defaultStarter(language) {
+  switch (language) {
+    case "python":
+      return "# Read input via input(), print your answer\n";
+    case "c":
+      return '#include <stdio.h>\n\nint main() {\n    // read input with scanf, print your answer with printf\n    return 0;\n}\n';
+    case "cpp":
+      return '#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // read input with cin, print your answer with cout\n    return 0;\n}\n';
+    case "java":
+      return 'import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // read input via sc, print your answer with System.out\n    }\n}\n';
+    default:
+      return "// Read input via require('fs').readFileSync(0, 'utf8'), console.log your answer\n";
+  }
+}
+
 export default function LessonView() {
   const { slug, lessonId } = useParams();
   const navigate = useNavigate();
@@ -356,6 +374,27 @@ function PracticeQuestionCard({ question }) {
   const languageRef = useRef(language);
   codeRef.current = code;
   languageRef.current = language;
+  // Independent autosaved code per language for this question — { [language]: code }. Without
+  // this, switching languages would silently discard whatever was already written in the
+  // language being switched away from. Kept current on every edit via the effect below.
+  const langDraftsRef = useRef({});
+  useEffect(() => {
+    langDraftsRef.current[language] = code;
+  }, [code, language]);
+
+  // Switching languages must reload the editor with THAT language's code — restoring a
+  // previously-written draft for it if one exists this session, otherwise a starter template.
+  // The question's own authored starterCode only ever matches question.language; showing it for
+  // every other language was the actual bug (Java template appearing under Python, etc.).
+  function handleLanguageChange(lang) {
+    if (lang === language) return;
+    const draft = langDraftsRef.current[lang];
+    const nextCode = draft !== undefined ? draft : (lang === question.language ? (question.starterCode || defaultStarter(lang)) : defaultStarter(lang));
+    setLanguage(lang);
+    setCode(nextCode);
+    setRunResult(null);
+    setSubmitResult(null);
+  }
 
   function loadHistory() {
     if (question.type !== "CODING") return;
@@ -483,7 +522,7 @@ function PracticeQuestionCard({ question }) {
             </div>
           )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-            <select value={language} onChange={(e) => setLanguage(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)" }}>
+            <select value={language} onChange={(e) => handleLanguageChange(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)" }}>
               {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
             <RunSubmitButtons onRun={runCode} onSubmit={submitCode} running={running} submitting={submitting} />

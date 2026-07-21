@@ -27,6 +27,24 @@ const VIOLATION_LABEL = {
   BROWSER_SHORTCUT: "using a restricted keyboard shortcut",
 };
 
+// InterviewQuestion only has a single starterCode+language pair (no per-language template
+// support), so any language other than the question's own authored one falls back to this
+// generic-but-language-correct boilerplate instead of showing the authored language's code.
+function defaultStarter(language) {
+  switch (language) {
+    case "python":
+      return "# Read input via input(), print your answer\n";
+    case "c":
+      return '#include <stdio.h>\n\nint main() {\n    // read input with scanf, print your answer with printf\n    return 0;\n}\n';
+    case "cpp":
+      return '#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // read input with cin, print your answer with cout\n    return 0;\n}\n';
+    case "java":
+      return 'import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // read input via sc, print your answer with System.out\n    }\n}\n';
+    default:
+      return "// Read input via require('fs').readFileSync(0, 'utf8'), console.log your answer\n";
+  }
+}
+
 export default function InterviewSession() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -35,6 +53,10 @@ export default function InterviewSession() {
   const [phase, setPhase] = useState("preflight"); // preflight | active | terminated
   const [activeIdx, setActiveIdx] = useState(0);
   const [drafts, setDrafts] = useState({}); // questionId -> {answerText, code, language, selected}
+  // Independent autosaved code per (question, language) — { [questionId]: { [language]: code } }.
+  // Without this, switching languages would silently discard whatever was already written in the
+  // language being switched away from.
+  const [langDrafts, setLangDrafts] = useState({});
   const [saving, setSaving] = useState(false);
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(false);
@@ -74,6 +96,11 @@ export default function InterviewSession() {
         });
       }
       setDrafts(initial);
+      const initialLangDrafts = {};
+      for (const q of res.data.questions) {
+        if (q.category === "CODING") initialLangDrafts[q.id] = { [initial[q.id].language]: initial[q.id].code };
+      }
+      setLangDrafts(initialLangDrafts);
       const durationMin = res.data.session.config?.durationMin;
       if (durationMin && res.data.session.status === "IN_PROGRESS") {
         const elapsedSec = Math.floor((Date.now() - new Date(res.data.session.startedAt).getTime()) / 1000);
@@ -121,6 +148,17 @@ export default function InterviewSession() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQuestion?.id, phase]);
+
+  // Mirrors the active question's current code into langDrafts under its current language, so
+  // switching languages and switching back later restores it instead of reloading a template.
+  useEffect(() => {
+    if (!activeQuestion || activeQuestion.category !== "CODING" || !activeDraft.language) return;
+    setLangDrafts((prev) => {
+      const qDrafts = prev[activeQuestion.id] || {};
+      if (qDrafts[activeDraft.language] === activeDraft.code) return prev;
+      return { ...prev, [activeQuestion.id]: { ...qDrafts, [activeDraft.language]: activeDraft.code } };
+    });
+  }, [activeDraft.code, activeDraft.language, activeQuestion?.id]);
 
   // Every violation type is reported to the server, which decides — never trusted client-side —
   // whether it's penalized (tab switch, fullscreen exit, camera/mic dropped: counts toward the
@@ -235,6 +273,19 @@ export default function InterviewSession() {
 
   function updateDraft(patch) {
     setDrafts((d) => ({ ...d, [q.id]: { ...d[q.id], ...patch } }));
+  }
+
+  // Switching languages must reload the editor with THAT language's code — restoring a
+  // previously-written draft for it if one exists this session, otherwise a starter template.
+  // The question's own authored starterCode only ever matches q.language; showing it for every
+  // other language was the actual bug (Java template appearing under Python, etc.).
+  function handleLanguageChange(lang) {
+    if (lang === draft.language) return;
+    const saved = langDrafts[q.id]?.[lang];
+    const code = saved !== undefined ? saved : (lang === q.language ? (q.starterCode || defaultStarter(lang)) : defaultStarter(lang));
+    updateDraft({ language: lang, code });
+    setRunResult(null);
+    setCodeSubmittedResult(false);
   }
 
   async function saveAnswer(skipped = false) {
@@ -456,7 +507,7 @@ export default function InterviewSession() {
                 </div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
-                <select className="ip-select" value={draft.language} onChange={(e) => updateDraft({ language: e.target.value })}>
+                <select className="ip-select" value={draft.language} onChange={(e) => handleLanguageChange(e.target.value)}>
                   {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
                 </select>
                 <RunSubmitButtons onRun={runCode} onSubmit={submitCode} running={running} submitting={saving} runDisabled={micBlocked} submitDisabled={micBlocked} />

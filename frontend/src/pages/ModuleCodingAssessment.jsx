@@ -63,6 +63,10 @@ export default function ModuleCodingAssessment() {
   const [violationWarning, setViolationWarning] = useState(null);
   const [violationCount, setViolationCount] = useState(0);
   const [lastSavedAt, setLastSavedAt] = useState(null);
+  // Independent autosaved code per (question, language) — { [questionId]: { [language]: code } }.
+  // Without this, switching languages would always reload a starter template and silently
+  // discard whatever was already written in the language being switched away from.
+  const [langDrafts, setLangDrafts] = useState({});
   // Per-question live verdict (from an actual Submit, never autosave/Run) and "visited" tracking
   // — drives the navigator's green/yellow/red/gray status dot, same scheme as TestTaking.jsx.
   const [codeVerdicts, setCodeVerdicts] = useState({});
@@ -151,11 +155,16 @@ export default function ModuleCodingAssessment() {
       const initialAnswers = {};
       const restoredVerdicts = {};
       const restoredVisited = {};
+      const initialDrafts = {};
       data.questions.forEach((q) => {
         const saved = data.savedAnswers?.[q.id];
         const lang = saved?.language || (Array.isArray(data.allowedLanguages) && data.allowedLanguages[0]) || "java";
-        const code = saved?.code ?? (q.starterCode || defaultStarter(lang));
+        // Prefers the question's own per-language template over the legacy single-language
+        // starterCode fallback — that legacy field only ever matches ONE language, so using it
+        // for every language was the actual root cause of a wrong-language template being shown.
+        const code = saved?.code ?? (q.starterCodeByLanguage?.[lang] || q.starterCode || defaultStarter(lang));
         initialAnswers[q.id] = { language: lang, code };
+        initialDrafts[q.id] = { [lang]: code };
         if (saved) {
           lastSavedCodeRef.current[q.id] = `${lang}:${code}`;
           restoredVisited[q.id] = true;
@@ -165,6 +174,7 @@ export default function ModuleCodingAssessment() {
         }
       });
       setAnswers(initialAnswers);
+      setLangDrafts(initialDrafts);
       setCodeVerdicts(restoredVerdicts);
       setVisited(restoredVisited);
       setSecondsLeft(Math.max(0, Math.floor((data.deadline - Date.now()) / 1000)));
@@ -334,13 +344,25 @@ export default function ModuleCodingAssessment() {
 
   function setCode(code) {
     if (!current) return;
+    const language = answer?.language || allowedLanguages[0];
     setAnswers((prev) => ({ ...prev, [current.id]: { ...prev[current.id], code } }));
+    setLangDrafts((prev) => ({ ...prev, [current.id]: { ...prev[current.id], [language]: code } }));
   }
 
   function setLanguage(language) {
     if (!current) return;
-    setAnswers((prev) => ({ ...prev, [current.id]: { language, code: current.starterCode || defaultStarter(language) } }));
+    // Restores whatever was already typed in this language for this question, if anything —
+    // switching away and back must never silently discard a student's work. Only the very first
+    // time a language is picked for this question does it fall back to a starter template: the
+    // question's own per-language template if the admin defined one, otherwise a generic-but-
+    // language-correct default. Never another language's code (the legacy single-language
+    // starterCode field is deliberately not used here — it only ever matches one language).
+    const draft = langDrafts[current.id]?.[language];
+    const code = draft !== undefined ? draft : (current.starterCodeByLanguage?.[language] || defaultStarter(language));
+    setAnswers((prev) => ({ ...prev, [current.id]: { language, code } }));
+    setLangDrafts((prev) => ({ ...prev, [current.id]: { ...prev[current.id], [language]: code } }));
     setRunResult(null);
+    setSubmitResultMsg(null);
   }
 
   async function handleRun() {

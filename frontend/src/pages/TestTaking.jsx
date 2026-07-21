@@ -71,6 +71,10 @@ export default function TestTaking() {
   const [running, setRunning] = useState(false);
   const [submittingCode, setSubmittingCode] = useState(false);
   const [queueStatus, setQueueStatus] = useState(null);
+  // Independent autosaved code per (question, language) — { [questionId]: { [language]: code } }.
+  // Without this, switching languages would always reload the starter template and silently
+  // discard whatever was already written in the language being switched away from.
+  const [langDrafts, setLangDrafts] = useState({});
   // Per-question live verdict for CODING/SQL questions only — drives the green/red status dot
   // in the navigator. Set from an actual Submit response (never from autosave/Run), and restored
   // from the attempt's saved submissions on resume so a refresh doesn't lose earlier results.
@@ -402,6 +406,7 @@ export default function TestTaking() {
         const restoredAnswers = {};
         const restoredVerdicts = {};
         const restoredVisited = {};
+        const restoredDrafts = {};
         existingSubs.forEach((s) => {
           restoredVisited[s.questionId] = true;
           if (["MCQ", "TRUE_FALSE", "MULTISELECT"].includes(s.language)) {
@@ -412,6 +417,11 @@ export default function TestTaking() {
             }
           } else {
             restoredAnswers[s.questionId] = { language: s.language, code: s.code };
+            // Only one language's code is ever persisted server-side per question (the most
+            // recently active one) — a refresh restores that language's draft; drafts typed in
+            // other languages during the same browser session but never autosaved after a
+            // switch-away are, unavoidably, not recoverable across a refresh.
+            restoredDrafts[s.questionId] = { [s.language]: s.code };
             // A PENDING verdict means autosaved-but-never-submitted — that's the "yellow" case,
             // not a graded result, so it's deliberately left out of restoredVerdicts.
             if (s.verdict && s.verdict !== "PENDING") {
@@ -422,6 +432,11 @@ export default function TestTaking() {
         setAnswers((prev) => ({ ...restoredAnswers, ...prev }));
         setCodeVerdicts((prev) => ({ ...restoredVerdicts, ...prev }));
         setVisited((prev) => ({ ...restoredVisited, ...prev }));
+        setLangDrafts((prev) => {
+          const merged = { ...prev };
+          for (const [qid, langs] of Object.entries(restoredDrafts)) merged[qid] = { ...langs, ...merged[qid] };
+          return merged;
+        });
       }
       try {
         setMarkedForReview(JSON.parse(localStorage.getItem(`markedForReview:${startRes.data.id}`) || "{}"));
@@ -474,11 +489,24 @@ export default function TestTaking() {
         return { ...prev, [current.id]: { language: "sql", code: "" } };
       }
       if (current.questionType === "CODING") {
-        const code = current.starterCodeByLanguage?.javascript || current.starterCode || defaultStarter("javascript");
+        // Question.starterCode (the legacy single-language field) has no associated language on
+        // this model — unlike PracticeQuestion/InterviewQuestion, there's no way to know what
+        // language it was authored in, so it must never be used as a per-language fallback here.
+        // Using it for "javascript" specifically was the actual cause of Java/other-language code
+        // appearing mislabeled as JavaScript the first time a legacy question was opened.
+        const code = current.starterCodeByLanguage?.javascript || defaultStarter("javascript");
         return { ...prev, [current.id]: { language: "javascript", code } };
       }
       return { ...prev, [current.id]: { selected: [] } };
     });
+    if (current.questionType === "SQL" || current.questionType === "CODING") {
+      const lang = current.questionType === "SQL" ? "sql" : "javascript";
+      setLangDrafts((prev) => {
+        if (prev[current.id]?.[lang] !== undefined) return prev; // already seeded — first-open only
+        const code = current.questionType === "SQL" ? "" : (current.starterCodeByLanguage?.javascript || defaultStarter("javascript"));
+        return { ...prev, [current.id]: { ...prev[current.id], [lang]: code } };
+      });
+    }
     setVisited((prev) => (prev[current.id] ? prev : { ...prev, [current.id]: true }));
     setRunResult(null);
     setSubmitResultMsg(null);
@@ -628,13 +656,17 @@ export default function TestTaking() {
 
   function setLanguage(language) {
     if (!current) return;
-    // Switching language always loads that language's own default template — keeping the
-    // previous language's code around makes no sense and reads as "the compiler is broken".
-    // Prefers the question's own per-language starter code (bulk-uploaded or authored that way)
-    // over the generic boilerplate fallback.
-    const code = current.starterCodeByLanguage?.[language] || defaultStarter(language);
+    // Restores whatever was already typed in this language for this question, if anything —
+    // switching away and back must never silently discard a student's work. Only the very first
+    // time a language is picked for this question does it fall back to a starter template:
+    // the question's own per-language template (bulk-uploaded or authored that way) if present,
+    // otherwise a generic-but-language-correct default. Never another language's code.
+    const draft = langDrafts[current.id]?.[language];
+    const code = draft !== undefined ? draft : (current.starterCodeByLanguage?.[language] || defaultStarter(language));
     setAnswers((prev) => ({ ...prev, [current.id]: { language, code } }));
+    setLangDrafts((prev) => ({ ...prev, [current.id]: { ...prev[current.id], [language]: code } }));
     setRunResult(null);
+    setSubmitResultMsg(null);
     scheduleCodeAutoSave(current.id, language, code);
   }
 
@@ -642,6 +674,7 @@ export default function TestTaking() {
     if (!current) return;
     const language = answer?.language || "javascript";
     setAnswers((prev) => ({ ...prev, [current.id]: { ...prev[current.id], code } }));
+    setLangDrafts((prev) => ({ ...prev, [current.id]: { ...prev[current.id], [language]: code } }));
     scheduleCodeAutoSave(current.id, language, code);
   }
 
