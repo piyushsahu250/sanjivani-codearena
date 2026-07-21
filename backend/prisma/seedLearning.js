@@ -785,12 +785,169 @@ const MODULE4_CODING = [
   },
 ];
 
-// Modules 5-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE5_LESSONS = [
+  {
+    title: "1D Arrays",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "An array is a fixed-size, indexed collection of elements of the SAME type, stored in contiguous memory. Once created, its size cannot change.",
+      syntax:
+        "int[] numbers = new int[5];       // declaration + allocation, all elements default to 0\nint[] scores = {90, 85, 78, 92, 88};    // declaration + initialization with literal values\nnumbers[0] = 10;                         // assign by index (0-based)\nint first = numbers[0];                  // read by index\nint size = numbers.length;               // length is a FIELD, not a method — no parentheses",
+      example: "int[] marks = {70, 85, 90};\nfor (int i = 0; i < marks.length; i++) {\n    System.out.println(marks[i]);\n}\n// 70 85 90, each on its own line",
+      notes: [
+        "Array indices are 0-based: a length-5 array has valid indices 0 through 4.",
+        "Accessing an index outside the valid range (e.g. <code>numbers[5]</code> on a length-5 array) throws <code>ArrayIndexOutOfBoundsException</code> at runtime — Java does not silently return a default value or wrap around.",
+      ],
+      mistakes: ["Using <code>&lt;=</code> instead of <code>&lt;</code> when looping with <code>array.length</code> — this reads one past the end and throws <code>ArrayIndexOutOfBoundsException</code> on the last iteration."],
+      bestPractices: ["Prefer the enhanced for-each loop (<code>for (int n : marks)</code>) when you only need each value, not its index — it can't throw an out-of-bounds error."],
+    }),
+  },
+  {
+    title: "2D Arrays",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "A 2D array is an \"array of arrays\" — commonly used to represent grids, matrices, or tables of data.",
+      syntax:
+        "int[][] grid = new int[3][4];   // 3 rows, 4 columns, all elements default to 0\nint[][] matrix = {{1, 2}, {3, 4}, {5, 6}}; // literal initialization, 3 rows of 2 columns each\ngrid[1][2] = 7;                          // row 1, column 2\nint rows = grid.length;                  // number of rows\nint cols = grid[0].length;               // number of columns in row 0",
+      example:
+        "int[][] matrix = {{1, 2, 3}, {4, 5, 6}};\nfor (int i = 0; i < matrix.length; i++) {\n    for (int j = 0; j < matrix[i].length; j++) {\n        System.out.print(matrix[i][j] + \" \");\n    }\n    System.out.println();\n}\n// 1 2 3\n// 4 5 6",
+      notes: [
+        "Java 2D arrays are technically arrays of array references, which means rows don't all need the same length — this is called a <strong>jagged array</strong>.",
+        "Use <code>matrix[i].length</code> (the length of a specific row), not <code>matrix.length</code>, when a jagged array's rows may differ in size.",
+      ],
+      mistakes: ["Assuming every row of a 2D array has the same length by reusing <code>matrix[0].length</code> as a constant for all rows — this breaks on a jagged array where row lengths differ."],
+    }),
+  },
+  {
+    title: "Array Operations",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "Beyond simple read/write by index, arrays support a small set of common operations: traversal (visiting every element), aggregation (sum/min/max), and copying.",
+      syntax:
+        "int sum = 0;\nfor (int n : numbers) { sum += n; }\n\nint[] copy = Arrays.copyOf(numbers, numbers.length);  // java.util.Arrays\nSystem.arraycopy(numbers, 0, copy, 0, numbers.length); // lower-level alternative",
+      example: "int[] scores = {70, 95, 60, 88};\nint max = scores[0];\nfor (int s : scores) {\n    if (s > max) max = s;\n}\nSystem.out.println(max); // 95",
+      notes: [
+        "Arrays have a FIXED size — there's no built-in \"insert\" or \"remove\" that resizes an array; you'd copy into a new, larger/smaller array, or use an <code>ArrayList</code> instead when the size needs to change.",
+        "Assigning one array variable to another (<code>int[] b = a;</code>) copies the REFERENCE, not the contents — both variables point to the same underlying array. Use <code>Arrays.copyOf()</code> when you need an independent copy.",
+      ],
+      mistakes: ["Writing <code>int[] b = a;</code> expecting an independent copy, then being surprised that modifying <code>b</code> also changes what <code>a</code> sees — both variables reference the same array object."],
+    }),
+  },
+  {
+    title: "Searching",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Searching means finding whether (and where) a target value exists in an array. The two classic approaches are <strong>linear search</strong> (works on any array) and <strong>binary search</strong> (requires a SORTED array, but is much faster).",
+      syntax:
+        "// Linear search — checks every element in order\nfor (int i = 0; i < arr.length; i++) {\n    if (arr[i] == target) return i;\n}\nreturn -1;\n\n// Binary search — repeatedly halves the search range on a SORTED array\nint low = 0, high = arr.length - 1;\nwhile (low <= high) {\n    int mid = low + (high - low) / 2;\n    if (arr[mid] == target) return mid;\n    else if (arr[mid] < target) low = mid + 1;\n    else high = mid - 1;\n}\nreturn -1;",
+      example: "int[] sorted = {2, 5, 8, 12, 16, 23, 38};\n// binary search for 23: mid index 3 (value 8) is too low → search right half →\n// mid index 5 (value 23) → found at index 5",
+      notes: [
+        "Linear search is O(n) — in the worst case it checks every element. Binary search is O(log n) but ONLY works correctly on a sorted array.",
+        "<code>low + (high - low) / 2</code> is the safe way to compute the midpoint — <code>(low + high) / 2</code> can theoretically overflow for very large index values.",
+      ],
+      mistakes: ["Running binary search on an UNSORTED array — it silently gives wrong (or missing) results instead of erroring, since each comparison assumes the array is sorted."],
+    }),
+  },
+  {
+    title: "Sorting",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Sorting arranges an array's elements into a defined order (typically ascending). Java's standard library provides a built-in, well-tested sort — <code>Arrays.sort()</code> — for production use; understanding a simple algorithm like bubble sort builds intuition for how sorting works underneath.",
+      syntax:
+        "import java.util.Arrays;\n\nint[] nums = {5, 2, 8, 1, 9};\nArrays.sort(nums); // sorts in place, ascending\n\n// Bubble sort — repeatedly swaps adjacent out-of-order pairs\nfor (int i = 0; i < arr.length - 1; i++) {\n    for (int j = 0; j < arr.length - 1 - i; j++) {\n        if (arr[j] > arr[j + 1]) {\n            int temp = arr[j];\n            arr[j] = arr[j + 1];\n            arr[j + 1] = temp;\n        }\n    }\n}",
+      example: "int[] nums = {5, 2, 8, 1, 9};\nArrays.sort(nums);\nSystem.out.println(Arrays.toString(nums)); // [1, 2, 5, 8, 9]",
+      notes: [
+        "<code>Arrays.sort()</code> uses a dual-pivot quicksort for primitives (O(n log n) average) — always prefer it over a hand-rolled sort in real code; bubble sort (O(n²)) is taught for understanding, not for production use.",
+        "<code>Arrays.toString(array)</code> is the standard way to print an array's contents readably — printing the array variable directly (<code>System.out.println(nums)</code>) prints its memory-address-based hash, not its elements.",
+      ],
+      mistakes: ["Forgetting that <code>Arrays.sort()</code> sorts IN PLACE and returns <code>void</code> — writing <code>int[] sorted = Arrays.sort(nums);</code> is a compile error, since <code>sort()</code>'s return type is <code>void</code>, not an array."],
+    }),
+  },
+];
+
+const MODULE5_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "A Java array declared as `int[] arr = new int[5];` has valid indices:",
+    options: ["1 to 5", "0 to 4", "0 to 5", "1 to 4"],
+    correctAnswer: 1,
+    explanation: "Array indices are 0-based, so a length-5 array has valid indices 0 through 4.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What happens when this runs?\n\nint[] arr = {10, 20, 30};\nSystem.out.println(arr[3]);",
+    options: ["0", "30", "Compile error", "ArrayIndexOutOfBoundsException at runtime"],
+    correctAnswer: 3,
+    explanation: "arr has valid indices 0-2; index 3 is out of range, which throws ArrayIndexOutOfBoundsException at runtime (not a compile-time error, since Java can't always know the index in advance).",
+  },
+  {
+    type: "MCQ",
+    prompt: "In a 2D array `int[][] grid = new int[3][4];`, how many rows and columns does it have?",
+    options: ["4 rows, 3 columns", "3 rows, 4 columns", "3 rows, 3 columns", "4 rows, 4 columns"],
+    correctAnswer: 1,
+    explanation: "The first bracket dimension is the number of rows (3), the second is the number of columns per row (4).",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\nint[] a = {1, 2, 3};\nint[] b = a;\nb[0] = 99;\nSystem.out.println(a[0]);",
+    options: ["1", "99", "0", "Compile error"],
+    correctAnswer: 1,
+    explanation: "b = a; copies the reference, not the array's contents — a and b point to the SAME array, so modifying b[0] also changes what a[0] reads.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What is a required precondition for binary search to work correctly?",
+    options: ["The array must contain only positive numbers", "The array must be sorted", "The array must have an even length", "The array must contain no duplicates"],
+    correctAnswer: 1,
+    explanation: "Binary search relies on comparing against a midpoint and discarding half the range — that logic is only valid if the array is sorted.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What is the time complexity of linear search in the worst case, for an array of size n?",
+    options: ["O(1)", "O(log n)", "O(n)", "O(n^2)"],
+    correctAnswer: 2,
+    explanation: "Linear search may need to check every one of the n elements before finding (or ruling out) the target.",
+  },
+  {
+    type: "DEBUG",
+    prompt: "What is wrong with this line?\n\nint[] sorted = Arrays.sort(nums);",
+    options: ["Nothing, it's correct", "Arrays.sort() returns void, not an array — it sorts in place", "Arrays.sort() only works on Strings", "sorted should be declared as a List, not an array"],
+    correctAnswer: 1,
+    explanation: "Arrays.sort(nums) mutates nums directly and returns void, so assigning its result to an int[] variable is a compile error.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\nint[] nums = {5, 2, 8, 1};\nArrays.sort(nums);\nSystem.out.println(Arrays.toString(nums));",
+    options: ["[5, 2, 8, 1]", "[1, 2, 5, 8]", "[8, 5, 2, 1]", "A memory address, not the elements"],
+    correctAnswer: 1,
+    explanation: "Arrays.sort() sorts ascending in place, and Arrays.toString() renders the elements readably as [1, 2, 5, 8].",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below.
+const MODULE5_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read space-separated integers and print the second largest distinct value in the array (there will be at least two distinct values).",
+    language: "java",
+    testCases: [{ input: "10 20 4 45 99", expected: "45" }, { input: "1 2", expected: "1" }, { input: "3 3 3 7", expected: "3" }],
+    explanation: "Track the largest and second-largest distinct values seen so far in a single pass — whenever a new value beats the current largest, the old largest becomes the new second-largest.",
+  },
+  {
+    type: "CODING",
+    prompt: "Read space-separated integers on one line and a target integer on the next line. Print how many times the target appears in the array.",
+    language: "java",
+    testCases: [{ input: "1 2 2 3 2\n2", expected: "3" }, { input: "5 5 5\n5", expected: "3" }, { input: "1 2 3\n4", expected: "0" }],
+    explanation: "Walk the array once, incrementing a counter every time an element equals the target.",
+  },
+];
+
+// Modules 6-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Arrays", topics: ["1D Arrays", "2D Arrays", "Array Operations", "Searching", "Sorting"], practiceLabel: "Coding Exercises" },
   { title: "Strings", topics: ["String", "StringBuilder", "StringBuffer", "String Methods", "Regular Expressions"], practiceLabel: "Coding Problems" },
   { title: "Object-Oriented Programming (OOP)", topics: ["Classes", "Objects", "Constructors", "Inheritance", "Polymorphism", "Abstraction", "Encapsulation", "Interfaces"], practiceLabel: "Mini Quiz & Coding Exercises" },
   { title: "Exception Handling", topics: ["try", "catch", "finally", "throw", "throws", "Custom Exceptions"], practiceLabel: "Coding Problems" },
@@ -1001,13 +1158,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 5-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 5: full hand-authored content ---
+  const module5 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Arrays" } },
+    update: {},
+    create: { courseId: course.id, title: "Arrays", order: 4 },
+  });
+
+  for (let i = 0; i < MODULE5_LESSONS.length; i++) {
+    const l = MODULE5_LESSONS[i];
+    await upsertLessonContent(prisma, module5.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module5PracticeLesson = await upsertLessonContent(prisma, module5.id, "Coding Exercises", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE5_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule5Practice = await prisma.practiceQuestion.count({ where: { lessonId: module5PracticeLesson.id } });
+  if (existingModule5Practice === 0) {
+    let order = 0;
+    for (const q of MODULE5_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module5PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE5_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module5PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 6-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 4 },
+      create: { courseId: course.id, title: spec.title, order: m + 5 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -1029,7 +1226,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 4, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 5, "modules.");
 }
 
 module.exports = { seedLearningModule };

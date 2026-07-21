@@ -221,6 +221,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Arrays": {
+    title: "Module 5 Coding Assessment",
+    instructions: "Solve every question by implementing the given method, applying the array traversal, searching, and aggregation concepts from this module.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Sum of Array Elements",
+        description: "Return the sum of all elements in the given array.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "1 2 3 4 5", expected: "15" },
+          { input: "0", expected: "0" },
+          { input: "-1 -2 -3", expected: "-6" },
+        ],
+      },
+      {
+        title: "Find Maximum in Array",
+        description: "Return the largest value in the given array.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "3 9 5 1", expected: "9" },
+          { input: "-5 -1 -9", expected: "-1" },
+          { input: "7", expected: "7" },
+        ],
+      },
+      {
+        title: "Binary Search",
+        description: "Given a SORTED array and a target value, return the 0-based index of the target using binary search, or -1 if it isn't present.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "2 5 8 12 16 23 38\n23", expected: "5" },
+          { input: "1 3 5 7 9\n4", expected: "-1" },
+          { input: "10 20 30\n10", expected: "0" },
+        ],
+      },
+      {
+        title: "Count Even Numbers",
+        description: "Return the count of even numbers in the given array.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "1 2 3 4 5 6", expected: "3" },
+          { input: "1 3 5", expected: "0" },
+          { input: "2 4 6 8", expected: "4" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {

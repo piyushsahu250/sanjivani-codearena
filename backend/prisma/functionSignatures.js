@@ -32,6 +32,10 @@ const MODULE_CODING_SIGNATURES = {
   "Power of a Number": { methodName: "power", returnType: "long", params: [{ name: "base", type: "int" }, { name: "exp", type: "int" }] },
   "Palindrome Number Check": { methodName: "isPalindromeNumber", returnType: "boolean", params: [{ name: "n", type: "int" }] },
   "Sum of Array (Recursive)": { methodName: "sumOfArrayRecursive", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
+  "Sum of Array Elements": { methodName: "sumArray", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
+  "Find Maximum in Array": { methodName: "findMax", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
+  "Binary Search": { methodName: "binarySearch", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "target", type: "int" }] },
+  "Count Even Numbers": { methodName: "countEven", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -49,6 +53,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "gcd", returnType: "int", params: [{ name: "a", type: "int" }, { name: "b", type: "int" }] },
   "Read one integer and print \"true\" if it is a power of two, or \"false\" otherwise.":
     { methodName: "isPowerOfTwo", returnType: "boolean", params: [{ name: "n", type: "int" }] },
+  "Read space-separated integers and print the second largest distinct value in the array (there will be at least two distinct values).":
+    { methodName: "secondLargest", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
+  "Read space-separated integers on one line and a target integer on the next line. Print how many times the target appears in the array.":
+    { methodName: "countOccurrences", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "target", type: "int" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {
