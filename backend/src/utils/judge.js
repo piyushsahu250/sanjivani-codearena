@@ -25,6 +25,30 @@ const { wrapFunctionCode } = require("./functionHarness");
 
 const CASE_CONCURRENCY = Number(process.env.JUDGE_CASE_CONCURRENCY || 2);
 const MEMORY_LIMIT_KB = Number(process.env.JUDGE_MEMORY_LIMIT_KB || 262144); // 256 MB default
+// Caps the number of processes/threads a single submission can hold open — the concrete,
+// well-understood defense against a fork bomb (`while(1) fork();` / infinite thread spawn)
+// hanging the whole instance. Generous enough for legitimate multi-threaded submissions.
+const MAX_PROCESSES = Number(process.env.JUDGE_MAX_PROCESSES || 64);
+
+// Best-effort network denial for submitted code: run it inside its own network namespace with
+// no interfaces, so outbound connections fail immediately instead of hanging or exfiltrating
+// anything. `unshare -n` needs CAP_SYS_ADMIN, which containers running as root normally have
+// within their own namespace — but that's not guaranteed on every host, so this is probed once
+// at startup and silently disabled (falling back to today's behavior) if it doesn't work, rather
+// than risk breaking every code execution on this platform over a hardening measure.
+let networkDenialAvailable = null;
+function checkNetworkDenialAvailable() {
+  if (networkDenialAvailable !== null) return Promise.resolve(networkDenialAvailable);
+  return new Promise((resolve) => {
+    const probe = spawn("unshare", ["-n", "true"]);
+    probe.on("error", () => { networkDenialAvailable = false; resolve(false); });
+    probe.on("close", (code) => {
+      networkDenialAvailable = code === 0;
+      if (!networkDenialAvailable) console.warn("judge: `unshare -n` unavailable on this host — running submissions without network-namespace isolation");
+      resolve(networkDenialAvailable);
+    });
+  });
+}
 
 // Text patterns that show up in stderr when a program actually ran out of the memory budget
 // `ulimit -v` gave it, as opposed to some unrelated crash — used to report a distinct "Memory
@@ -182,16 +206,23 @@ function classifyRuntimeError(language, rawMessage) {
 // exceeds it gets allocation failures, not just a number we report after the fact) and under
 // `/usr/bin/time -v`, which writes real peak-RSS to a separate file (statsFile) so its report
 // never gets mixed into the submitted program's own stderr.
-function spawnWithTimeout(cmd, args, options, input, timeLimitMs, { enforceMemory = true, memoryLimitKb = MEMORY_LIMIT_KB } = {}) {
+async function spawnWithTimeout(cmd, args, options, input, timeLimitMs, { enforceMemory = true, memoryLimitKb = MEMORY_LIMIT_KB } = {}) {
+  const networkDenied = enforceMemory && await checkNetworkDenialAvailable(); // only for actual execution, not compilation
   return new Promise((resolve) => {
     const statsFile = path.join(os.tmpdir(), `judge-time-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
-    // The memory ulimit only applies to actually running submitted code, not to compilation —
-    // javac in particular needs real JVM headroom well beyond a student program's own budget,
-    // and capping it the same way would misreport legitimate compiler memory use as an MLE.
+    // The memory/process ulimits only apply to actually running submitted code, not to
+    // compilation — javac in particular needs real JVM headroom well beyond a student program's
+    // own budget, and capping it the same way would misreport legitimate compiler memory use as
+    // an MLE (or block javac's own worker threads as a false fork-bomb trip).
     const wrappedArgs = enforceMemory
-      ? ["-v", "-o", statsFile, "sh", "-c", `ulimit -v ${memoryLimitKb}; exec "$0" "$@"`, cmd, ...args]
+      ? ["-v", "-o", statsFile, "sh", "-c", `ulimit -v ${memoryLimitKb}; ulimit -u ${MAX_PROCESSES}; exec "$0" "$@"`, cmd, ...args]
       : ["-v", "-o", statsFile, cmd, ...args];
-    const child = spawn("/usr/bin/time", wrappedArgs, { ...options, killSignal: "SIGKILL" });
+    const timeArgs = networkDenied ? ["-n", "/usr/bin/time", ...wrappedArgs] : wrappedArgs;
+    const timeCmd = networkDenied ? "unshare" : "/usr/bin/time";
+    // detached so the child becomes its own process-group leader — on timeout we kill the whole
+    // group (process.kill(-pid, ...)), not just this one PID, which also reaps any children the
+    // submitted program itself forked (a plain child.kill() would leave those running).
+    const child = spawn(timeCmd, timeArgs, { ...options, detached: true, killSignal: "SIGKILL" });
 
     let stdout = "";
     let stderr = "";
@@ -200,7 +231,7 @@ function spawnWithTimeout(cmd, args, options, input, timeLimitMs, { enforceMemor
 
     const killTimer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      try { process.kill(-child.pid, "SIGKILL"); } catch { /* already exited */ }
     }, timeLimitMs);
 
     if (input !== undefined) {
