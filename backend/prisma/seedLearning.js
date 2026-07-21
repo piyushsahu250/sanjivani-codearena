@@ -2459,12 +2459,215 @@ const MODULE14_CODING = [
   },
 ];
 
-// Modules 15-16: topic list + trailing practice-section label from the spec. Real lesson
-// content isn't hand-authored for these — each gets a placeholder lesson body so the course
-// tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
-// real content via the Learning Management admin panel.
+const MODULE15_LESSONS = [
+  {
+    title: "Arrays",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "In a Data Structures & Algorithms context, an array is valued for its O(1) random access and cache-friendly contiguous memory layout — the same array covered in the Arrays module, but here the focus shifts to ANALYZING the time complexity of its operations and using it as the building block for other structures (like a heap or a hash table).",
+      syntax:
+        "// Time complexity cheat sheet for arrays:\n// Access by index:      O(1)\n// Search (unsorted):    O(n)\n// Search (sorted, binary search): O(log n)\n// Insert/delete at end:  O(1) amortized\n// Insert/delete at start/middle: O(n) — requires shifting elements",
+      example: "// Shifting elements to insert at the front — O(n)\nstatic int[] insertAtFront(int[] arr, int value) {\n    int[] result = new int[arr.length + 1];\n    result[0] = value;\n    System.arraycopy(arr, 0, result, 1, arr.length);\n    return result;\n}",
+      notes: [
+        "The O(1) random access is the single biggest reason arrays outperform linked structures for read-heavy workloads — no traversal is needed to reach any index.",
+        "A dynamic array (like ArrayList) amortizes its resizing cost — most appends are O(1), but occasionally one append triggers an O(n) copy to a larger backing array.",
+      ],
+      mistakes: ["Assuming insertion is always O(1) just because array ACCESS is O(1) — inserting anywhere except the very end requires shifting every subsequent element, which is O(n)."],
+    }),
+  },
+  {
+    title: "Linked Lists",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "A linked list is a sequence of nodes, where each node holds a value and a reference to the next node — unlike an array, elements are NOT stored contiguously in memory. This trades away O(1) random access for O(1) insertion/deletion once you already have a reference to the right spot.",
+      syntax:
+        "class Node {\n    int value;\n    Node next;\n    Node(int value) { this.value = value; }\n}\n\nclass LinkedList {\n    Node head;\n\n    void addFirst(int value) {\n        Node newNode = new Node(value);\n        newNode.next = head;\n        head = newNode;\n    }\n\n    void printAll() {\n        Node current = head;\n        while (current != null) {\n            System.out.print(current.value + \" \");\n            current = current.next;\n        }\n    }\n}",
+      example: "LinkedList list = new LinkedList();\nlist.addFirst(3);\nlist.addFirst(2);\nlist.addFirst(1);\nlist.printAll(); // 1 2 3",
+      notes: [
+        "Random access (get the Nth element) is O(n) for a linked list — you must traverse node by node from the head, unlike an array's O(1) index access.",
+        "A DOUBLY linked list adds a prev reference to each node, allowing O(1) traversal backward and O(1) removal of a known node without needing its predecessor.",
+      ],
+      mistakes: ["Forgetting to update the head reference when inserting/removing the first node — this silently \"loses\" part of the list, since head is the only entry point to traverse from."],
+    }),
+  },
+  {
+    title: "Stack",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "In a DSA context, a stack (LIFO) is often implemented from scratch on top of an array or linked list to build intuition, before switching to Java's built-in ArrayDeque in real code. Every push/pop/peek should run in O(1).",
+      syntax:
+        "class ArrayStack {\n    private int[] data;\n    private int top = -1;\n\n    ArrayStack(int capacity) { data = new int[capacity]; }\n\n    void push(int value) { data[++top] = value; }\n    int pop() { return data[top--]; }\n    int peek() { return data[top]; }\n    boolean isEmpty() { return top == -1; }\n}",
+      example: "ArrayStack stack = new ArrayStack(10);\nstack.push(1);\nstack.push(2);\nstack.push(3);\nSystem.out.println(stack.pop()); // 3 — LIFO",
+      notes: [
+        "A fixed-capacity array-backed stack risks a \"stack overflow\" (running out of array space) if pushed beyond its capacity — a production implementation resizes the backing array, same as ArrayList.",
+        "Classic algorithmic use: balanced-parentheses checking, evaluating postfix expressions, and simulating recursion (since the JVM's actual call stack is, itself, a stack).",
+      ],
+      mistakes: ["Calling <code>pop()</code> or <code>peek()</code> on an empty stack (<code>top == -1</code>) — this reads an invalid/negative array index, so always check <code>isEmpty()</code> first."],
+    }),
+  },
+  {
+    title: "Queue",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "In a DSA context, a queue (FIFO) is commonly implemented with either a linked list (O(1) enqueue/dequeue at opposite ends) or a CIRCULAR array (avoiding the O(n) cost of shifting elements after every dequeue).",
+      syntax:
+        "class CircularQueue {\n    private int[] data;\n    private int front = 0, rear = -1, size = 0;\n\n    CircularQueue(int capacity) { data = new int[capacity]; }\n\n    void enqueue(int value) {\n        rear = (rear + 1) % data.length;\n        data[rear] = value;\n        size++;\n    }\n\n    int dequeue() {\n        int value = data[front];\n        front = (front + 1) % data.length;\n        size--;\n        return value;\n    }\n}",
+      example: "CircularQueue q = new CircularQueue(5);\nq.enqueue(1);\nq.enqueue(2);\nq.enqueue(3);\nSystem.out.println(q.dequeue()); // 1 — FIFO",
+      notes: [
+        "A NAIVE array-backed queue (dequeuing from index 0 by shifting everything left) is O(n) per dequeue — a circular array wraps front/rear indices with modulo arithmetic to keep both enqueue and dequeue O(1).",
+        "Classic algorithmic use: breadth-first search (BFS) on a tree or graph, and any \"process in the order received\" scheduling problem.",
+      ],
+      mistakes: ["Implementing a queue with a plain array and dequeuing by shifting all remaining elements left — this works correctly but is O(n) per dequeue, defeating the point of using a queue for efficiency."],
+    }),
+  },
+  {
+    title: "Trees",
+    estimatedMinutes: 14,
+    content: lessonHTML({
+      explanation: "A tree is a hierarchical structure of nodes, each with a value and references to child nodes, with exactly one root and no cycles. A binary tree restricts each node to at most two children (commonly called left and right).",
+      syntax:
+        "class TreeNode {\n    int value;\n    TreeNode left, right;\n    TreeNode(int value) { this.value = value; }\n}\n\n// In-order traversal (left, root, right) — visits a Binary Search Tree in sorted order\nstatic void inorder(TreeNode node) {\n    if (node == null) return;\n    inorder(node.left);\n    System.out.print(node.value + \" \");\n    inorder(node.right);\n}",
+      example:
+        "TreeNode root = new TreeNode(5);\nroot.left = new TreeNode(3);\nroot.right = new TreeNode(8);\ninorder(root); // 3 5 8\n// A Binary Search Tree (BST) keeps every left subtree's values SMALLER and every\n// right subtree's values LARGER than the node's own value — this is what makes\n// in-order traversal produce sorted output.",
+      notes: [
+        "The three classic depth-first traversal orders are pre-order (root, left, right), in-order (left, root, right), and post-order (left, right, root) — each visits every node exactly once, just in a different sequence.",
+        "In a balanced Binary Search Tree, search/insert/delete are all O(log n); in a degenerate (essentially linear) tree, they degrade to O(n) — this is why self-balancing trees (AVL, Red-Black) exist.",
+      ],
+      mistakes: ["Forgetting the null-check base case in a recursive tree traversal — every recursive tree function needs a <code>if (node == null) return;</code> (or equivalent) base case, or it throws NullPointerException at the first leaf's child."],
+    }),
+  },
+  {
+    title: "Graphs",
+    estimatedMinutes: 14,
+    content: lessonHTML({
+      explanation: "A graph is a set of nodes (vertices) connected by edges, more general than a tree — graphs can have cycles, multiple connections, and no single root. Common representations are an adjacency list (a map/array of each node's neighbors) and an adjacency matrix (a 2D grid of connections).",
+      syntax:
+        "import java.util.*;\n\nMap<Integer, List<Integer>> adjacencyList = new HashMap<>();\nadjacencyList.put(1, List.of(2, 3));\nadjacencyList.put(2, List.of(1, 4));\nadjacencyList.put(3, List.of(1));\nadjacencyList.put(4, List.of(2));\n\n// Breadth-first search (BFS) using a Queue\nstatic void bfs(Map<Integer, List<Integer>> graph, int start) {\n    Set<Integer> visited = new HashSet<>();\n    Queue<Integer> queue = new LinkedList<>();\n    queue.offer(start);\n    visited.add(start);\n    while (!queue.isEmpty()) {\n        int node = queue.poll();\n        System.out.print(node + \" \");\n        for (int neighbor : graph.getOrDefault(node, List.of())) {\n            if (!visited.contains(neighbor)) {\n                visited.add(neighbor);\n                queue.offer(neighbor);\n            }\n        }\n    }\n}",
+      example: "// For the graph above, bfs(adjacencyList, 1) prints: 1 2 3 4\n// (visits 1's neighbors 2,3 first, then 2's unvisited neighbor 4)",
+      notes: [
+        "An adjacency LIST is efficient for SPARSE graphs (few edges relative to nodes) — O(V + E) space; an adjacency MATRIX is simpler for DENSE graphs but always uses O(V²) space regardless of edge count.",
+        "BFS explores level by level using a Queue (finds the shortest path in an unweighted graph); DFS explores as deep as possible before backtracking, typically using a Stack or recursion.",
+      ],
+      mistakes: ["Forgetting to track visited nodes during traversal — without a visited set, a graph with a cycle causes infinite traversal (unlike a tree, which has no cycles by definition)."],
+    }),
+  },
+  {
+    title: "Sorting",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Sorting arranges elements into order. Beyond Java's built-in <code>Arrays.sort()</code> (covered in the Arrays module), understanding classic algorithms — their time complexity and trade-offs — is a core DSA skill, especially for interviews.",
+      syntax:
+        "// Bubble Sort — O(n^2), simple but slow\n// Selection Sort — O(n^2), fewer swaps than bubble sort\n// Insertion Sort — O(n^2) worst case, but O(n) on nearly-sorted data\n// Merge Sort — O(n log n) guaranteed, but uses O(n) extra space\n// Quick Sort — O(n log n) average, O(n^2) worst case, but in-place\n\nstatic void selectionSort(int[] arr) {\n    for (int i = 0; i < arr.length - 1; i++) {\n        int minIndex = i;\n        for (int j = i + 1; j < arr.length; j++) {\n            if (arr[j] < arr[minIndex]) minIndex = j;\n        }\n        int temp = arr[minIndex];\n        arr[minIndex] = arr[i];\n        arr[i] = temp;\n    }\n}",
+      example: "int[] arr = {5, 2, 8, 1, 9};\nselectionSort(arr);\nSystem.out.println(Arrays.toString(arr)); // [1, 2, 5, 8, 9]",
+      notes: [
+        "O(n²) algorithms (bubble/selection/insertion sort) are fine for small or nearly-sorted inputs but become impractical for large datasets — this is exactly why <code>Arrays.sort()</code> uses an O(n log n) algorithm internally.",
+        "Merge Sort is STABLE (equal elements keep their relative order) and has guaranteed O(n log n) performance; Quick Sort is usually faster in practice but has a worst-case O(n²) on adversarial input.",
+      ],
+      mistakes: ["Assuming all sorting algorithms have the same time complexity — bubble/selection/insertion sort's O(n²) becomes genuinely slow well before merge/quick sort's O(n log n) does, on large inputs."],
+    }),
+  },
+  {
+    title: "Searching",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "Searching locates a target value in a collection — the Arrays module covered linear and binary search for using Java arrays; here the focus is on WHEN to choose which algorithm, and searching within non-array structures like trees.",
+      syntax:
+        "// Linear search: O(n), works on any (even unsorted) collection\n// Binary search: O(log n), REQUIRES a sorted array\n// BST search: O(log n) average (balanced tree), O(n) worst case (degenerate tree)\n\nstatic boolean searchBST(TreeNode node, int target) {\n    if (node == null) return false;\n    if (node.value == target) return true;\n    return target < node.value ? searchBST(node.left, target) : searchBST(node.right, target);\n}",
+      example: "// Searching a Binary Search Tree follows the same divide-and-conquer\n// idea as binary search on a sorted array — go left or right based on comparison,\n// discarding half the remaining tree at each step.",
+      notes: [
+        "Binary search's O(log n) advantage only applies when the data is ALREADY sorted — sorting first just to binary search once is often not worth the O(n log n) sorting cost.",
+        "A Binary Search Tree gives O(log n) search when balanced, matching binary search's array performance, while ALSO supporting O(log n) insertion/deletion — something a sorted array can't do without O(n) shifting.",
+      ],
+      mistakes: ["Choosing binary search over a HashMap/HashSet lookup for a problem that just needs \"does this value exist?\" — a hash-based structure gives O(1) average lookup, strictly better than binary search's O(log n), when insertion order/sorted order isn't otherwise needed."],
+    }),
+  },
+];
+
+const MODULE15_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "What is the time complexity of accessing an element by index in an array?",
+    options: ["O(n)", "O(log n)", "O(1)", "O(n log n)"],
+    correctAnswer: 2,
+    explanation: "Array elements are stored contiguously, so the memory address of any index can be computed directly — no traversal needed.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Why is insertion at the FRONT of a linked list O(1), while insertion at the front of an array is O(n)?",
+    options: ["Linked lists don't actually support front insertion", "A linked list just rewires a few references; an array must shift every existing element over by one position", "Arrays are always slower than linked lists for everything", "There is no difference"],
+    correctAnswer: 1,
+    explanation: "A linked list's front insertion only touches the new node's next pointer and the head reference; an array must physically move every existing element to make room.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "Given a stack implemented with push/pop, what is printed?\n\npush(1); push(2); push(3);\nprint(pop());",
+    options: ["1", "2", "3", "Empty stack error"],
+    correctAnswer: 2,
+    explanation: "A stack is LIFO — the most recently pushed value (3) is the first one popped.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Why is a naive array-backed queue (shifting elements left after every dequeue) inefficient?",
+    options: ["It uses too much memory", "Each dequeue is O(n) due to shifting; a circular array avoids this and keeps dequeue O(1)", "Arrays can't be used for queues at all", "It only works for small queues"],
+    correctAnswer: 1,
+    explanation: "Shifting every remaining element after each dequeue costs O(n); wrapping front/rear indices with modulo arithmetic (a circular array) avoids the shift entirely.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What does an in-order traversal (left, root, right) of a Binary Search Tree produce?",
+    options: ["A random order", "The nodes in ascending sorted order", "The nodes in descending sorted order", "Only the leaf nodes"],
+    correctAnswer: 1,
+    explanation: "A BST's left-subtree-smaller, right-subtree-larger invariant means visiting left, then root, then right naturally produces ascending order.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Why must a graph traversal track visited nodes, unlike a tree traversal?",
+    options: ["It's optional for both", "Graphs can contain cycles, so without tracking visited nodes, traversal could loop forever", "Trees are always larger than graphs", "Visited tracking makes traversal slower, so it should be avoided"],
+    correctAnswer: 1,
+    explanation: "A tree has no cycles by definition, so traversal always terminates naturally; a graph can have cycles, so revisiting nodes without a visited set can loop indefinitely.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which sorting algorithm guarantees O(n log n) performance in the worst case?",
+    options: ["Bubble Sort", "Quick Sort (worst case is actually O(n^2))", "Merge Sort", "Selection Sort"],
+    correctAnswer: 2,
+    explanation: "Merge Sort's divide-and-conquer structure guarantees O(n log n) even in the worst case, unlike Quick Sort, which can degrade to O(n²) on adversarial input.",
+  },
+  {
+    type: "MCQ",
+    prompt: "When is binary search's O(log n) advantage available?",
+    options: ["Always, regardless of data", "Only when the array is already sorted", "Only for arrays smaller than 100 elements", "Only for arrays of strings"],
+    correctAnswer: 1,
+    explanation: "Binary search relies on being able to discard half the remaining range based on a single comparison — that only works correctly when the array is sorted.",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below. The judge
+// only supports primitive/String/array types, so linked lists, trees, and graphs are represented as
+// plain arrays (values, or structural properties like a complete-tree array length or node degrees).
+const MODULE15_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read an array representing a COMPLETE binary tree filled level by level (only its length matters). Print the height of the tree (the number of edges on the longest root-to-leaf path).",
+    language: "java",
+    testCases: [{ input: "5", expected: "0" }, { input: "1 2 3", expected: "1" }, { input: "1 2 3 4 5 6 7", expected: "2" }],
+    explanation: "For a complete binary tree with n nodes, the height is floor(log2(n)) — each level roughly doubles the node count.",
+  },
+  {
+    type: "CODING",
+    prompt: "Read the degree (number of direct neighbors) of each node in an undirected graph. Print the number of edges in the graph (the sum of all degrees is always twice the number of edges).",
+    language: "java",
+    testCases: [{ input: "2 2 2", expected: "3" }, { input: "1 1", expected: "1" }, { input: "4", expected: "2" }],
+    explanation: "Sum every node's degree and divide by 2 — this is the handshake lemma: every edge contributes exactly 2 to the total degree sum.",
+  },
+];
+
+// Module 16: topic list + trailing practice-section label from the spec. Real lesson content isn't
+// hand-authored for this one yet — it gets placeholder lesson bodies so the course tree, navigation,
+// and progress tracking all work end-to-end, ready for an admin to fill in real content via the
+// Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Data Structures & Algorithms in Java", topics: ["Arrays", "Linked Lists", "Stack", "Queue", "Trees", "Graphs", "Sorting", "Searching"], practiceLabel: "Coding Problems" },
   { title: "Interview Preparation", topics: ["Frequently Asked Java Interview Questions", "MCQs", "Coding Questions", "Company-based Questions", "Previous Placement Questions"], practiceLabel: null },
 ];
 
@@ -3065,13 +3268,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 15-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 15: full hand-authored content ---
+  const module15 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Data Structures & Algorithms in Java" } },
+    update: {},
+    create: { courseId: course.id, title: "Data Structures & Algorithms in Java", order: 14 },
+  });
+
+  for (let i = 0; i < MODULE15_LESSONS.length; i++) {
+    const l = MODULE15_LESSONS[i];
+    await upsertLessonContent(prisma, module15.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module15PracticeLesson = await upsertLessonContent(prisma, module15.id, "Coding Problems", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE15_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule15Practice = await prisma.practiceQuestion.count({ where: { lessonId: module15PracticeLesson.id } });
+  if (existingModule15Practice === 0) {
+    let order = 0;
+    for (const q of MODULE15_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module15PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE15_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module15PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Module 16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 14 },
+      create: { courseId: course.id, title: spec.title, order: m + 15 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -3093,7 +3336,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 14, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 15, "modules.");
 }
 
 module.exports = { seedLearningModule };

@@ -72,6 +72,10 @@ const MODULE_CODING_SIGNATURES = {
   "Total Serialized Size": { methodName: "totalSerializedSize", returnType: "long", params: [{ name: "objectSizes", type: "int[]" }, { name: "overheadPerObject", type: "int" }] },
   "Count Reflective Method Matches": { methodName: "countMatchingMethods", returnType: "int", params: [{ name: "methodNameLengths", type: "int[]" }, { name: "targetLength", type: "int" }] },
   "Simulate Deprecated API Usage Count": { methodName: "countDeprecatedCalls", returnType: "int", params: [{ name: "isDeprecated", type: "boolean[]" }] },
+  "Reverse a Linked List (Array Simulation)": { methodName: "reverseList", returnType: "int[]", params: [{ name: "values", type: "int[]" }] },
+  "Valid Degree Sum (Graph)": { methodName: "isValidDegreeSum", returnType: "boolean", params: [{ name: "degrees", type: "int[]" }] },
+  "Valid BST In-order Sequence": { methodName: "isValidBSTInorder", returnType: "boolean", params: [{ name: "values", type: "int[]" }] },
+  "Count Inversions": { methodName: "countInversions", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -129,6 +133,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "countOverflows", returnType: "int", params: [{ name: "values", type: "int[]" }, { name: "capacities", type: "int[]" }] },
   "Read a list of candidate port numbers on one line and a list of already-used port numbers on the next line. Print the first candidate port that is NOT in the used list, or -1 if all candidates are used.":
     { methodName: "firstAvailablePort", returnType: "int", params: [{ name: "candidatePorts", type: "int[]" }, { name: "usedPorts", type: "int[]" }] },
+  "Read an array representing a COMPLETE binary tree filled level by level (only its length matters). Print the height of the tree (the number of edges on the longest root-to-leaf path).":
+    { methodName: "treeHeight", returnType: "int", params: [{ name: "tree", type: "int[]" }] },
+  "Read the degree (number of direct neighbors) of each node in an undirected graph. Print the number of edges in the graph (the sum of all degrees is always twice the number of edges).":
+    { methodName: "numEdges", returnType: "int", params: [{ name: "degrees", type: "int[]" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {

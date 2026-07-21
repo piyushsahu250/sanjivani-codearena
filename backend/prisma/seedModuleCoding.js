@@ -731,6 +731,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Data Structures & Algorithms in Java": {
+    title: "Module 15 Coding Assessment",
+    instructions: "Solve every question by implementing the given method — classic data-structure and algorithm problems, using arrays to represent linked lists, trees, and graphs since the judge tests a single static method.",
+    questionCount: 4,
+    timeLimitMin: 45,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Reverse a Linked List (Array Simulation)",
+        description: "Given an array representing a linked list's values in order, return them reversed.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "1 2 3 4", expected: "4 3 2 1" },
+          { input: "5", expected: "5" },
+          { input: "1 2", expected: "2 1" },
+        ],
+      },
+      {
+        title: "Valid Degree Sum (Graph)",
+        description: "Given the degree of each node in an undirected graph, return true if the sum of all degrees is even (a necessary property of any valid simple graph, per the handshake lemma), false otherwise.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "2 2 2", expected: "true" },
+          { input: "1 1 1", expected: "false" },
+          { input: "3 3", expected: "true" },
+        ],
+      },
+      {
+        title: "Valid BST In-order Sequence",
+        description: "Given an array of values as if produced by an in-order traversal of a binary tree, return true if the sequence is strictly ascending (confirming it's a valid Binary Search Tree in-order sequence), false otherwise.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "1 3 5 8", expected: "true" },
+          { input: "5 3 8", expected: "false" },
+          { input: "7", expected: "true" },
+        ],
+      },
+      {
+        title: "Count Inversions",
+        description: "Given an array, return the number of inversions — pairs of indices (i, j) where i < j but the value at i is greater than the value at j.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "2 4 1 3 5", expected: "3" },
+          { input: "1 2 3", expected: "0" },
+          { input: "3 2 1", expected: "3" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {
