@@ -527,6 +527,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Multithreading": {
+    title: "Module 11 Coding Assessment",
+    instructions: "Solve every question by implementing the given method — since the judge grades one deterministic method call rather than real concurrent execution, these model thread-scheduling and synchronization outcomes as plain computations.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Last Thread to Finish",
+        description: "Given each thread's completion time (index = thread ID, unique maximum), return the ID (index) of the thread that finishes last.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "300 150 450 200", expected: "2" },
+          { input: "100 500 300", expected: "1" },
+          { input: "50", expected: "0" },
+        ],
+      },
+      {
+        title: "Total Sequential Execution Time",
+        description: "Given the durations of several tasks, return the total time to run them one after another (sequentially, not in parallel).",
+        difficulty: "EASY",
+        testCases: [
+          { input: "100 200 300", expected: "600" },
+          { input: "50", expected: "50" },
+          { input: "10 20", expected: "30" },
+        ],
+      },
+      {
+        title: "Lost Update Count",
+        description: "Given the total number of increments performed by all threads and the actual final counter value observed (due to missing synchronization), return how many updates were lost.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "100\n95", expected: "5" },
+          { input: "50\n50", expected: "0" },
+          { input: "10\n3", expected: "7" },
+        ],
+      },
+      {
+        title: "Last Worker Task Count",
+        description: "Given a total number of tasks distributed round-robin (task i assigned to worker i % workers) across a fixed number of worker threads, return how many tasks the last worker (highest index) processes.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "10\n3", expected: "3" },
+          { input: "7\n2", expected: "3" },
+          { input: "5\n5", expected: "1" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {

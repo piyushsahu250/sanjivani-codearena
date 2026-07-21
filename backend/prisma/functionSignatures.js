@@ -56,6 +56,10 @@ const MODULE_CODING_SIGNATURES = {
   "Find Longest Word": { methodName: "longestWord", returnType: "string", params: [{ name: "words", type: "string[]" }] },
   "Total Word Length": { methodName: "totalWordLength", returnType: "int", params: [{ name: "words", type: "string[]" }] },
   "Count Capitalized Words": { methodName: "countCapitalizedWords", returnType: "int", params: [{ name: "s", type: "string" }] },
+  "Last Thread to Finish": { methodName: "lastThreadToFinish", returnType: "int", params: [{ name: "completionTimes", type: "int[]" }] },
+  "Total Sequential Execution Time": { methodName: "sumDurations", returnType: "int", params: [{ name: "durations", type: "int[]" }] },
+  "Lost Update Count": { methodName: "lostUpdates", returnType: "int", params: [{ name: "totalIncrements", type: "int" }, { name: "actualFinalValue", type: "int" }] },
+  "Last Worker Task Count": { methodName: "lastWorkerTaskCount", returnType: "int", params: [{ name: "totalTasks", type: "int" }, { name: "workers", type: "int" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -97,6 +101,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "wordCount", returnType: "int", params: [{ name: "s", type: "string" }] },
   "Read space-separated integers (as if read line by line from a file of scores) and print their average, floored to the nearest integer.":
     { methodName: "averageScore", returnType: "int", params: [{ name: "scores", type: "int[]" }] },
+  "Read space-separated integers representing amounts contributed by different worker threads (each protected by proper synchronization, so no updates are lost) and print the final total.":
+    { methodName: "sumWithSynchronization", returnType: "int", params: [{ name: "amounts", type: "int[]" }] },
+  "Read space-separated integers representing the sleep duration in ms of each worker thread, all started at the same time and joined afterward. Print the total wall-clock time until all have finished (the MAXIMUM duration, since they run in parallel, not the sum).":
+    { methodName: "maxWorkerDuration", returnType: "int", params: [{ name: "durations", type: "int[]" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {

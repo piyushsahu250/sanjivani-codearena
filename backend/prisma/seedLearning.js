@@ -1844,12 +1844,157 @@ const MODULE10_CODING = [
   },
 ];
 
-// Modules 11-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE11_LESSONS = [
+  {
+    title: "Threads",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "A thread is an independent path of execution within a program — every Java program has at least one thread (the \"main\" thread). Creating additional threads lets multiple tasks run concurrently.",
+      syntax:
+        "class MyThread extends Thread {\n    @Override\n    public void run() {\n        System.out.println(\"Running in a separate thread\");\n    }\n}\n\nMyThread t = new MyThread();\nt.start();   // starts a NEW thread, which then calls run()\n// NOT t.run() — calling run() directly just executes it on the CURRENT thread, no new thread is created",
+      example:
+        "class Counter extends Thread {\n    public void run() {\n        for (int i = 1; i <= 3; i++) {\n            System.out.println(Thread.currentThread().getName() + \": \" + i);\n        }\n    }\n}\n\npublic static void main(String[] args) {\n    Counter c = new Counter();\n    c.start();\n}",
+      notes: [
+        "<code>start()</code> creates a new OS-level thread and schedules <code>run()</code> to execute on it; <code>run()</code> is just a normal method call if invoked directly — this is the single most common beginner mistake with threads.",
+        "<code>Thread.currentThread().getName()</code> identifies which thread is currently executing — useful for observing concurrent behavior.",
+      ],
+      mistakes: ["Calling <code>t.run()</code> instead of <code>t.start()</code> — this executes the code synchronously on the calling thread, defeating the entire purpose of using a thread."],
+    }),
+  },
+  {
+    title: "Runnable",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "<code>Runnable</code> is a functional interface with a single <code>run()</code> method — implementing Runnable (rather than extending Thread) is the preferred way to define a task, since Java only allows single inheritance and a class implementing Runnable can still extend something else.",
+      syntax:
+        "class MyTask implements Runnable {\n    @Override\n    public void run() {\n        System.out.println(\"Task running\");\n    }\n}\n\nThread t = new Thread(new MyTask());\nt.start();\n\n// Or, using a lambda (Runnable is functional — single abstract method):\nThread t2 = new Thread(() -> System.out.println(\"Lambda task running\"));\nt2.start();",
+      example: "Runnable task = () -> {\n    for (int i = 1; i <= 3; i++) {\n        System.out.println(\"Working: \" + i);\n    }\n};\nThread worker = new Thread(task);\nworker.start();",
+      notes: [
+        "Prefer <code>implements Runnable</code> over <code>extends Thread</code> in almost all real code — it separates \"what task to run\" from \"how it's executed,\" and doesn't burn your one shot at class inheritance.",
+        "Since Runnable has exactly one abstract method (<code>run()</code>), it's a natural fit for lambda expressions in modern Java.",
+      ],
+      bestPractices: ["Default to Runnable (or a lambda) over extending Thread directly — it's more flexible and is the pattern used throughout the standard library (e.g. <code>ExecutorService</code>)."],
+    }),
+  },
+  {
+    title: "Synchronization",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "When multiple threads access shared mutable data concurrently, their operations can interleave unpredictably, corrupting the data — this is a race condition. The <code>synchronized</code> keyword ensures only one thread at a time can execute a given block or method, preventing that interleaving.",
+      syntax:
+        "class Counter {\n    private int count = 0;\n\n    public synchronized void increment() {   // only one thread at a time can run this method\n        count++;\n    }\n\n    public synchronized int getCount() {\n        return count;\n    }\n}\n\n// Or synchronize just a critical block instead of the whole method:\nsynchronized (this) {\n    count++;\n}",
+      example: "class Counter {\n    private int count = 0;\n    public synchronized void increment() { count++; }\n    public int getCount() { return count; }\n}\n\n// Without synchronized, two threads calling increment() concurrently could both\n// read count=5, both compute 6, and both write 6 — one increment is lost.",
+      notes: [
+        "<code>count++</code> looks like a single operation but is actually three steps (read, add 1, write) — without synchronization, two threads can interleave these steps and lose an update. This is the textbook race condition.",
+        "<code>synchronized</code> has a performance cost (only one thread can hold the lock at a time) — apply it to the smallest scope that actually needs protection, not the entire class.",
+      ],
+      mistakes: ["Assuming a simple operation like <code>count++</code> is atomic (indivisible) just because it looks like one line of code — it is NOT atomic, and needs synchronization (or an <code>AtomicInteger</code>) when shared across threads."],
+    }),
+  },
+  {
+    title: "Thread Lifecycle",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "A Java thread moves through a defined sequence of states: NEW (created but not started) → RUNNABLE (running or eligible to run) → BLOCKED/WAITING/TIMED_WAITING (paused, e.g. waiting for a lock or for sleep()/join() to finish) → TERMINATED (run() has completed).",
+      syntax:
+        "Thread t = new Thread(() -> {\n    try {\n        Thread.sleep(1000);   // pauses THIS thread for 1000ms — moves to TIMED_WAITING\n    } catch (InterruptedException e) { /* ... */ }\n});\nt.start();\nt.join();   // the CALLING thread waits here until t finishes (TERMINATED)\nSystem.out.println(\"Thread finished\");",
+      example:
+        "Thread worker = new Thread(() -> System.out.println(\"Working...\"));\nSystem.out.println(worker.getState()); // NEW — not started yet\nworker.start();\ntry {\n    worker.join(); // main thread waits for worker to finish\n} catch (InterruptedException e) { /* ... */ }\nSystem.out.println(worker.getState()); // TERMINATED\nSystem.out.println(\"Main continues\");",
+      notes: [
+        "<code>join()</code> makes the CALLING thread wait for the target thread to finish — a common use is the main thread waiting for a worker thread to complete before continuing.",
+        "<code>Thread.sleep()</code> and <code>t.join()</code> both throw the checked <code>InterruptedException</code>, since another thread can interrupt a sleeping/waiting thread — this must be caught or declared.",
+      ],
+      mistakes: ["Calling <code>t.start()</code> a second time on the same Thread object — a Thread can only be started once; calling start() again throws <code>IllegalThreadStateException</code>."],
+      bestPractices: ["Use <code>join()</code> when a subsequent step genuinely depends on a thread having finished — otherwise the main thread might print results before the worker thread has actually produced them."],
+    }),
+  },
+];
+
+const MODULE11_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "What is the correct way to actually start a new thread of execution?",
+    options: ["Call run() directly", "Call start()", "Call execute()", "Create the Thread object; it starts automatically"],
+    correctAnswer: 1,
+    explanation: "start() creates a new OS-level thread and schedules run() on it — this is the only way to get real concurrent execution.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What happens if you call `t.run()` instead of `t.start()` on a Thread object?",
+    options: ["A new thread is created and run() executes on it", "run() executes synchronously on the CURRENT thread — no new thread is created", "It throws IllegalThreadStateException", "Nothing happens"],
+    correctAnswer: 1,
+    explanation: "run() is just a normal method — calling it directly runs its body on whichever thread made the call, with no new thread involved.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Why is implementing Runnable generally preferred over extending Thread?",
+    options: ["Runnable is faster at runtime", "It avoids using up the class's one allowed superclass, and separates the task from its execution mechanism", "Thread cannot run more than once", "There is no real difference"],
+    correctAnswer: 1,
+    explanation: "A class can only extend one superclass, so extending Thread forecloses extending anything else — implementing Runnable keeps that option open and cleanly separates task logic from execution.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What is a race condition?",
+    options: ["A thread that runs faster than expected", "Unpredictable behavior caused by multiple threads interleaving access to shared mutable data without synchronization", "An error thrown when too many threads are created", "A synonym for deadlock"],
+    correctAnswer: 1,
+    explanation: "A race condition occurs when the outcome depends on the unpredictable timing/interleaving of concurrent operations on shared state.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Is `count++` an atomic (single-step, indivisible) operation?",
+    options: ["Yes, always", "No — it's actually a read-modify-write sequence of multiple steps, which can be interleaved by other threads", "Only for long variables", "Only inside a synchronized block"],
+    correctAnswer: 1,
+    explanation: "count++ decomposes into read, increment, and write steps — without synchronization, another thread can interleave between them and cause a lost update.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What does calling `t.join()` do?",
+    options: ["Merges two threads into one", "Makes the calling thread wait until thread t finishes execution", "Starts thread t", "Immediately terminates thread t"],
+    correctAnswer: 1,
+    explanation: "join() blocks the calling thread until the target thread t reaches the TERMINATED state.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What state is a newly-created Thread object in before `start()` is called?",
+    options: ["RUNNABLE", "TERMINATED", "NEW", "BLOCKED"],
+    correctAnswer: 2,
+    explanation: "A Thread object starts in the NEW state and only transitions to RUNNABLE once start() is called.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What happens if you call `start()` twice on the same Thread object?",
+    options: ["It runs the thread twice, back to back", "It throws IllegalThreadStateException", "Nothing, it's silently ignored", "It throws InterruptedException"],
+    correctAnswer: 1,
+    explanation: "A Thread instance can only be started once — a second start() call on the same object throws IllegalThreadStateException.",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below. Real
+// concurrent execution is inherently non-deterministic and can't be graded against a fixed expected
+// output, so these model synchronization/scheduling OUTCOMES as plain deterministic computations.
+const MODULE11_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read space-separated integers representing amounts contributed by different worker threads (each protected by proper synchronization, so no updates are lost) and print the final total.",
+    language: "java",
+    testCases: [{ input: "1 2 3 4 5", expected: "15" }, { input: "10 20", expected: "30" }, { input: "7", expected: "7" }],
+    explanation: "With correct synchronization, no update is ever lost, so the final total is simply the sum of every contribution.",
+  },
+  {
+    type: "CODING",
+    prompt: "Read space-separated integers representing the sleep duration in ms of each worker thread, all started at the same time and joined afterward. Print the total wall-clock time until all have finished (the MAXIMUM duration, since they run in parallel, not the sum).",
+    language: "java",
+    testCases: [{ input: "100 300 200", expected: "300" }, { input: "50", expected: "50" }, { input: "10 10 10", expected: "10" }],
+    explanation: "Threads started together and run in parallel all finish by the time the SLOWEST one does — the total wall-clock time is the maximum duration, not the sum.",
+  },
+];
+
+// Modules 12-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Multithreading", topics: ["Threads", "Runnable", "Synchronization", "Thread Lifecycle"], practiceLabel: "Practice" },
   { title: "Java 8 Features", topics: ["Lambda Expressions", "Stream API", "Functional Interfaces", "Optional", "Method References"], practiceLabel: "Practice" },
   { title: "JDBC", topics: ["Database Connectivity", "CRUD Operations", "PreparedStatement", "ResultSet"], practiceLabel: "Mini Project" },
   { title: "Advanced Java", topics: ["Generics", "Reflection", "Serialization", "Networking", "Annotations"], practiceLabel: "Coding Practice" },
@@ -2294,13 +2439,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 11-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 11: full hand-authored content ---
+  const module11 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Multithreading" } },
+    update: {},
+    create: { courseId: course.id, title: "Multithreading", order: 10 },
+  });
+
+  for (let i = 0; i < MODULE11_LESSONS.length; i++) {
+    const l = MODULE11_LESSONS[i];
+    await upsertLessonContent(prisma, module11.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module11PracticeLesson = await upsertLessonContent(prisma, module11.id, "Practice", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE11_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule11Practice = await prisma.practiceQuestion.count({ where: { lessonId: module11PracticeLesson.id } });
+  if (existingModule11Practice === 0) {
+    let order = 0;
+    for (const q of MODULE11_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module11PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE11_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module11PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 12-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 10 },
+      create: { courseId: course.id, title: spec.title, order: m + 11 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -2322,7 +2507,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 10, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 11, "modules.");
 }
 
 module.exports = { seedLearningModule };
