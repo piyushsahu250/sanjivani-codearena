@@ -63,12 +63,21 @@ export default function ModuleCodingAssessment() {
   const [violationWarning, setViolationWarning] = useState(null);
   const [violationCount, setViolationCount] = useState(0);
   const [lastSavedAt, setLastSavedAt] = useState(null);
+  // Per-question live verdict (from an actual Submit, never autosave/Run) and "visited" tracking
+  // — drives the navigator's green/yellow/red/gray status dot, same scheme as TestTaking.jsx.
+  const [codeVerdicts, setCodeVerdicts] = useState({});
+  const [visited, setVisited] = useState({});
+  const [submitResultMsg, setSubmitResultMsg] = useState(null); // { ok, text } — no alert(), which forces fullscreen exit
   const [editorHeight, setEditorHeight] = useState(() => Number(localStorage.getItem("moduleCodingEditorHeight")) || 420);
   const resizingRef = useRef(false);
 
   const deadlineRef = useRef(null);
   const attemptIdRef = useRef(null);
   const finalizedRef = useRef(false);
+  // Mirrors the active question's id — Run/Submit are async, and a student can switch questions
+  // before a slow response comes back. Guards the ephemeral runResult/submitResultMsg setters so
+  // a late response never renders under whatever question happens to be active by then.
+  const activeQuestionIdRef = useRef(null);
   const lastSavedCodeRef = useRef({});
   const timerRef = useRef(null);
   // Mirrors of state, kept current via effects below — flushAutosave reads through these refs
@@ -140,14 +149,24 @@ export default function ModuleCodingAssessment() {
       // autosaved per question — restore that instead of wiping back to starter code, otherwise
       // real, already-saved progress would appear to vanish from the editor.
       const initialAnswers = {};
+      const restoredVerdicts = {};
+      const restoredVisited = {};
       data.questions.forEach((q) => {
         const saved = data.savedAnswers?.[q.id];
         const lang = saved?.language || (Array.isArray(data.allowedLanguages) && data.allowedLanguages[0]) || "java";
         const code = saved?.code ?? (q.starterCode || defaultStarter(lang));
         initialAnswers[q.id] = { language: lang, code };
-        if (saved) lastSavedCodeRef.current[q.id] = `${lang}:${code}`;
+        if (saved) {
+          lastSavedCodeRef.current[q.id] = `${lang}:${code}`;
+          restoredVisited[q.id] = true;
+          if (saved.verdict) {
+            restoredVerdicts[q.id] = { verdict: saved.verdict, passedCases: saved.passedCases, totalCases: saved.totalCases };
+          }
+        }
       });
       setAnswers(initialAnswers);
+      setCodeVerdicts(restoredVerdicts);
+      setVisited(restoredVisited);
       setSecondsLeft(Math.max(0, Math.floor((data.deadline - Date.now()) / 1000)));
       setPhase("active");
     } catch (err) {
@@ -209,6 +228,20 @@ export default function ModuleCodingAssessment() {
     return () => { if (outgoingId) flushAutosave(outgoingId); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIdx]);
+
+  // Every question switch gets a fresh console (clears the previous question's Run/Submit
+  // output) and marks the newly-opened question "visited" (the gray → yellow transition in the
+  // navigator). Verdicts persist across switches on purpose — only the ephemeral Run/Submit
+  // banners reset, not the graded status.
+  useEffect(() => {
+    const id = questions[activeIdx]?.id;
+    activeQuestionIdRef.current = id ?? null;
+    if (!id) return;
+    setVisited((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
+    setRunResult(null);
+    setSubmitResultMsg(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIdx, questions.length]);
 
   // Best-effort save fired from beforeunload/pagehide — a normal axios POST can be aborted
   // mid-flight when the page is actually torn down, so this uses fetch's `keepalive` flag
@@ -312,13 +345,14 @@ export default function ModuleCodingAssessment() {
 
   async function handleRun() {
     if (!current || !answer) return;
+    const questionId = current.id;
     setRunning(true);
     setRunResult(null);
     try {
-      const { data } = await api.post(`/module-coding/attempts/${attemptId}/run`, { questionId: current.id, language: answer.language, code: answer.code });
-      setRunResult(data);
+      const { data } = await api.post(`/module-coding/attempts/${attemptId}/run`, { questionId, language: answer.language, code: answer.code });
+      if (activeQuestionIdRef.current === questionId) setRunResult(data);
     } catch (err) {
-      setRunResult({ error: err.response?.data?.error || "Run failed" });
+      if (activeQuestionIdRef.current === questionId) setRunResult({ error: err.response?.data?.error || "Run failed" });
     } finally {
       setRunning(false);
     }
@@ -329,19 +363,31 @@ export default function ModuleCodingAssessment() {
   // periodic 10s autosave interval skips a question whose code hasn't changed since its last
   // save, so without this the very next tick would re-autosave the same code and reset the
   // verdict it just computed back to PENDING.
+  //
+  // Deliberately never uses alert() here — a native dialog forces the browser to silently exit
+  // fullscreen before it can render, which was the actual cause of "fullscreen exits when I
+  // click Submit". submitResultMsg (an on-page banner) replaces it and never touches fullscreen.
   async function handleSubmitCode() {
     if (!current || !answer || !attemptId) return;
+    const questionId = current.id;
     setSubmittingCode(true);
     try {
-      const { data } = await api.post(`/module-coding/attempts/${attemptId}/submit-code`, { questionId: current.id, language: answer.language, code: answer.code });
-      lastSavedCodeRef.current[current.id] = `${answer.language}:${answer.code}`;
+      const { data } = await api.post(`/module-coding/attempts/${attemptId}/submit-code`, { questionId, language: answer.language, code: answer.code });
+      lastSavedCodeRef.current[questionId] = `${answer.language}:${answer.code}`;
       setLastSavedAt(new Date());
-      alert(`Submitted — ${data.passedCases}/${data.totalCases} hidden test cases passed.`);
+      // codeVerdicts (the status dot) is always applied — it's per-question already. Only the
+      // ephemeral banner is guarded against rendering under a question navigated away from.
+      setCodeVerdicts((prev) => ({ ...prev, [questionId]: { verdict: data.verdict, passedCases: data.passedCases, totalCases: data.totalCases } }));
+      if (activeQuestionIdRef.current === questionId) setSubmitResultMsg({ ok: data.verdict === "ACCEPTED", text: describeVerdict(data) });
     } catch (err) {
-      alert(err.response?.data?.error || "Submission failed");
+      if (activeQuestionIdRef.current === questionId) setSubmitResultMsg({ ok: false, text: err.response?.data?.error || "Submission failed" });
     } finally {
       setSubmittingCode(false);
     }
+  }
+
+  function goToQuestion(delta) {
+    setActiveIdx((idx) => Math.max(0, Math.min(questions.length - 1, idx + delta)));
   }
 
   async function finalize(reason) {
@@ -593,25 +639,39 @@ export default function ModuleCodingAssessment() {
               : { width: 200, borderRight: "1px solid var(--line)", padding: 16, overflowY: "auto" }
           }
         >
-          {!isMobile && <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)", marginBottom: 10 }}>QUESTIONS</div>}
-          {questions.map((q, idx) => (
-            <button
-              key={q.id}
-              onClick={() => setActiveIdx(idx)}
-              style={{
-                display: isMobile ? "inline-block" : "block",
-                width: isMobile ? "auto" : "100%",
-                minWidth: isMobile ? 150 : undefined,
-                flexShrink: isMobile ? 0 : undefined,
-                textAlign: "left", padding: "10px 12px", marginBottom: isMobile ? 0 : 6, borderRadius: 8,
-                border: idx === activeIdx ? "1px solid var(--amber)" : "1px solid var(--line)",
-                background: idx === activeIdx ? "#FCEFD9" : "var(--card-bg)", fontSize: 13,
-                color: idx === activeIdx ? "var(--amber-dark)" : "var(--ink)",
-              }}
-            >
-              Q{idx + 1}. {q.title || "(untitled)"}
-            </button>
-          ))}
+          {!isMobile && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)" }}>QUESTIONS</div>
+              <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginBottom: 10 }}>
+                Question {activeIdx + 1} of {questions.length}
+              </div>
+            </>
+          )}
+          {questions.map((q, idx) => {
+            const dot = codingDotStatus(q, codeVerdicts, visited);
+            return (
+              <button
+                key={q.id}
+                onClick={() => setActiveIdx(idx)}
+                style={{
+                  display: isMobile ? "inline-block" : "block",
+                  width: isMobile ? "auto" : "100%",
+                  minWidth: isMobile ? 150 : undefined,
+                  flexShrink: isMobile ? 0 : undefined,
+                  textAlign: "left", padding: "10px 12px", marginBottom: isMobile ? 0 : 6, borderRadius: 8,
+                  border: idx === activeIdx ? "1px solid var(--amber)" : "1px solid var(--line)",
+                  background: idx === activeIdx ? "#FCEFD9" : "var(--card-bg)", fontSize: 13,
+                  color: idx === activeIdx ? "var(--amber-dark)" : "var(--ink)",
+                }}
+              >
+                <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: dot.color, marginRight: 6 }} />
+                Q{idx + 1}. {q.title || "(untitled)"}
+                <span style={{ display: "block", fontSize: 11, marginTop: 2, marginLeft: 14, color: dot.color }} className="mono">
+                  {dot.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         <div style={{ width: isMobile ? "100%" : 380, padding: isMobile ? 16 : 24, overflowY: "auto", flexShrink: 0, borderRight: isMobile ? "none" : "1px solid var(--line)", borderBottom: isMobile ? "1px solid var(--line)" : "none" }}>
@@ -640,9 +700,17 @@ export default function ModuleCodingAssessment() {
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
           <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <select value={answer?.language || allowedLanguages[0]} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
-              {ALL_LANGUAGES.filter((l) => allowedLanguages.includes(l.id)).map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-            </select>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => goToQuestion(-1)} disabled={activeIdx === 0}>
+                ◀ Previous
+              </button>
+              <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => goToQuestion(1)} disabled={activeIdx === questions.length - 1}>
+                Next ▶
+              </button>
+              <select value={answer?.language || allowedLanguages[0]} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
+                {ALL_LANGUAGES.filter((l) => allowedLanguages.includes(l.id)).map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+              </select>
+            </div>
             <RunSubmitButtons
               onRun={handleRun}
               onSubmit={handleSubmitCode}
@@ -674,6 +742,19 @@ export default function ModuleCodingAssessment() {
             <div style={{ width: 40, height: 3, borderRadius: 2, background: "var(--ink-dim)" }} />
           </div>
           <div style={{ flex: 1, minHeight: 80, overflowY: "auto", padding: 16, background: "#FBF9F4" }}>
+            {submitResultMsg && !running && (
+              <div
+                className="mono"
+                style={{
+                  padding: "10px 12px", borderRadius: 8, marginBottom: runResult ? 12 : 0, fontSize: 12.5, fontWeight: 600,
+                  background: submitResultMsg.ok ? "#E7F3EB" : "#F7E4E0",
+                  color: submitResultMsg.ok ? "var(--mint)" : "var(--rust)",
+                  border: `1px solid ${submitResultMsg.ok ? "var(--mint)" : "var(--rust)"}`,
+                }}
+              >
+                {submitResultMsg.ok ? "✓ " : "✗ "}{submitResultMsg.text}
+              </div>
+            )}
             {running && <p className="mono" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>⏳ Compiling and running…</p>}
             {!running && runResult && <CodeResultBlock title="Sample run result" result={runResult} />}
           </div>
@@ -700,6 +781,35 @@ function Banner({ color, children }) {
   );
 }
 
+
+const VERDICT_LABEL = {
+  ACCEPTED: "Accepted",
+  WRONG_ANSWER: "Wrong Answer",
+  COMPILE_ERROR: "Compilation Error",
+  RUNTIME_ERROR: "Runtime Error",
+  TLE: "Time Limit Exceeded",
+  MLE: "Memory Limit Exceeded",
+};
+
+function describeVerdict(data) {
+  const label = VERDICT_LABEL[data.verdict] || data.verdict || "Submitted";
+  if (data.verdict === "ACCEPTED") {
+    return `${label} — ${data.passedCases}/${data.totalCases} hidden test cases passed.`;
+  }
+  if (["COMPILE_ERROR", "RUNTIME_ERROR", "TLE", "MLE"].includes(data.verdict) && data.errorSummary?.message) {
+    return `${label}: ${data.errorSummary.message}`;
+  }
+  return `${label} — ${data.passedCases ?? 0}/${data.totalCases ?? 0} hidden test cases passed.`;
+}
+
+// Drives the navigator's colored status dot — Gray (never opened), Yellow (opened but never
+// Submitted), Green (Submitted, Accepted), Red (Submitted, any other verdict).
+function codingDotStatus(question, verdicts, visitedMap) {
+  const v = verdicts[question.id];
+  if (v) return v.verdict === "ACCEPTED" ? { color: "var(--mint)", label: "Accepted" } : { color: "var(--rust)", label: VERDICT_LABEL[v.verdict] || "Failed" };
+  if (visitedMap[question.id]) return { color: "var(--amber)", label: "In Progress" };
+  return { color: "var(--ink-dim)", label: "Not Visited" };
+}
 
 function defaultStarter(language) {
   switch (language) {

@@ -27,23 +27,24 @@ router.get("/queue-status", authenticate, (req, res) => {
   res.json(getQueueStatus());
 });
 
-// Withholds the actual verdict/score from the submit response — students only see it after
-// the test ends (via GET /tests/:id/my-result, gated on Test.showResults), same principle as
-// hiding the answer key before a test. Only technical execution status (compiled/ran fine vs.
-// a genuine compile/runtime/timeout error) is surfaced during the test itself; whether the
-// answer was actually correct is not, even though the real verdict/score are still stored on
-// the Submission row for later grading.
+// MCQ/TRUE_FALSE/MULTISELECT only: withholds correctness from the submit response — students only
+// see it after the test ends (via GET /tests/:id/my-result, gated on Test.showResults), same
+// principle as hiding the answer key before a test. Not used for CODING/SQL — see
+// sanitizeCodingResult below, which does reveal the verdict live (matches the question
+// navigator's live green/yellow/red status and the identical, already-live behavior of Module
+// Coding Test submissions).
 function sanitizeSubmitResponse(question, result) {
-  if (question.questionType !== "CODING" && question.questionType !== "SQL") {
-    return { status: "SUBMITTED" };
-  }
-  if (result.verdict === "COMPILE_ERROR" || result.verdict === "TLE" || result.verdict === "MLE") {
-    return { status: result.verdict, error: result.errorSummary };
-  }
-  if (result.errorSummary) {
-    return { status: "RUNTIME_ERROR", error: result.errorSummary };
-  }
   return { status: "SUBMITTED" };
+}
+
+// CODING/SQL only: reveals the real verdict/passedCases/totalCases/timing immediately — this is
+// what drives the question navigator's live status color (green = ACCEPTED, red = anything else).
+// Only the raw per-hidden-case `details` (actual hidden inputs/expected outputs) stays stripped;
+// the pass/fail *count* and verdict are safe to show, same policy Module Coding Test submissions
+// already use (see routes/moduleCoding.js submit-code).
+function sanitizeCodingResult(result) {
+  const { details, ...safe } = result;
+  return safe;
 }
 
 // When Test.shuffleOptions is on, the student saw and clicked options in a per-attempt shuffled
@@ -142,12 +143,10 @@ router.post("/autosave", authenticate, requireRole("STUDENT"), async (req, res) 
 
 // STUDENT: explicit per-question Submit — saves the current code and immediately grades it
 // against the HIDDEN test cases (never the sample cases the student already checked via /run),
-// unlike /autosave which never judges anything. The response still withholds pass/fail (same
-// sanitizeSubmitResponse used by the quiz /submit route below) — exam integrity doesn't change
-// just because grading now happens the moment the student asks for it instead of only at
-// finalize; the real score is fully computed and stored, it just isn't shown until results
-// publish. A student can Submit as many times as the test allows re-submission; recomputeAttemptScore
-// always keeps each question's BEST scoring submission.
+// unlike /autosave which never judges anything. The response reveals the real verdict (see
+// sanitizeCodingResult above) — this is what drives the live green/red status in the question
+// navigator. A student can Submit as many times as the test allows re-submission;
+// recomputeAttemptScore always keeps each question's BEST scoring submission.
 router.post("/submit-code", authenticate, requireRole("STUDENT"), execLimiter, async (req, res) => {
   try {
     const { attemptId, questionId, language, code } = req.body;
@@ -176,7 +175,7 @@ router.post("/submit-code", authenticate, requireRole("STUDENT"), execLimiter, a
     const result = await gradeCodingSubmission(sub, question);
     await recomputeAttemptScore(attemptId);
 
-    res.json(sanitizeSubmitResponse(question, result));
+    res.json(sanitizeCodingResult(result));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Submission failed" });

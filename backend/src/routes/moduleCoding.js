@@ -153,7 +153,14 @@ router.post("/module/:moduleId/start", authenticate, requireRole("STUDENT"), asy
             savedAnswers: Object.fromEntries(
               existing.questions.map((q) => {
                 const sub = subByQuestion.get(q.questionId);
-                return [q.questionId, sub ? { language: sub.language, code: sub.code } : null];
+                if (!sub) return [q.questionId, null];
+                // A PENDING verdict means autosaved-but-never-submitted — only a real graded
+                // verdict is included, so the frontend's status dot can tell "in progress" apart
+                // from "submitted" on resume, same distinction the live Submit response drives.
+                const verdict = sub.verdict && sub.verdict !== "PENDING"
+                  ? { verdict: sub.verdict, passedCases: sub.passedCases, totalCases: sub.totalCases }
+                  : null;
+                return [q.questionId, { language: sub.language, code: sub.code, ...verdict }];
               })
             ),
             allowedLanguages: test.allowedLanguages,

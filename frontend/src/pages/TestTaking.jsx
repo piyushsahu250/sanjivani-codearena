@@ -71,7 +71,14 @@ export default function TestTaking() {
   const [running, setRunning] = useState(false);
   const [submittingCode, setSubmittingCode] = useState(false);
   const [queueStatus, setQueueStatus] = useState(null);
-  const [submittedQuestions, setSubmittedQuestions] = useState({});
+  // Per-question live verdict for CODING/SQL questions only — drives the green/red status dot
+  // in the navigator. Set from an actual Submit response (never from autosave/Run), and restored
+  // from the attempt's saved submissions on resume so a refresh doesn't lose earlier results.
+  const [codeVerdicts, setCodeVerdicts] = useState({});
+  // "Visited" (opened at least once) vs "Not visited" — the gray/yellow distinction in the
+  // navigator. A question with no verdict yet is yellow once visited, gray until then.
+  const [visited, setVisited] = useState({});
+  const [submitResultMsg, setSubmitResultMsg] = useState(null); // { ok, text } — replaces alert(), which forces fullscreen exit
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [tabWarning, setTabWarning] = useState(null);
   const [showQuestionPanel, setShowQuestionPanel] = useState(true);
@@ -87,6 +94,11 @@ export default function TestTaking() {
   const deadlineRef = useRef(null); // absolute ms timestamp this candidate's answers lock at
   const attemptIdRef = useRef(null);
   const finalizedRef = useRef(false);
+  // Mirrors `current?.id`, kept live via an effect below — Run/Submit are async, and a student
+  // can switch questions before a slow response (e.g. under judge queue load) comes back. Without
+  // this guard the late response would render its result under whatever question is active by
+  // then, which is exactly the kind of thing that looks like a bug in a proctored exam.
+  const activeQuestionIdRef = useRef(null);
 
   const [mediaGranted, setMediaGranted] = useState(false);
   const [mediaError, setMediaError] = useState(null);
@@ -388,9 +400,10 @@ export default function TestTaking() {
       const existingSubs = startRes.data.submissions || [];
       if (existingSubs.length > 0) {
         const restoredAnswers = {};
-        const restoredSubmitted = {};
+        const restoredVerdicts = {};
+        const restoredVisited = {};
         existingSubs.forEach((s) => {
-          restoredSubmitted[s.questionId] = true;
+          restoredVisited[s.questionId] = true;
           if (["MCQ", "TRUE_FALSE", "MULTISELECT"].includes(s.language)) {
             try {
               restoredAnswers[s.questionId] = { selected: JSON.parse(s.code) };
@@ -399,10 +412,16 @@ export default function TestTaking() {
             }
           } else {
             restoredAnswers[s.questionId] = { language: s.language, code: s.code };
+            // A PENDING verdict means autosaved-but-never-submitted — that's the "yellow" case,
+            // not a graded result, so it's deliberately left out of restoredVerdicts.
+            if (s.verdict && s.verdict !== "PENDING") {
+              restoredVerdicts[s.questionId] = { verdict: s.verdict, passedCases: s.passedCases, totalCases: s.totalCases };
+            }
           }
         });
         setAnswers((prev) => ({ ...restoredAnswers, ...prev }));
-        setSubmittedQuestions((prev) => ({ ...restoredSubmitted, ...prev }));
+        setCodeVerdicts((prev) => ({ ...restoredVerdicts, ...prev }));
+        setVisited((prev) => ({ ...restoredVisited, ...prev }));
       }
       try {
         setMarkedForReview(JSON.parse(localStorage.getItem(`markedForReview:${startRes.data.id}`) || "{}"));
@@ -424,6 +443,7 @@ export default function TestTaking() {
   const isSql = current?.questionType === "SQL";
   const isQuiz = current && current.questionType !== "CODING" && !isSql;
   const isMulti = current?.questionType === "MULTISELECT";
+  useEffect(() => { activeQuestionIdRef.current = current?.id ?? null; }, [current]);
 
   // Overall test timer — recomputes remaining time from the fixed deadline every tick rather
   // than decrementing a counter, so it self-corrects instead of drifting if the tab was
@@ -442,7 +462,10 @@ export default function TestTaking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secondsLeft !== null]);
 
-  // Initialize/restore the answer for the active question, and reset the run result panel
+  // Initialize/restore the answer for the active question, and reset the run result panel —
+  // every question switch gets a fresh console (item 4) and its own independent starter code the
+  // first time it's opened (item 3), never code carried over from another question. Also marks
+  // the question "visited" (item 1's gray → yellow transition) the moment it's opened.
   useEffect(() => {
     if (!current) return;
     setAnswers((prev) => {
@@ -456,7 +479,9 @@ export default function TestTaking() {
       }
       return { ...prev, [current.id]: { selected: [] } };
     });
+    setVisited((prev) => (prev[current.id] ? prev : { ...prev, [current.id]: true }));
     setRunResult(null);
+    setSubmitResultMsg(null);
   }, [current]);
 
   // Flush any pending debounced save the moment the candidate navigates away from a question —
@@ -651,7 +676,6 @@ export default function TestTaking() {
     setSavingAnswer(true);
     try {
       await api.post("/submissions/submit", { attemptId, questionId: pending.questionId, selectedOptions: pending.selected });
-      setSubmittedQuestions((prev) => ({ ...prev, [pending.questionId]: true }));
       flashSaved();
     } catch {
       // Best-effort — the selection stays in local state and gets retried on the next change,
@@ -677,7 +701,6 @@ export default function TestTaking() {
     setSavingAnswer(true);
     try {
       await api.post("/submissions/autosave", { attemptId, questionId: pending.questionId, language: pending.language, code: pending.code });
-      setSubmittedQuestions((prev) => ({ ...prev, [pending.questionId]: true }));
       flashSaved();
     } catch {
       // Best-effort — same retry story as MCQ auto-save above.
@@ -773,13 +796,14 @@ export default function TestTaking() {
 
   async function handleRun() {
     if (!answer || isQuiz) return;
+    const questionId = current.id;
     setRunning(true);
     setRunResult(null);
     try {
-      const { data } = await api.post("/submissions/run", { questionId: current.id, language: answer.language, code: answer.code });
-      setRunResult(data);
+      const { data } = await api.post("/submissions/run", { questionId, language: answer.language, code: answer.code });
+      if (activeQuestionIdRef.current === questionId) setRunResult(data);
     } catch (err) {
-      setRunResult({ error: err.response?.data?.error || "Run failed" });
+      if (activeQuestionIdRef.current === questionId) setRunResult({ error: err.response?.data?.error || "Run failed" });
     } finally {
       setRunning(false);
     }
@@ -790,21 +814,26 @@ export default function TestTaking() {
   // just scored against hidden cases instead of samples. Cancels any pending debounced autosave
   // first: that autosave always resets the row back to PENDING on write, which would silently
   // undo this grading if it fired right after with the same (already-submitted) code.
+  //
+  // Deliberately never uses alert()/confirm() here — a native dialog forces the browser to
+  // silently exit fullscreen before it can render (same reasoning as reportViolation above),
+  // which was the actual cause of "fullscreen exits when I click Submit". An on-page banner
+  // (submitResultMsg) replaces it and never touches fullscreen.
   async function handleSubmitCode() {
     if (!answer || isQuiz || !attemptId) return;
+    const questionId = current.id;
     clearTimeout(codeAutoSaveTimeoutRef.current);
     pendingCodeAutoSaveRef.current = null;
     setSubmittingCode(true);
     try {
-      const { data } = await api.post("/submissions/submit-code", { attemptId, questionId: current.id, language: answer.language, code: answer.code });
-      setSubmittedQuestions((prev) => ({ ...prev, [current.id]: true }));
-      if (data.status === "SUBMITTED") {
-        alert("Submitted — graded against hidden test cases. Your score is recorded; results are shown after the test ends.");
-      } else {
-        alert(`Submitted, but your code didn't run cleanly (${data.status}). You can keep editing and submit again.`);
-      }
+      const { data } = await api.post("/submissions/submit-code", { attemptId, questionId, language: answer.language, code: answer.code });
+      // codeVerdicts (the status dot) is always applied — it's per-question already, and a
+      // late-arriving grade is exactly as real as an immediate one. Only the ephemeral banner is
+      // guarded: it must never render under a question the student has since navigated away from.
+      setCodeVerdicts((prev) => ({ ...prev, [questionId]: { verdict: data.verdict, passedCases: data.passedCases, totalCases: data.totalCases } }));
+      if (activeQuestionIdRef.current === questionId) setSubmitResultMsg({ ok: data.verdict === "ACCEPTED", text: describeVerdict(data) });
     } catch (err) {
-      alert(err.response?.data?.error || "Submission failed");
+      if (activeQuestionIdRef.current === questionId) setSubmitResultMsg({ ok: false, text: err.response?.data?.error || "Submission failed" });
     } finally {
       setSubmittingCode(false);
     }
@@ -1078,20 +1107,33 @@ export default function TestTaking() {
               : { width: 220, borderRight: "1px solid var(--line)", padding: 16, overflowY: "auto" }
           }
         >
-          {!isMobile && <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)", marginBottom: 10 }}>QUESTIONS</div>}
+          {!isMobile && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)" }}>QUESTIONS</div>
+              <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginBottom: 10 }}>
+                Question {activeIdx + 1} of {questions.length}
+              </div>
+            </>
+          )}
           {questions.map((tq, idx) => {
             const q = tq.question;
             const a = answers[q.id];
-            const answered = q.questionType === "CODING" ? !!submittedQuestions[q.id] : (a?.selected || []).length > 0;
+            const isCoding = q.questionType === "CODING" || q.questionType === "SQL";
             const marked = !!markedForReview[q.id];
-            let statusLabel = "Unanswered";
-            let statusColor = "var(--ink-dim)";
+            let dotColor;
+            let statusLabel;
+            if (isCoding) {
+              const dot = codingDotStatus(q, codeVerdicts, visited);
+              dotColor = dot.color;
+              statusLabel = dot.label;
+            } else {
+              const answered = (a?.selected || []).length > 0;
+              dotColor = answered ? "var(--mint)" : "var(--ink-dim)";
+              statusLabel = answered ? "Answered" : "Unanswered";
+            }
             if (marked) {
-              statusLabel = answered ? "⚑ Marked (answered)" : "⚑ Marked for review";
-              statusColor = "#8b5cf6";
-            } else if (answered) {
-              statusLabel = "✓ Answered";
-              statusColor = "var(--mint)";
+              dotColor = "#8b5cf6";
+              statusLabel = `⚑ ${statusLabel}`;
             }
             return (
               <button
@@ -1112,8 +1154,9 @@ export default function TestTaking() {
                   fontSize: 13,
                 }}
               >
+                <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: dotColor, marginRight: 6 }} />
                 Q{idx + 1}. {tq.question.title || "(untitled)"}
-                <span style={{ display: "block", fontSize: 11, marginTop: 2, color: statusColor }} className="mono">
+                <span style={{ display: "block", fontSize: 11, marginTop: 2, marginLeft: 14, color: dotColor }} className="mono">
                   {statusLabel}
                 </span>
               </button>
@@ -1259,8 +1302,9 @@ export default function TestTaking() {
                 </label>
               </div>
               <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", padding: "6px 16px 0" }}>
-                Your code is saved automatically — edit it freely until you submit the whole test. "Run sample"
-                checks against sample cases only; the final saved version is graded when the test is submitted.
+                Your code is saved automatically as you type. "Run" checks against sample cases only. "Submit"
+                grades this question against the hidden test cases right away and shows the result immediately —
+                you can keep editing and submit again any time; your best-scoring submission counts.
               </p>
 
               <div style={{ flex: 1, minHeight: 0 }}>
@@ -1287,6 +1331,19 @@ export default function TestTaking() {
             <div onMouseDown={startResize("results")} className="ca-resize-handle" style={{ height: 6, cursor: "row-resize", background: "var(--line)", flexShrink: 0 }} title="Drag to resize" />
           )}
           <div style={{ height: isMobile ? Math.min(resultsPanelHeight, 220) : resultsPanelHeight, overflowY: "auto", padding: 16, background: "#FBF9F4", flexShrink: 0 }}>
+            {submitResultMsg && !running && (
+              <div
+                className="mono"
+                style={{
+                  padding: "10px 12px", borderRadius: 8, marginBottom: runResult ? 12 : 0, fontSize: 12.5, fontWeight: 600,
+                  background: submitResultMsg.ok ? "#E7F3EB" : "#F7E4E0",
+                  color: submitResultMsg.ok ? "var(--mint)" : "var(--rust)",
+                  border: `1px solid ${submitResultMsg.ok ? "var(--mint)" : "var(--rust)"}`,
+                }}
+              >
+                {submitResultMsg.ok ? "✓ " : "✗ "}{submitResultMsg.text}
+              </div>
+            )}
             {running && (
               <p className="mono" style={{ fontSize: 12, color: "var(--amber-dark)", fontWeight: 600 }}>
                 ⏳ Compiling and running your {answer?.language || ""} code
@@ -1297,10 +1354,10 @@ export default function TestTaking() {
             {!running && runResult && (
               <CodeResultBlock title="Sample run result" result={runResult} />
             )}
-            {!isQuiz && !running && !runResult && (
+            {!isQuiz && !running && !runResult && !submitResultMsg && (
               <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>
-                Run against sample cases any time. Your saved code is judged against all (including hidden) test
-                cases once when you submit the whole test — results are published after the test.
+                Run against sample cases any time. Submit grades this question against the hidden test cases and
+                shows the result immediately.
               </p>
             )}
           </div>
@@ -1310,6 +1367,36 @@ export default function TestTaking() {
       </div>
     </div>
   );
+}
+
+const VERDICT_LABEL = {
+  ACCEPTED: "Accepted",
+  WRONG_ANSWER: "Wrong Answer",
+  COMPILE_ERROR: "Compilation Error",
+  RUNTIME_ERROR: "Runtime Error",
+  TLE: "Time Limit Exceeded",
+  MLE: "Memory Limit Exceeded",
+};
+
+function describeVerdict(data) {
+  const label = VERDICT_LABEL[data.verdict] || data.verdict || "Submitted";
+  if (data.verdict === "ACCEPTED") {
+    return `${label} — ${data.passedCases}/${data.totalCases} hidden test cases passed.`;
+  }
+  if (["COMPILE_ERROR", "RUNTIME_ERROR", "TLE", "MLE"].includes(data.verdict) && data.errorSummary?.message) {
+    return `${label}: ${data.errorSummary.message}`;
+  }
+  return `${label} — ${data.passedCases ?? 0}/${data.totalCases ?? 0} hidden test cases passed.`;
+}
+
+// Drives the navigator's colored status dot for a CODING/SQL question — Gray (never opened),
+// Yellow (opened but never Submitted, or code written/Run only), Green (Submitted, Accepted),
+// Red (Submitted, any other verdict: wrong answer, compile/runtime error, TLE, MLE).
+function codingDotStatus(question, verdicts, visitedMap) {
+  const v = verdicts[question.id];
+  if (v) return v.verdict === "ACCEPTED" ? { color: "var(--mint)", label: "Accepted" } : { color: "var(--rust)", label: VERDICT_LABEL[v.verdict] || "Failed" };
+  if (visitedMap[question.id]) return { color: "var(--amber)", label: "In Progress" };
+  return { color: "var(--ink-dim)", label: "Not Visited" };
 }
 
 function defaultStarter(language) {
