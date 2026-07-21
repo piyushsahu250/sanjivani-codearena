@@ -118,6 +118,10 @@ router.post("/autosave", authenticate, requireRole("STUDENT"), async (req, res) 
     if (question.questionType !== "CODING" && question.questionType !== "SQL") {
       return res.status(400).json({ error: "Autosave is only for coding questions" });
     }
+    // Derived from the question's actual type, not trusted from the client — the judge dispatch
+    // (judge.js) picks the SQLite path purely on this string, so a SQL question must never end up
+    // stored with anything else, regardless of what the request body claims.
+    const savedLanguage = question.questionType === "SQL" ? "sql" : language;
 
     // Atomic upsert on the (attemptId, questionId) unique constraint — a plain findFirst-then-
     // create/update here would race under concurrent autosave triggers (10s interval tick vs.
@@ -125,8 +129,8 @@ router.post("/autosave", authenticate, requireRole("STUDENT"), async (req, res) 
     // two rows for the same question, leaving grading to pick between them arbitrarily.
     await prisma.submission.upsert({
       where: { attemptId_questionId: { attemptId, questionId } },
-      update: { language: language || "", code: code || "", verdict: "PENDING", score: 0, passedCases: 0, totalCases: 0, timeMs: null, memoryKb: null },
-      create: { attemptId, questionId, studentId: req.user.id, language: language || "", code: code || "", verdict: "PENDING" },
+      update: { language: savedLanguage || "", code: code || "", verdict: "PENDING", score: 0, passedCases: 0, totalCases: 0, timeMs: null, memoryKb: null },
+      create: { attemptId, questionId, studentId: req.user.id, language: savedLanguage || "", code: code || "", verdict: "PENDING" },
     });
 
     res.json({ status: "SAVED" });
@@ -161,11 +165,12 @@ router.post("/submit-code", authenticate, requireRole("STUDENT"), execLimiter, a
     if (question.questionType !== "CODING" && question.questionType !== "SQL") {
       return res.status(400).json({ error: "Submit is only for coding questions" });
     }
+    const savedLanguage = question.questionType === "SQL" ? "sql" : language;
 
     const sub = await prisma.submission.upsert({
       where: { attemptId_questionId: { attemptId, questionId } },
-      update: { language: language || "", code: code || "", verdict: "PENDING", score: 0, passedCases: 0, totalCases: 0, timeMs: null, memoryKb: null },
-      create: { attemptId, questionId, studentId: req.user.id, language: language || "", code: code || "", verdict: "PENDING" },
+      update: { language: savedLanguage || "", code: code || "", verdict: "PENDING", score: 0, passedCases: 0, totalCases: 0, timeMs: null, memoryKb: null },
+      create: { attemptId, questionId, studentId: req.user.id, language: savedLanguage || "", code: code || "", verdict: "PENDING" },
     });
 
     const result = await gradeCodingSubmission(sub, question);

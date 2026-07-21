@@ -956,6 +956,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
       data.evaluationType = resolved.evaluationType;
       data.functionSignature = resolved.functionSignature;
       if (resolved.starterCodeByLanguage) data.starterCodeByLanguage = resolved.starterCodeByLanguage;
+      data.sqlSchema = null; // clear a stale value left over if this question used to be type SQL
 
       if (testCases) {
         if (testCases.filter((tc) => !tc.isHidden).length < 2) {
@@ -974,6 +975,13 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
       data.timeLimitMs = timeLimitMs ?? existing.timeLimitMs;
       data.options = null;
       data.correctAnswer = null;
+      // Clear stale values left over if this question used to be type CODING.
+      data.memoryLimitKb = null;
+      data.starterCode = null;
+      data.starterCodeByLanguage = null;
+      data.tags = null;
+      data.evaluationType = "STDIO";
+      data.functionSignature = null;
 
       if (testCases) {
         if (testCases.filter((tc) => !tc.isHidden).length < 1) {
@@ -991,6 +999,10 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
       const normalized = normalizeOptions(type, options ?? existing.options, correctAnswer ?? existing.correctAnswer);
       data.options = normalized.options;
       data.correctAnswer = normalized.correctAnswer;
+      // Clear stale values left over if this question used to be type CODING or SQL.
+      data.sqlSchema = null;
+      data.evaluationType = "STDIO";
+      data.functionSignature = null;
     }
 
     const question = await prisma.question.update({ where: { id: existing.id }, data, include: { testCases: true } });

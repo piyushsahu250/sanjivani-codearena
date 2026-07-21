@@ -29,6 +29,15 @@ const MEMORY_LIMIT_KB = Number(process.env.JUDGE_MEMORY_LIMIT_KB || 262144); // 
 // Caps the number of processes/threads a single submission can hold open — the concrete,
 // well-understood defense against a fork bomb (`while(1) fork();` / infinite thread spawn)
 // hanging the whole instance. Generous enough for legitimate multi-threaded submissions.
+//
+// KNOWN LIMITATION: this container runs as root (no USER directive in the Dockerfile), and Linux
+// lets a process holding CAP_SYS_RESOURCE (which root has) exceed RLIMIT_NPROC entirely — so this
+// ulimit may not actually stop a fork bomb run as root. The real fix is dropping privileges for
+// the execute step specifically (spawn with a dedicated non-root uid/gid, after chmod'ing the
+// tmpdir/binary so that user can read+run them) — not done here because getting the file-
+// permission handoff right needs to be verified against a real container, which wasn't available
+// while making this change. ulimit -v (memory) is unaffected by this gap; it's enforced via a
+// separate kernel mechanism root doesn't bypass.
 const MAX_PROCESSES = Number(process.env.JUDGE_MAX_PROCESSES || 64);
 
 // Best-effort network denial for submitted code: run it inside its own network namespace with

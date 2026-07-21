@@ -11,9 +11,14 @@ const { runQueued } = require("./queue");
 async function gradeCodingSubmission(sub, question) {
   const hiddenCases = question.testCases.filter((tc) => tc.isHidden);
   const gradingCases = hiddenCases.length > 0 ? hiddenCases : question.testCases;
+  // Derived from the question's actual type rather than trusted from the stored sub.language —
+  // the judge dispatch (judge.js) picks the SQLite path purely on this string, so this is the
+  // last line of defense against a SQL question's submission ever being graded as if it were a
+  // compiled/interpreted program (or vice versa) if the stored value were ever wrong.
+  const gradingLanguage = question.questionType === "SQL" ? "sql" : sub.language;
   const result = await runQueued(() =>
     judgeSubmission({
-      language: sub.language, code: sub.code, testCases: gradingCases, timeLimitMs: question.timeLimitMs,
+      language: gradingLanguage, code: sub.code, testCases: gradingCases, timeLimitMs: question.timeLimitMs,
       memoryLimitKb: question.memoryLimitKb || undefined, evaluationType: question.evaluationType, functionSignature: question.functionSignature,
       sqlSchema: question.sqlSchema,
     })
