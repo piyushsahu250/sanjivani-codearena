@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BookOpen, BarChart3, Mic, FileText, History, Award, Trophy, Settings,
   Users, FileQuestion, Building2, School, Upload, ChevronLeft, ChevronRight, ClipboardList,
-  Mail, Activity, Download,
+  Mail, Activity, Download, CalendarDays, CalendarRange, Briefcase,
 } from "lucide-react";
 import { useSidebarUI } from "../context/SidebarContext";
 
@@ -18,6 +18,9 @@ const MENU = {
       { label: "My Performance", to: "/dashboard/performance", icon: BarChart3 },
     ] },
     { group: "Placement Prep", items: [
+      { label: "Daily Challenge", to: "/challenges/daily", icon: CalendarDays },
+      { label: "Weekly Challenge", to: "/challenges/weekly", icon: CalendarRange },
+      { label: "Company Tests", to: "/company-tests", icon: Briefcase },
       { label: "Mock Interview", to: "/interview", icon: Mic },
       { label: "Resume Builder", to: "/resume", icon: FileText },
       { label: "Interview History", to: "/interview/history", icon: History },
@@ -32,6 +35,7 @@ const MENU = {
       { label: "Learning Management", to: "/staff/learning", icon: BookOpen },
       { label: "Question Bank", to: "/staff/questions", icon: FileQuestion },
       { label: "Gamification", to: "/staff/gamification", icon: Trophy },
+      { label: "Coding Challenges", to: "/staff/challenges", icon: CalendarDays },
     ] },
     { group: "Students", items: [
       { label: "Student Search", to: "/staff/students", icon: Users },
@@ -57,6 +61,7 @@ const MENU = {
       { label: "Learning Management", to: "/staff/learning", icon: BookOpen },
       { label: "Question Bank", to: "/staff/questions", icon: FileQuestion },
       { label: "Gamification", to: "/staff/gamification", icon: Trophy },
+      { label: "Coding Challenges", to: "/staff/challenges", icon: CalendarDays },
       { label: "Resumes", to: "/staff/resumes", icon: FileText },
       { label: "Mock Interviews", to: "/staff/interviews", icon: Mic },
       { label: "Interview Reports", to: "/staff/interview-reports", icon: ClipboardList },

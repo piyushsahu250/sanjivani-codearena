@@ -15,6 +15,8 @@ const XP_RULE_DEFS = [
   { activity: "TEST_COMPLETE", label: "Complete a Coding Test", xp: 30 },
   { activity: "MODULE_CODING_PASS", label: "Pass a Module's Proctored Coding Assessment", xp: 40 },
   { activity: "DAILY_STREAK", label: "Maintain Daily Streak", xp: 10 },
+  { activity: "DAILY_CHALLENGE", label: "Solve the Daily Challenge", xp: 25 },
+  { activity: "WEEKLY_CHALLENGE", label: "Solve the Weekly Challenge", xp: 60 },
 ];
 
 const BADGE_DEFS = [

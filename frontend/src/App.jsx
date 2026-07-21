@@ -58,6 +58,10 @@ import InterviewLeaderboard from "./pages/InterviewLeaderboard";
 import InterviewCertificate from "./pages/InterviewCertificate";
 import InterviewVerify from "./pages/InterviewVerify";
 import InterviewAdmin from "./pages/InterviewAdmin";
+import ChallengeAdmin from "./pages/ChallengeAdmin";
+import DailyChallenge from "./pages/DailyChallenge";
+import WeeklyChallenge from "./pages/WeeklyChallenge";
+import CompanyTests from "./pages/CompanyTests";
 import InterviewReportDetail from "./pages/InterviewReportDetail";
 import EmailLogs from "./pages/EmailLogs";
 import PasswordResetHistory from "./pages/PasswordResetHistory";
@@ -136,6 +140,9 @@ export default function App() {
           <Route path="/test/:id/result" element={<Protected roles={["STUDENT"]}><StudentTestResult /></Protected>} />
           <Route path="/dashboard/performance" element={<Protected roles={["STUDENT"]}><Suspense fallback={<LoadingScreen />}><StudentPerformance /></Suspense></Protected>} />
           <Route path="/achievements" element={<Protected roles={["STUDENT"]}><Achievements /></Protected>} />
+          <Route path="/challenges/daily" element={<Protected roles={["STUDENT"]}><DailyChallenge /></Protected>} />
+          <Route path="/challenges/weekly" element={<Protected roles={["STUDENT"]}><WeeklyChallenge /></Protected>} />
+          <Route path="/company-tests" element={<Protected roles={["STUDENT"]}><CompanyTests /></Protected>} />
           <Route path="/resume" element={<Protected roles={["STUDENT"]}><ResumeBuilder /></Protected>} />
           <Route path="/interview" element={<Protected roles={["STUDENT"]}><InterviewHub /></Protected>} />
           <Route
@@ -185,6 +192,7 @@ export default function App() {
           <Route path="/staff/gamification" element={<Protected roles={["ADMIN", "STAFF"]}><GamificationManagement /></Protected>} />
           <Route path="/staff/resumes" element={<Protected roles={["ADMIN", "STAFF"]}><ResumeAdmin /></Protected>} />
           <Route path="/staff/interviews" element={<Protected roles={["ADMIN", "STAFF"]}><InterviewAdmin /></Protected>} />
+          <Route path="/staff/challenges" element={<Protected roles={["ADMIN", "STAFF"]}><ChallengeAdmin /></Protected>} />
           <Route path="/staff/interview-reports" element={<Protected roles={["ADMIN", "STAFF"]}><Suspense fallback={<LoadingScreen />}><InterviewReports /></Suspense></Protected>} />
           <Route path="/staff/interview-reports/:sessionId" element={<Protected roles={["ADMIN", "STAFF"]}><InterviewReportDetail /></Protected>} />
           <Route path="/staff/questions" element={<Protected roles={["ADMIN", "STAFF"]}><QuestionBank /></Protected>} />

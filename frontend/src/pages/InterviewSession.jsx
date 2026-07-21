@@ -9,6 +9,7 @@ import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import CodeResultBlock from "../components/CodeResultBlock";
 import RunSubmitButtons from "../components/RunSubmitButtons";
+import ProblemStatement from "../components/ProblemStatement";
 import "./interviewPrep.css";
 
 const AUTOSAVE_DEBOUNCE_MS = 2000;
@@ -466,7 +467,13 @@ export default function InterviewSession() {
 
         <div className="ip-glass" style={{ padding: 24, marginTop: 16 }}>
           <span className="badge">{CATEGORY_LABEL[q.category]}{q.subject ? ` · ${q.subject}` : ""}{q.aptitudeCategory ? ` · ${q.aptitudeCategory}` : ""}</span>
-          <p style={{ marginTop: 12, fontWeight: 600, fontSize: 16 }}>{q.prompt}</p>
+          {q.category === "CODING" ? (
+            <div style={{ marginTop: 12 }}>
+              <ProblemStatement question={q} />
+            </div>
+          ) : (
+            <p style={{ marginTop: 12, fontWeight: 600, fontSize: 16 }}>{q.prompt}</p>
+          )}
 
           {FREE_TEXT_CATEGORIES.includes(q.category) && (
             <>
@@ -497,15 +504,6 @@ export default function InterviewSession() {
 
           {q.category === "CODING" && (
             <>
-              {Array.isArray(q.testCases) && q.testCases.length > 0 && (
-                <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
-                  {q.testCases.map((tc, i) => (
-                    <div key={i} className="mono ip-glass" style={{ fontSize: 12, padding: "8px 12px" }}>
-                      <strong>Sample {i + 1}</strong> — input: {tc.input} | expected output: {tc.expected}
-                    </div>
-                  ))}
-                </div>
-              )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
                 <select className="ip-select" value={draft.language} onChange={(e) => handleLanguageChange(e.target.value)}>
                   {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}

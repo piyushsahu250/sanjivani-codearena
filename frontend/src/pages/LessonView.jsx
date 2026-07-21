@@ -7,6 +7,7 @@ import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import CodeResultBlock from "../components/CodeResultBlock";
 import RunSubmitButtons from "../components/RunSubmitButtons";
+import ProblemStatement from "../components/ProblemStatement";
 
 const AUTOSAVE_DEBOUNCE_MS = 2000;
 
@@ -502,24 +503,18 @@ function PracticeQuestionCard({ question }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span className="badge">{TYPE_LABEL[question.type] || question.type}</span>
       </div>
-      <p style={{ marginTop: 10, fontWeight: 600 }}>{question.prompt}</p>
+      {question.type !== "CODING" && <p style={{ marginTop: 10, fontWeight: 600 }}>{question.prompt}</p>}
 
       {question.type === "CODING" ? (
         <>
+          <div style={{ marginTop: 10 }}>
+            <ProblemStatement question={question} />
+          </div>
           {history && history.totalAttempts > 0 && (
             <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 8 }}>
               Submissions: {history.totalAttempts} · Best: {history.solved ? "✓ Solved" : "Not solved yet"} · Latest: {history.latestVerdict}
               {" · "}unlimited attempts — practice as many times as you like
             </p>
-          )}
-          {Array.isArray(question.testCases) && question.testCases.length > 0 && (
-            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-              {question.testCases.map((tc, i) => (
-                <div key={i} className="mono" style={{ fontSize: 12, background: "var(--card-bg, #F7F7F5)", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 12px" }}>
-                  <strong>Sample {i + 1}</strong> — input: {tc.input} | expected output: {tc.expected}
-                </div>
-              ))}
-            </div>
           )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
             <select value={language} onChange={(e) => handleLanguageChange(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)" }}>

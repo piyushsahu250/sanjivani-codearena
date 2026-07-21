@@ -26,6 +26,7 @@ const certificateRoutes = require("./routes/certificates");
 const backupRoutes = require("./routes/backup");
 const exportRoutes = require("./routes/exports");
 const aiQuestionRoutes = require("./routes/aiQuestions");
+const challengeRoutes = require("./routes/challenges");
 
 const app = express();
 // Render sits in front of this service behind a reverse proxy — without trusting it, req.ip
@@ -88,6 +89,7 @@ app.use("/api/certificates", certificateRoutes);
 app.use("/api/backup", backupRoutes);
 app.use("/api/export", exportRoutes);
 app.use("/api/ai/questions", aiQuestionRoutes);
+app.use("/api/challenges", challengeRoutes);
 
 process.on("uncaughtException", (err) => {
   console.error("[uncaughtException]", err);

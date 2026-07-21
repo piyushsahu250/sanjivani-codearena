@@ -9,6 +9,7 @@ import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import CodeResultBlock from "../components/CodeResultBlock";
 import RunSubmitButtons from "../components/RunSubmitButtons";
+import ProblemStatement from "../components/ProblemStatement";
 
 const ALL_LANGUAGES = [
   { id: "java", label: "Java", monaco: "java" },
@@ -699,23 +700,10 @@ export default function ModuleCodingAssessment() {
         <div style={{ width: isMobile ? "100%" : 380, padding: isMobile ? 16 : 24, overflowY: "auto", flexShrink: 0, borderRight: isMobile ? "none" : "1px solid var(--line)", borderBottom: isMobile ? "1px solid var(--line)" : "none" }}>
           {current && (
             <>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <h2 style={{ fontSize: 18 }}>{current.title || "(untitled)"}</h2>
-                <span className={`badge badge-${(current.difficulty || "easy").toLowerCase()}`}>{current.difficulty}</span>
-              </div>
-              <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14, marginTop: 14 }}>{current.description}</p>
-              <div style={{ marginTop: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)" }}>SAMPLE TEST CASES</div>
-                {(current.testCases || []).map((tc, i) => (
-                  <div key={i} className="card" style={{ padding: 10, marginTop: 8, fontSize: 12 }}>
-                    <div className="mono"><strong>Input:</strong> {tc.input}</div>
-                    <div className="mono"><strong>Expected:</strong> {tc.expected}</div>
-                  </div>
-                ))}
-                {(!current.testCases || current.testCases.length === 0) && (
-                  <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 6 }}>All test cases are hidden for this question.</p>
-                )}
-              </div>
+              <ProblemStatement question={current} />
+              {(!current.testCases || current.testCases.length === 0) && (
+                <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 6 }}>All test cases are hidden for this question.</p>
+              )}
             </>
           )}
         </div>

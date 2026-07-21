@@ -2,7 +2,7 @@
 // Practice Coding, Mock Interview coding) — one visual format for Run/Submit results platform-wide,
 // per-case input/expected/actual/status/time/memory, and the same compile/runtime-error and
 // TLE/MLE presentation everywhere, so switching between features doesn't feel like a different tool.
-export default function CodeResultBlock({ title, result, hideCaseCount }) {
+export default function CodeResultBlock({ title, result, hideCaseCount, submittedAt }) {
   if (!result) return null;
   if (result.error) {
     return <p style={{ color: "var(--rust)" }} className="mono">{title ? `${title}: ` : ""}{result.error}</p>;
@@ -26,10 +26,16 @@ export default function CodeResultBlock({ title, result, hideCaseCount }) {
   const label = result.verdict === "ACCEPTED" ? "Correct" : result.verdict === "PARTIAL" ? "Partially correct" : result.verdict;
   return (
     <div>
-      <div className="mono" style={{ fontWeight: 700, color }}>
+      <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)" }}>✓ Compiled successfully</div>
+      <div className="mono" style={{ fontWeight: 700, color, marginTop: 2 }}>
         {title ? `${title}: ` : ""}{label}
         {!hideCaseCount && ` — ${result.passedCases}/${result.totalCases} test cases passed`}
       </div>
+      {submittedAt && (
+        <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 2 }}>
+          Submitted {new Date(submittedAt).toLocaleString()}
+        </div>
+      )}
       {(result.maxTimeMs != null || result.maxMemoryKb != null) && (
         <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 4 }}>
           {result.maxTimeMs != null && `⏱ ${result.maxTimeMs} ms`}

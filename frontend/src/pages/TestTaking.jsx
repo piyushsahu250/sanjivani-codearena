@@ -8,6 +8,7 @@ import { useGamification } from "../context/GamificationContext";
 import useIsMobile from "../hooks/useIsMobile";
 import CodeResultBlock from "../components/CodeResultBlock";
 import RunSubmitButtons from "../components/RunSubmitButtons";
+import ProblemStatement from "../components/ProblemStatement";
 
 const FACE_CHECK_INTERVAL_MS = 2000;
 const FACE_CONFIDENCE_THRESHOLD = 0.7;
@@ -1203,25 +1204,8 @@ export default function TestTaking() {
         <div style={{ width: isMobile ? "100%" : questionPanelWidth, padding: isMobile ? 16 : 24, overflowY: "auto", flexShrink: 0 }}>
           {current && (
             <>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <h2 style={{ fontSize: 20 }}>{current.title || "(untitled)"}</h2>
-                <span className={`badge badge-${current.difficulty.toLowerCase()}`}>{current.difficulty}</span>
-              </div>
               <p className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>{current.points} points</p>
-              <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: 14, marginTop: 16 }}>{current.description}</p>
-
-              {!isQuiz && (
-                <div style={{ marginTop: 24 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-dim)" }}>SAMPLE TEST CASES</div>
-                  {current.testCases.map((tc, i) => (
-                    <div key={tc.id} className="card" style={{ padding: 12, marginTop: 8, fontSize: 13 }}>
-                      <div className="mono"><strong>Input:</strong> {tc.input}</div>
-                      <div className="mono"><strong>Expected:</strong> {tc.expected}</div>
-                      {tc.explanation && <div style={{ marginTop: 6, color: "var(--ink-dim)" }}>{tc.explanation}</div>}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <ProblemStatement question={isQuiz ? { ...current, testCases: [] } : current} />
             </>
           )}
         </div>

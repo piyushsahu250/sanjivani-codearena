@@ -1,0 +1,155 @@
+import { useEffect, useRef, useState } from "react";
+import Editor from "@monaco-editor/react";
+import api from "../api";
+import { useGamification } from "../context/GamificationContext";
+import Navbar from "../components/Navbar";
+import ChalkUnderline from "../components/ChalkUnderline";
+import ProblemStatement from "../components/ProblemStatement";
+import RunSubmitButtons from "../components/RunSubmitButtons";
+import CodeResultBlock from "../components/CodeResultBlock";
+
+const LANGUAGES = [
+  { id: "java", label: "Java", monaco: "java" },
+  { id: "javascript", label: "JavaScript", monaco: "javascript" },
+  { id: "python", label: "Python", monaco: "python" },
+  { id: "c", label: "C", monaco: "c" },
+  { id: "cpp", label: "C++", monaco: "cpp" },
+];
+
+function defaultStarter(language) {
+  switch (language) {
+    case "python": return "# Read input via input(), print your answer\n";
+    case "c": return '#include <stdio.h>\n\nint main() {\n    return 0;\n}\n';
+    case "cpp": return '#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    return 0;\n}\n';
+    case "java": return 'import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n    }\n}\n';
+    default: return "// Read input via require('fs').readFileSync(0, 'utf8'), console.log your answer\n";
+  }
+}
+
+// Weekly Challenge — the same mechanics as DailyChallenge.jsx (see that file for the fuller
+// comment) but keyed by ISO week instead of calendar day, higher XP reward, no daily calendar
+// strip since there's only ever one "current" week.
+export default function WeeklyChallenge() {
+  const { notify } = useGamification();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [language, setLanguage] = useState("java");
+  const [code, setCode] = useState("");
+  const [runResult, setRunResult] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [submitResult, setSubmitResult] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const langDraftsRef = useRef({});
+
+  useEffect(() => {
+    api.get("/challenges/weekly/current")
+      .then((res) => {
+        setData(res.data);
+        if (res.data.challenge) {
+          const sub = res.data.submission;
+          const lang = sub?.language || "java";
+          setLanguage(lang);
+          setCode(sub?.code || res.data.question.starterCodeByLanguage?.[lang] || defaultStarter(lang));
+        }
+      })
+      .catch(() => setError("Failed to load this week's challenge"));
+  }, []);
+
+  function handleLanguageChange(lang) {
+    if (lang === language) return;
+    langDraftsRef.current[language] = code;
+    const draft = langDraftsRef.current[lang];
+    const nextCode = draft !== undefined ? draft : (data.question.starterCodeByLanguage?.[lang] || defaultStarter(lang));
+    setLanguage(lang);
+    setCode(nextCode);
+    setRunResult(null);
+  }
+
+  async function runCode() {
+    setRunning(true);
+    setRunResult(null);
+    try {
+      const { data: res } = await api.post(`/challenges/weekly/${data.challenge.id}/run`, { language, code });
+      setRunResult(res);
+    } catch (err) {
+      setRunResult({ error: err.response?.data?.error || "Execution failed" });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function submitCode() {
+    setSubmitting(true);
+    setSubmitResult(null);
+    try {
+      const { data: res } = await api.post(`/challenges/weekly/${data.challenge.id}/submit`, { language, code });
+      setSubmitResult(res);
+      notify(res.gamification);
+    } catch (err) {
+      setSubmitResult({ error: err.response?.data?.error || "Submission failed" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div>
+      <Navbar />
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "48px 24px" }}>
+        <h1>Weekly Challenge</h1>
+        <ChalkUnderline />
+        <p style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 8 }}>
+          A tougher problem, one per week — worth more XP than the Daily Challenge.
+        </p>
+
+        {error && <p style={{ color: "var(--rust)", marginTop: 20 }}>{error}</p>}
+
+        {data && !data.challenge && (
+          <div className="card" style={{ padding: 24, marginTop: 24, textAlign: "center" }}>
+            <p style={{ color: "var(--ink-dim)" }}>No challenge is scheduled for this week yet — check back soon.</p>
+          </div>
+        )}
+
+        {data?.challenge && (
+          <div className="card" style={{ padding: 20, marginTop: 24 }}>
+            <ProblemStatement question={data.question} />
+
+            {data.submission?.solvedAt && (
+              <p className="mono" style={{ fontSize: 12, color: "var(--mint)", marginTop: 16 }}>
+                ✓ Already solved this week — you can keep submitting, your XP was already awarded.
+              </p>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
+              <select value={language} onChange={(e) => handleLanguageChange(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)" }}>
+                {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+              </select>
+              <RunSubmitButtons onRun={runCode} onSubmit={submitCode} running={running} submitting={submitting} />
+            </div>
+
+            <div style={{ marginTop: 10, border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+              <Editor
+                height="320px"
+                language={LANGUAGES.find((l) => l.id === language)?.monaco}
+                value={code}
+                onChange={(v) => setCode(v || "")}
+                options={{ fontSize: 13, minimap: { enabled: false }, fontFamily: "JetBrains Mono, monospace" }}
+              />
+            </div>
+
+            {runResult && (
+              <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: runResult.verdict === "ACCEPTED" ? "#E7F3EB" : "#F7E4E0" }}>
+                <CodeResultBlock title="Sample run result" result={runResult} />
+              </div>
+            )}
+            {submitResult && (
+              <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: submitResult.verdict === "ACCEPTED" ? "#E7F3EB" : "#F7E4E0" }}>
+                <CodeResultBlock title="Submission result" result={submitResult} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
