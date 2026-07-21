@@ -306,6 +306,24 @@ async function prepare(language, code) {
         error: compileResult.timedOut ? "Compilation timed out" : compileResult.error || "Compilation failed",
       };
     }
+
+    // javac happily compiles a file containing only a non-public class (e.g. a LeetCode-style
+    // `class Solution { ... }` with no `public class Main`) — the filename only has to match a
+    // *public* class if the file declares one. Without this check, RUNNERS.java.run's `java ...
+    // Main` then fails at JVM launch with a cryptic "Could not find or load main class Main",
+    // which (since compilation itself "succeeded") got misclassified per-test-case as a generic
+    // Runtime Error / WRONG_ANSWER instead of the real problem: there's no entry point at all.
+    // Catching it here instead routes it through the same well-labeled COMPILE_ERROR path real
+    // compile failures use. Harmless/never triggers in FUNCTION mode, since the generated driver
+    // (functionHarness.js's javaDriver()) always declares `public class Main` itself.
+    if (language === "java" && !fs.existsSync(path.join(tmpDir, "Main.class"))) {
+      fs.rm(tmpDir, { recursive: true, force: true }, () => {});
+      return {
+        ok: false,
+        error: "No 'public class Main' with 'public static void main' was found. If you wrote a LeetCode-style " +
+          "'class Solution' only, ask an admin to enable Function-based mode for this question.",
+      };
+    }
   }
 
   return {
