@@ -119,6 +119,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Control Statements": {
+    title: "Module 3 Coding Assessment",
+    instructions: "Solve every question by implementing the given method, applying the if/else, switch, and loop concepts from this module.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Leap Year Checker",
+        description: "Return true if the given year is a leap year (divisible by 4, but not by 100 unless also divisible by 400).",
+        difficulty: "EASY",
+        testCases: [
+          { input: "2000", expected: "true" },
+          { input: "1900", expected: "false" },
+          { input: "2024", expected: "true" },
+        ],
+      },
+      {
+        title: "Day Number to Name",
+        description: "Given a day number from 1 (Monday) to 7 (Sunday), return the day's name using a switch statement.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "1", expected: "Monday" },
+          { input: "7", expected: "Sunday" },
+          { input: "4", expected: "Thursday" },
+        ],
+      },
+      {
+        title: "FizzBuzz",
+        description: "Return the numbers from 1 to N, space-separated, replacing multiples of 3 with \"Fizz\", multiples of 5 with \"Buzz\", and multiples of both with \"FizzBuzz\".",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "5", expected: "1 2 Fizz 4 Buzz" },
+          { input: "15", expected: "1 2 Fizz 4 Buzz Fizz 7 8 Fizz Buzz 11 Fizz 13 14 FizzBuzz" },
+          { input: "3", expected: "1 2 Fizz" },
+        ],
+      },
+      {
+        title: "Prime Check",
+        description: "Return true if the given integer is a prime number, false otherwise.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "2", expected: "true" },
+          { input: "4", expected: "false" },
+          { input: "17", expected: "true" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {

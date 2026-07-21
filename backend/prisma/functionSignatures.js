@@ -24,6 +24,10 @@ const MODULE_CODING_SIGNATURES = {
   "Sum 1 to N": { methodName: "sumOneToN", returnType: "int", params: [{ name: "n", type: "int" }] },
   "Integer Division": { methodName: "integerDivision", returnType: "int", params: [{ name: "a", type: "int" }, { name: "b", type: "int" }] },
   "Character to ASCII": { methodName: "charToAscii", returnType: "int", params: [{ name: "c", type: "string" }] },
+  "Leap Year Checker": { methodName: "isLeapYear", returnType: "boolean", params: [{ name: "year", type: "int" }] },
+  "Day Number to Name": { methodName: "dayName", returnType: "string", params: [{ name: "day", type: "int" }] },
+  "FizzBuzz": { methodName: "fizzBuzz", returnType: "string", params: [{ name: "n", type: "int" }] },
+  "Prime Check": { methodName: "isPrime", returnType: "boolean", params: [{ name: "n", type: "int" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -33,6 +37,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "evenOrOdd", returnType: "string", params: [{ name: "n", type: "int" }] },
   "Read two integers on one line, separated by a space, and print their sum.":
     { methodName: "sum", returnType: "int", params: [{ name: "a", type: "int" }, { name: "b", type: "int" }] },
+  "Read one integer representing a score from 0 to 100 and print the grade: \"A\" for 90 or above, \"B\" for 75-89, \"C\" for 60-74, or \"F\" below 60.":
+    { methodName: "gradeForScore", returnType: "string", params: [{ name: "score", type: "int" }] },
+  "Read one integer N and print the sum of all even numbers from 1 to N (inclusive).":
+    { methodName: "sumOfEvens", returnType: "int", params: [{ name: "n", type: "int" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {
