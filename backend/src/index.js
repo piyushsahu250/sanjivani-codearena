@@ -102,5 +102,8 @@ process.on("unhandledRejection", (err) => {
   recordProcessError(err, "unhandledRejection");
 });
 
+const { startAiRefreshScheduler } = require("./utils/aiRefreshScheduler");
+startAiRefreshScheduler();
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`CodeArena API running on port ${PORT}`));

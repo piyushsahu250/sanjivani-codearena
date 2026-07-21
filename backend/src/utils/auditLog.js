@@ -47,6 +47,7 @@ const AUDIT_ACTIONS = {
   SESSION_REVOKED: "SESSION_REVOKED",
   DATABASE_BACKUP_DOWNLOADED: "DATABASE_BACKUP_DOWNLOADED",
   DATA_EXPORTED: "DATA_EXPORTED",
+  AI_AUTO_REFRESH_RUN: "AI_AUTO_REFRESH_RUN",
 };
 
 // Never throws — audit logging is a best-effort side channel (same posture as this codebase's

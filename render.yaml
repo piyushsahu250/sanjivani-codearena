@@ -11,3 +11,13 @@ services:
         sync: false # set this manually to your Postgres connection string (e.g. from Neon)
       - key: PORT
         value: 4000
+      - key: ANTHROPIC_API_KEY
+        sync: false # set manually to enable any AI feature (question generation, hints, resume review, interview feedback)
+      - key: ENABLE_AI_AUTO_REFRESH
+        sync: false # unset by default — set to "true" to enable the scheduled AI question-draft auto-refresh (backend/src/utils/aiRefreshScheduler.js). Makes real, billed Claude API calls on a timer; drafts still require manual admin approval before going live.
+      - key: AI_AUTO_REFRESH_INTERVAL_MS
+        sync: false # optional, defaults to 24h (86400000) if unset
+      - key: AI_AUTO_REFRESH_MIN_POOL
+        sync: false # optional, defaults to 5 — company/category combos with fewer than this many active questions get topped up
+      - key: AI_AUTO_REFRESH_MAX_CALLS_PER_RUN
+        sync: false # optional, defaults to 10 — hard cap on Claude calls per scheduled run, bounds worst-case spend per tick
