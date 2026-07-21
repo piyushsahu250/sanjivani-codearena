@@ -476,6 +476,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "File Handling": {
+    title: "Module 10 Coding Assessment",
+    instructions: "Solve every question by implementing the given method — these model the kind of word/line processing you'd do on text read from a file, since the judge tests a single static method rather than real file I/O.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Count Long Words",
+        description: "Given an array of words, return the count of words with more than 3 characters.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "cat elephant dog giraffe", expected: "2" },
+          { input: "a bb ccc", expected: "0" },
+          { input: "hello", expected: "1" },
+        ],
+      },
+      {
+        title: "Find Longest Word",
+        description: "Given an array of words, return the longest one (there is a unique longest word).",
+        difficulty: "EASY",
+        testCases: [
+          { input: "cat elephant dog", expected: "elephant" },
+          { input: "a bb ccc", expected: "ccc" },
+          { input: "single", expected: "single" },
+        ],
+      },
+      {
+        title: "Total Word Length",
+        description: "Given an array of words, return the sum of the lengths of all the words.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "cat dog bird", expected: "10" },
+          { input: "a bb ccc", expected: "6" },
+          { input: "hello", expected: "5" },
+        ],
+      },
+      {
+        title: "Count Capitalized Words",
+        description: "Given a string of space-separated words, return the count of words that start with an uppercase letter.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "Hello world Java Programming", expected: "3" },
+          { input: "hello world", expected: "0" },
+          { input: "A B C", expected: "3" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {

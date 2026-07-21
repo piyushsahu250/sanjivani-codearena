@@ -52,6 +52,10 @@ const MODULE_CODING_SIGNATURES = {
   "Balanced Parentheses": { methodName: "isBalancedParens", returnType: "boolean", params: [{ name: "s", type: "string" }] },
   "Front After K Dequeues": { methodName: "frontAfterDequeues", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "k", type: "int" }] },
   "Merge Two Sorted Arrays": { methodName: "mergeSorted", returnType: "int[]", params: [{ name: "a", type: "int[]" }, { name: "b", type: "int[]" }] },
+  "Count Long Words": { methodName: "countLongWords", returnType: "int", params: [{ name: "words", type: "string[]" }] },
+  "Find Longest Word": { methodName: "longestWord", returnType: "string", params: [{ name: "words", type: "string[]" }] },
+  "Total Word Length": { methodName: "totalWordLength", returnType: "int", params: [{ name: "words", type: "string[]" }] },
+  "Count Capitalized Words": { methodName: "countCapitalizedWords", returnType: "int", params: [{ name: "s", type: "string" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -89,6 +93,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "mostFrequent", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
   "Read space-separated integers on one line and an integer K on the next line. Print the Kth largest value.":
     { methodName: "kthLargest", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "k", type: "int" }] },
+  "Read a string representing text content (space-separated words) and print the total word count.":
+    { methodName: "wordCount", returnType: "int", params: [{ name: "s", type: "string" }] },
+  "Read space-separated integers (as if read line by line from a file of scores) and print their average, floored to the nearest integer.":
+    { methodName: "averageScore", returnType: "int", params: [{ name: "scores", type: "int[]" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {

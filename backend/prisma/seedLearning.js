@@ -1682,12 +1682,173 @@ const MODULE9_CODING = [
   },
 ];
 
-// Modules 10-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE10_LESSONS = [
+  {
+    title: "Reading Files",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "Java provides several ways to read data from a file — the modern, simplest approach for whole-file or line-by-line reading is <code>java.nio.file.Files</code>, while classic I/O streams (<code>FileReader</code>, <code>BufferedReader</code>) remain common in existing code and interview contexts.",
+      syntax:
+        "import java.nio.file.*;\nimport java.util.List;\n\nList<String> lines = Files.readAllLines(Paths.get(\"data.txt\"));  // reads the whole file into a List<String>\nString content = Files.readString(Paths.get(\"data.txt\"));       // reads the whole file as one String (Java 11+)",
+      example:
+        "import java.nio.file.*;\nimport java.util.List;\nimport java.io.IOException;\n\ntry {\n    List<String> lines = Files.readAllLines(Paths.get(\"scores.txt\"));\n    for (String line : lines) {\n        System.out.println(line);\n    }\n} catch (IOException e) {\n    System.out.println(\"Could not read file: \" + e.getMessage());\n}",
+      notes: [
+        "Nearly every file operation can throw <code>IOException</code> (a CHECKED exception) — file reading code must be wrapped in try/catch or declared with <code>throws IOException</code>.",
+        "<code>Files.readAllLines()</code> loads the ENTIRE file into memory at once — fine for small files, but BufferedReader's line-by-line reading (next lesson) is better for very large files.",
+      ],
+      mistakes: ["Forgetting that file I/O methods throw checked <code>IOException</code> — code that calls <code>Files.readAllLines()</code> without a try/catch or throws declaration simply won't compile."],
+    }),
+  },
+  {
+    title: "Writing Files",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "Writing to a file is the mirror image of reading — <code>java.nio.file.Files</code> offers simple whole-content writes, while FileWriter/BufferedWriter (covered more in the next lessons) support incremental writing.",
+      syntax:
+        "import java.nio.file.*;\nimport java.util.List;\n\nFiles.writeString(Paths.get(\"output.txt\"), \"Hello, file!\");           // overwrites the file with this content (Java 11+)\nFiles.write(Paths.get(\"output.txt\"), List.of(\"line1\", \"line2\"));      // writes a list of lines\n\n// Appending instead of overwriting:\nFiles.writeString(Paths.get(\"log.txt\"), \"New entry\\n\", StandardOpenOption.APPEND);",
+      example:
+        "import java.nio.file.*;\nimport java.io.IOException;\n\ntry {\n    Files.writeString(Paths.get(\"greeting.txt\"), \"Hello, World!\");\n    System.out.println(\"File written successfully.\");\n} catch (IOException e) {\n    System.out.println(\"Could not write file: \" + e.getMessage());\n}",
+      notes: [
+        "By default, <code>Files.writeString()</code>/<code>Files.write()</code> OVERWRITE the target file's existing contents — pass <code>StandardOpenOption.APPEND</code> explicitly if you want to add to the end instead.",
+        "If the target directory doesn't exist, these methods throw an exception rather than creating it automatically — the containing directory must already exist.",
+      ],
+      mistakes: ["Assuming a write call appends by default — without <code>StandardOpenOption.APPEND</code>, every write silently replaces the file's previous contents."],
+    }),
+  },
+  {
+    title: "BufferedReader",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "<code>BufferedReader</code> wraps another <code>Reader</code> (typically a <code>FileReader</code>) and adds an internal buffer, dramatically reducing the number of actual disk reads — and provides the convenient <code>readLine()</code> method for reading one line at a time.",
+      syntax:
+        "import java.io.*;\n\ntry (BufferedReader reader = new BufferedReader(new FileReader(\"data.txt\"))) {\n    String line;\n    while ((line = reader.readLine()) != null) {   // readLine() returns null at end-of-file\n        System.out.println(line);\n    }\n} catch (IOException e) {\n    System.out.println(\"Error reading file: \" + e.getMessage());\n}",
+      example:
+        "try (BufferedReader reader = new BufferedReader(new FileReader(\"names.txt\"))) {\n    String line;\n    int count = 0;\n    while ((line = reader.readLine()) != null) {\n        count++;\n    }\n    System.out.println(\"Total lines: \" + count);\n} catch (IOException e) {\n    e.printStackTrace();\n}",
+      notes: [
+        "The try-with-resources syntax (<code>try (BufferedReader reader = ...)</code>) automatically closes the reader when the block ends, even if an exception occurs — this is the standard, safe pattern for any I/O resource.",
+        "<code>readLine()</code> returns <code>null</code> exactly once, at end-of-file — the <code>while ((line = reader.readLine()) != null)</code> idiom is the standard way to read every line.",
+      ],
+      mistakes: ["Forgetting to close a BufferedReader (or any I/O resource) — this leaks a file handle. Always use try-with-resources instead of manually calling <code>close()</code> in a finally block."],
+    }),
+  },
+  {
+    title: "FileWriter",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "<code>FileWriter</code> is the basic class for writing character data to a file. Like BufferedReader speeds up reading, wrapping a FileWriter in a <code>BufferedWriter</code> improves write performance for many small writes.",
+      syntax:
+        "import java.io.*;\n\ntry (FileWriter writer = new FileWriter(\"output.txt\")) {    // overwrites by default\n    writer.write(\"Hello, World!\\n\");\n    writer.write(\"Second line\\n\");\n} catch (IOException e) {\n    System.out.println(\"Error writing file: \" + e.getMessage());\n}\n\n// Appending: pass true as the second constructor argument\ntry (FileWriter appender = new FileWriter(\"log.txt\", true)) {\n    appender.write(\"New log entry\\n\");\n} catch (IOException e) { /* ... */ }",
+      example: "try (FileWriter writer = new FileWriter(\"report.txt\")) {\n    for (int i = 1; i <= 3; i++) {\n        writer.write(\"Line \" + i + \"\\n\");\n    }\n} catch (IOException e) {\n    e.printStackTrace();\n}",
+      notes: [
+        "<code>new FileWriter(path)</code> OVERWRITES the file by default; <code>new FileWriter(path, true)</code> APPENDS instead — the boolean second argument is easy to forget.",
+        "Wrap a FileWriter in a <code>BufferedWriter</code> (<code>new BufferedWriter(new FileWriter(path))</code>) when writing many small pieces of text, for the same buffering benefit BufferedReader gives to reads.",
+      ],
+      mistakes: ["Reopening a FileWriter without the append flag inside a loop — each <code>new FileWriter(path)</code> call truncates the file again, so only the LAST write survives instead of all of them."],
+    }),
+  },
+  {
+    title: "Scanner",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "<code>Scanner</code> (most familiar from reading keyboard input via <code>System.in</code>) can also read from a file, tokenizing input by whitespace and offering typed read methods (<code>nextInt()</code>, <code>nextDouble()</code>, etc.) — convenient when a file contains structured, space-separated data.",
+      syntax:
+        "import java.util.Scanner;\nimport java.io.File;\nimport java.io.FileNotFoundException;\n\ntry (Scanner sc = new Scanner(new File(\"numbers.txt\"))) {\n    while (sc.hasNextInt()) {\n        int n = sc.nextInt();\n        System.out.println(n);\n    }\n} catch (FileNotFoundException e) {\n    System.out.println(\"File not found: \" + e.getMessage());\n}",
+      example: "try (Scanner sc = new Scanner(new File(\"scores.txt\"))) {\n    int total = 0;\n    while (sc.hasNextInt()) {\n        total += sc.nextInt();\n    }\n    System.out.println(\"Total: \" + total);\n} catch (FileNotFoundException e) {\n    e.printStackTrace();\n}",
+      notes: [
+        "Scanner throws <code>FileNotFoundException</code> (a checked exception, subclass of <code>IOException</code>) if the file doesn't exist — different from BufferedReader/FileReader's plain <code>IOException</code>, but still must be caught or declared.",
+        "<code>hasNextInt()</code>/<code>hasNextLine()</code>/etc. let you check whether more matching input remains BEFORE consuming it with <code>nextInt()</code>/<code>nextLine()</code> — calling the next methods without checking risks a <code>NoSuchElementException</code> at end-of-input.",
+      ],
+      mistakes: ["Mixing <code>nextInt()</code> with <code>nextLine()</code> without accounting for the leftover newline — <code>nextInt()</code> doesn't consume the newline after the number, so a following <code>nextLine()</code> can return an unexpectedly empty string. (This applies to Scanner on <code>System.in</code> even more often than on files.)"],
+      bestPractices: ["Prefer BufferedReader for line-oriented text and Scanner for whitespace-tokenized structured data (numbers, mixed types) — pick based on the file's actual format."],
+    }),
+  },
+];
+
+const MODULE10_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "What type of exception must file-reading code in Java handle or declare?",
+    options: ["RuntimeException, always optional", "IOException, a checked exception", "No exception handling is ever required for file I/O", "ArithmeticException"],
+    correctAnswer: 1,
+    explanation: "File operations can fail for reasons outside the program's control (missing file, permissions, disk errors) — Java models this as the checked IOException, forcing explicit handling.",
+  },
+  {
+    type: "MCQ",
+    prompt: "By default, does `Files.writeString(path, content)` overwrite or append to an existing file?",
+    options: ["It appends", "It overwrites", "It throws an exception if the file exists", "It asks the user interactively"],
+    correctAnswer: 1,
+    explanation: "Without StandardOpenOption.APPEND, Files.writeString() replaces the file's entire previous contents.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does `reader.readLine()` return when BufferedReader reaches the end of the file?",
+    options: ["An empty string \"\"", "Throws an exception", "null", "0"],
+    correctAnswer: 2,
+    explanation: "readLine() returns null exactly once at end-of-file, which is why while ((line = reader.readLine()) != null) is the standard read-loop idiom.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Why is try-with-resources (`try (BufferedReader r = ...) { }`) preferred for file I/O?",
+    options: ["It runs faster than any other approach", "It automatically closes the resource when the block ends, even if an exception occurs", "It disables checked exceptions", "It is required by the Java compiler for all file access"],
+    correctAnswer: 1,
+    explanation: "try-with-resources guarantees close() is called on the resource, preventing file-handle leaks even when an exception is thrown mid-block.",
+  },
+  {
+    type: "DEBUG",
+    prompt: "What is wrong with this code, if the goal is to accumulate lines across multiple calls to writeLine()?\n\nvoid writeLine(String text) throws IOException {\n    FileWriter writer = new FileWriter(\"log.txt\");\n    writer.write(text + \"\\n\");\n    writer.close();\n}",
+    options: ["Nothing, each call correctly appends a new line", "new FileWriter(\"log.txt\") without the append flag overwrites the file every call — only the last write survives", "FileWriter cannot write strings, only bytes", "close() should be called before write()"],
+    correctAnswer: 1,
+    explanation: "Each call constructs a new FileWriter without true (append mode), so every call truncates the file and only the most recent write remains.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What is the main purpose of wrapping a FileReader in a BufferedReader?",
+    options: ["To encrypt the file contents", "To reduce disk reads via internal buffering, and to gain access to readLine()", "To convert the file to a different format", "BufferedReader and FileReader are functionally identical"],
+    correctAnswer: 1,
+    explanation: "BufferedReader adds an internal buffer (fewer physical disk reads) and the convenient readLine() method, which plain FileReader doesn't have.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What exception does `new Scanner(new File(\"missing.txt\"))` throw if the file doesn't exist?",
+    options: ["IOException directly", "FileNotFoundException, a subclass of IOException", "NullPointerException", "No exception — Scanner returns null"],
+    correctAnswer: 1,
+    explanation: "Scanner's File constructor throws the checked FileNotFoundException, which is itself a subclass of IOException.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which class is generally preferable for reading whitespace-tokenized structured data (like a file of space-separated numbers) with typed reads like nextInt()?",
+    options: ["BufferedReader", "FileWriter", "Scanner", "StringBuilder"],
+    correctAnswer: 2,
+    explanation: "Scanner's hasNextInt()/nextInt()-style typed, whitespace-tokenized reads are purpose-built for structured data, unlike BufferedReader's plain line-based readLine().",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below. Real file
+// I/O isn't exercised by the judge (no filesystem access in FUNCTION mode), so these model the same
+// word/line processing you'd do on text read from a file.
+const MODULE10_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read a string representing text content (space-separated words) and print the total word count.",
+    language: "java",
+    testCases: [{ input: "the quick brown fox", expected: "4" }, { input: "hello", expected: "1" }, { input: "a b c d e", expected: "5" }],
+    explanation: "Split the string on whitespace and count the resulting tokens.",
+  },
+  {
+    type: "CODING",
+    prompt: "Read space-separated integers (as if read line by line from a file of scores) and print their average, floored to the nearest integer.",
+    language: "java",
+    testCases: [{ input: "10 20 30", expected: "20" }, { input: "5 5 5 5", expected: "5" }, { input: "7", expected: "7" }],
+    explanation: "Sum all the scores, divide by the count, and floor (integer division truncates toward zero for positive sums).",
+  },
+];
+
+// Modules 11-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "File Handling", topics: ["Reading Files", "Writing Files", "BufferedReader", "FileWriter", "Scanner"], practiceLabel: "Coding Problems" },
   { title: "Multithreading", topics: ["Threads", "Runnable", "Synchronization", "Thread Lifecycle"], practiceLabel: "Practice" },
   { title: "Java 8 Features", topics: ["Lambda Expressions", "Stream API", "Functional Interfaces", "Optional", "Method References"], practiceLabel: "Practice" },
   { title: "JDBC", topics: ["Database Connectivity", "CRUD Operations", "PreparedStatement", "ResultSet"], practiceLabel: "Mini Project" },
@@ -2093,13 +2254,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 10-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 10: full hand-authored content ---
+  const module10 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "File Handling" } },
+    update: {},
+    create: { courseId: course.id, title: "File Handling", order: 9 },
+  });
+
+  for (let i = 0; i < MODULE10_LESSONS.length; i++) {
+    const l = MODULE10_LESSONS[i];
+    await upsertLessonContent(prisma, module10.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module10PracticeLesson = await upsertLessonContent(prisma, module10.id, "Coding Problems", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE10_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule10Practice = await prisma.practiceQuestion.count({ where: { lessonId: module10PracticeLesson.id } });
+  if (existingModule10Practice === 0) {
+    let order = 0;
+    for (const q of MODULE10_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module10PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE10_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module10PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 11-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 9 },
+      create: { courseId: course.id, title: spec.title, order: m + 10 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -2121,7 +2322,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 9, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 10, "modules.");
 }
 
 module.exports = { seedLearningModule };
