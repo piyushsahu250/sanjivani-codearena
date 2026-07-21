@@ -7,6 +7,7 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
 const { judgeSubmission } = require("../utils/judge");
 const { runQueued } = require("../utils/queue");
+const { resolveCodingFields } = require("../utils/functionHarness");
 const { evaluateHrAnswer, evaluateTechnicalAnswer, evaluateAptitudeAnswer, evaluateCodingAnswer } = require("../utils/interviewEvaluation");
 const { buildInterviewReport } = require("../utils/interviewReport");
 const { buildRecommendations } = require("../utils/interviewRecommendations");
@@ -61,7 +62,8 @@ function sanitizeQuestion(q) {
   return {
     id: q.id, category: q.category, subject: q.subject, company: q.company, aptitudeCategory: q.aptitudeCategory,
     difficulty: q.difficulty, title: q.title || null, prompt: q.prompt, options: q.options,
-    starterCode: q.starterCode, language: q.language, tags: q.tags || null,
+    starterCode: q.starterCode, starterCodeByLanguage: q.starterCodeByLanguage || null, language: q.language, tags: q.tags || null,
+    evaluationType: q.evaluationType, functionSignature: q.functionSignature,
     // Descriptive-only fields (CODING category), never reveal an answer — safe to send.
     estimatedTimeMin: q.estimatedTimeMin ?? null,
     realWorldScenario: q.realWorldScenario || null,
@@ -346,7 +348,7 @@ router.post("/sessions/:id/run-code", authenticate, requireRole("STUDENT"), asyn
     if (!question || question.category !== "CODING") return res.status(400).json({ error: "Not a coding question" });
 
     const { visible } = splitInterviewCases(question.testCases);
-    const result = await runQueued(() => judgeSubmission({ language, code, testCases: visible, timeLimitMs: 3000 }));
+    const result = await runQueued(() => judgeSubmission({ language, code, testCases: visible, timeLimitMs: 3000, evaluationType: question.evaluationType, functionSignature: question.functionSignature }));
     res.json(result);
   } catch (err) {
     console.error(err);
@@ -432,7 +434,7 @@ router.post("/sessions/:id/answer", authenticate, requireRole("STUDENT"), async 
       // before submitting this answer.
       const { visible, hidden } = splitInterviewCases(question.testCases);
       const gradingCases = hidden.length > 0 ? hidden : visible;
-      const judgeResult = await runQueued(() => judgeSubmission({ language, code, testCases: gradingCases, timeLimitMs: 3000 }));
+      const judgeResult = await runQueued(() => judgeSubmission({ language, code, testCases: gradingCases, timeLimitMs: 3000, evaluationType: question.evaluationType, functionSignature: question.functionSignature }));
       const r = evaluateCodingAnswer(judgeResult, code);
       score = r.score; breakdown = r.breakdown;
       // Hidden case inputs/expected outputs never leave the server — only counts/verdict/timing
@@ -766,6 +768,7 @@ router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asy
     const {
       category, subject, company, aptitudeCategory, difficulty, title, prompt, expectedKeywords, modelAnswer, options, correctAnswer, explanation, starterCode, testCases, language, tags, followUpQuestionId,
       estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes, edgeCases, problemExplanation,
+      evaluationType, functionSignature, starterCodeByLanguage,
     } = req.body;
     if (!category || !prompt) return res.status(400).json({ error: "category and prompt are required" });
     // CODING was previously the one category with no minimum test-case check at all (every other
@@ -773,6 +776,7 @@ router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asy
     // PracticeQuestion. Unconditional (not gated on testCases being present) since this is
     // creation — a CODING question with no test cases at all must never be allowed to exist,
     // not just one with too few.
+    let resolved = { evaluationType: "STDIO", functionSignature: null, starterCodeByLanguage: undefined };
     if (category === "CODING") {
       const cases = Array.isArray(testCases) ? testCases : [];
       if (cases.filter((tc) => !tc.isHidden).length < 2) {
@@ -781,6 +785,7 @@ router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asy
       if (cases.filter((tc) => tc.isHidden).length < 10) {
         return res.status(400).json({ error: "Each coding question needs at least 10 hidden test cases for final evaluation" });
       }
+      resolved = resolveCodingFields({ evaluationType, functionSignature, starterCodeByLanguage });
     }
     const q = await prisma.interviewQuestion.create({
       data: {
@@ -793,19 +798,21 @@ router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asy
         constraints: constraints || null, inputFormat: inputFormat || null, outputFormat: outputFormat || null,
         notes: notes || null, edgeCases: edgeCases || null, problemExplanation: problemExplanation || null,
         followUpQuestionId: followUpQuestionId || null,
+        evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
       },
     });
     res.json(q);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to create question" });
+    res.status(400).json({ error: err.message || "Failed to create question" });
   }
 });
 
 router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const existing = await prisma.interviewQuestion.findUnique({ where: { id: req.params.id }, select: { category: true } });
-    const effectiveCategory = req.body.category !== undefined ? req.body.category : existing?.category;
+    const existing = await prisma.interviewQuestion.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Question not found" });
+    const effectiveCategory = req.body.category !== undefined ? req.body.category : existing.category;
     if (effectiveCategory === "CODING" && Array.isArray(req.body.testCases)) {
       if (req.body.testCases.filter((tc) => !tc.isHidden).length < 2) {
         return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
@@ -821,11 +828,33 @@ router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF")
     ];
     const data = {};
     for (const f of fields) if (req.body[f] !== undefined) data[f] = f === "isActive" ? !!req.body[f] : req.body[f];
+
+    // evaluationType/functionSignature/starterCodeByLanguage are deliberately excluded from the
+    // generic loop above and always re-resolved server-side (never trusted directly from the
+    // client) — same guarantee resolveCodingFields documents on Question/PracticeQuestion.
+    if (effectiveCategory === "CODING" && (req.body.evaluationType !== undefined || req.body.functionSignature !== undefined || req.body.starterCodeByLanguage !== undefined)) {
+      const resolved = resolveCodingFields({
+        evaluationType: req.body.evaluationType !== undefined ? req.body.evaluationType : existing.evaluationType,
+        functionSignature: req.body.functionSignature !== undefined ? req.body.functionSignature : existing.functionSignature,
+        starterCodeByLanguage: req.body.starterCodeByLanguage !== undefined ? req.body.starterCodeByLanguage : existing.starterCodeByLanguage,
+      });
+      data.evaluationType = resolved.evaluationType;
+      data.functionSignature = resolved.functionSignature;
+      data.starterCodeByLanguage = resolved.starterCodeByLanguage;
+    } else if (req.body.category !== undefined && effectiveCategory !== "CODING") {
+      // Switching a question away from CODING must clear any leftover FUNCTION-mode state —
+      // otherwise sanitizeQuestion() would keep exposing a stale signature/per-language starter
+      // code on a question that's no longer CODING at all.
+      data.evaluationType = "STDIO";
+      data.functionSignature = null;
+      data.starterCodeByLanguage = null;
+    }
+
     const q = await prisma.interviewQuestion.update({ where: { id: req.params.id }, data });
     res.json(q);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to update question" });
+    res.status(400).json({ error: err.message || "Failed to update question" });
   }
 });
 

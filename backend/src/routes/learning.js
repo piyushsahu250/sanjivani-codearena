@@ -4,6 +4,7 @@ const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { judgeSubmission } = require("../utils/judge");
 const { runQueued } = require("../utils/queue");
+const { resolveCodingFields } = require("../utils/functionHarness");
 const { generateCertificatePdf } = require("../utils/certificatePdf");
 const { issueCertificate } = require("../utils/certificates");
 const { getModuleLockMap } = require("../utils/learningLock");
@@ -34,7 +35,8 @@ const hintLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, keyGenerator: (req)
 function sanitizeQuestion(q) {
   return {
     id: q.id, type: q.type, prompt: q.prompt, options: q.options,
-    starterCode: q.starterCode, language: q.language, order: q.order,
+    starterCode: q.starterCode, starterCodeByLanguage: q.starterCodeByLanguage || null, language: q.language, order: q.order,
+    evaluationType: q.evaluationType, functionSignature: q.functionSignature,
     testCases: q.type === "CODING" ? (Array.isArray(q.testCases) ? q.testCases.filter((tc) => !tc.isHidden) : []) : undefined,
     // Descriptive-only fields, never reveal an answer — safe to send to every student.
     title: q.title || null, tags: q.tags || null, difficulty: q.difficulty,
@@ -395,7 +397,7 @@ router.post("/practice/:id/run", authenticate, requireRole("STUDENT"), runLimite
 
     const { language, code } = req.body;
     const { visible } = splitPracticeCases(q.testCases);
-    const result = await runQueued(() => judgeSubmission({ language, code, testCases: visible, timeLimitMs: 3000 }));
+    const result = await runQueued(() => judgeSubmission({ language, code, testCases: visible, timeLimitMs: 3000, evaluationType: q.evaluationType, functionSignature: q.functionSignature }));
     res.json(result);
   } catch (err) {
     console.error(err);
@@ -415,7 +417,7 @@ router.post("/practice/:id/submit", authenticate, requireRole("STUDENT"), runLim
     const { language, code } = req.body;
     const { visible, hidden } = splitPracticeCases(q.testCases);
     const gradingCases = hidden.length > 0 ? hidden : visible;
-    const result = await runQueued(() => judgeSubmission({ language, code, testCases: gradingCases, timeLimitMs: 3000 }));
+    const result = await runQueued(() => judgeSubmission({ language, code, testCases: gradingCases, timeLimitMs: 3000, evaluationType: q.evaluationType, functionSignature: q.functionSignature }));
 
     let gamification = null;
     try {
@@ -769,9 +771,10 @@ router.post("/lessons/:id/questions", authenticate, requireRole("ADMIN", "STAFF"
     const {
       type, prompt, options, correctAnswer, explanation, starterCode, testCases, language, order,
       title, tags, estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat,
-      notes, edgeCases, problemExplanation,
+      notes, edgeCases, problemExplanation, evaluationType, functionSignature, starterCodeByLanguage,
     } = req.body;
     if (!type || !prompt) return res.status(400).json({ error: "type and prompt are required" });
+    let resolved = { evaluationType: "STDIO", functionSignature: null, starterCodeByLanguage: undefined };
     if (type === "CODING") {
       const cases = Array.isArray(testCases) ? testCases : [];
       if (cases.filter((tc) => !tc.isHidden).length < 2) {
@@ -780,6 +783,7 @@ router.post("/lessons/:id/questions", authenticate, requireRole("ADMIN", "STAFF"
       if (cases.filter((tc) => tc.isHidden).length < 10) {
         return res.status(400).json({ error: "Each coding question needs at least 10 hidden test cases for final evaluation" });
       }
+      resolved = resolveCodingFields({ evaluationType, functionSignature, starterCodeByLanguage });
     }
     const q = await prisma.practiceQuestion.create({
       data: {
@@ -797,12 +801,15 @@ router.post("/lessons/:id/questions", authenticate, requireRole("ADMIN", "STAFF"
         notes: notes || null,
         edgeCases: edgeCases || null,
         problemExplanation: problemExplanation || null,
+        evaluationType: resolved.evaluationType,
+        functionSignature: resolved.functionSignature,
+        starterCodeByLanguage: resolved.starterCodeByLanguage,
       },
     });
     res.json(q);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to create practice question" });
+    res.status(400).json({ error: err.message || "Failed to create practice question" });
   }
 });
 
@@ -811,12 +818,15 @@ router.patch("/practice/:id", authenticate, requireRole("ADMIN", "STAFF"), async
     const {
       type, prompt, options, correctAnswer, explanation, starterCode, testCases, language, order,
       title, tags, estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat,
-      notes, edgeCases, problemExplanation,
+      notes, edgeCases, problemExplanation, evaluationType, functionSignature, starterCodeByLanguage,
     } = req.body;
-    if (testCases !== undefined) {
-      const existing = await prisma.practiceQuestion.findUnique({ where: { id: req.params.id }, select: { type: true } });
-      const effectiveType = type !== undefined ? type : existing?.type;
-      if (effectiveType === "CODING") {
+    const existing = await prisma.practiceQuestion.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Practice question not found" });
+    const effectiveType = type !== undefined ? type : existing.type;
+
+    let resolvedData = {};
+    if (effectiveType === "CODING") {
+      if (testCases !== undefined) {
         const cases = Array.isArray(testCases) ? testCases : [];
         if (cases.filter((tc) => !tc.isHidden).length < 2) {
           return res.status(400).json({ error: "Each coding question needs at least 2 visible sample test cases" });
@@ -825,7 +835,24 @@ router.patch("/practice/:id", authenticate, requireRole("ADMIN", "STAFF"), async
           return res.status(400).json({ error: "Each coding question needs at least 10 hidden test cases for final evaluation" });
         }
       }
+      // Only re-resolve when one of these three actually changed — otherwise re-running FUNCTION
+      // mode's generator on every unrelated field edit is wasted work, and a legacy STDIO question
+      // with none of these fields set stays STDIO rather than being force-migrated.
+      if (evaluationType !== undefined || functionSignature !== undefined || starterCodeByLanguage !== undefined) {
+        const resolved = resolveCodingFields({
+          evaluationType: evaluationType !== undefined ? evaluationType : existing.evaluationType,
+          functionSignature: functionSignature !== undefined ? functionSignature : existing.functionSignature,
+          starterCodeByLanguage: starterCodeByLanguage !== undefined ? starterCodeByLanguage : existing.starterCodeByLanguage,
+        });
+        resolvedData = { evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage };
+      }
+    } else if (type !== undefined) {
+      // Switching a question away from CODING must clear any leftover FUNCTION-mode state —
+      // otherwise sanitizeQuestion() would keep exposing a stale signature/per-language starter
+      // code on a question that's no longer CODING at all.
+      resolvedData = { evaluationType: "STDIO", functionSignature: null, starterCodeByLanguage: null };
     }
+
     const q = await prisma.practiceQuestion.update({
       where: { id: req.params.id },
       data: {
@@ -848,12 +875,13 @@ router.patch("/practice/:id", authenticate, requireRole("ADMIN", "STAFF"), async
         ...(notes !== undefined ? { notes } : {}),
         ...(edgeCases !== undefined ? { edgeCases } : {}),
         ...(problemExplanation !== undefined ? { problemExplanation } : {}),
+        ...resolvedData,
       },
     });
     res.json(q);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to update practice question" });
+    res.status(400).json({ error: err.message || "Failed to update practice question" });
   }
 });
 

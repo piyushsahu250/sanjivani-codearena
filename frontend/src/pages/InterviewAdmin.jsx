@@ -4,6 +4,7 @@ import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import ProblemStatementFields from "../components/ProblemStatementFields";
 import TestCasesEditor from "../components/TestCasesEditor";
+import EvaluationTypeFields, { EMPTY_SIGNATURE } from "../components/EvaluationTypeFields";
 
 const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, marginTop: 4 };
 const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--ink-dim)" };
@@ -15,7 +16,7 @@ const EMPTY_Q = {
   expectedKeywords: "", modelAnswer: "", options: "", correctAnswer: "", explanation: "", starterCode: "",
   testCases: [{ input: "", expected: "", isHidden: false, explanation: "" }], language: "java", tags: "", followUpQuestionId: "",
   estimatedTimeMin: null, realWorldScenario: "", constraints: "", inputFormat: "", outputFormat: "",
-  notes: "", edgeCases: "", problemExplanation: "",
+  notes: "", edgeCases: "", problemExplanation: "", evaluationType: "STDIO",
 };
 
 export default function InterviewAdmin() {
@@ -26,6 +27,7 @@ export default function InterviewAdmin() {
   const [filterCategory, setFilterCategory] = useState("");
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_Q);
+  const [signature, setSignature] = useState(EMPTY_SIGNATURE);
   const fileRef = useRef(null);
 
   function loadAll() {
@@ -65,9 +67,12 @@ export default function InterviewAdmin() {
         notes: form.category === "CODING" ? (form.notes || null) : undefined,
         edgeCases: form.category === "CODING" ? (form.edgeCases || null) : undefined,
         problemExplanation: form.category === "CODING" ? (form.problemExplanation || null) : undefined,
+        evaluationType: form.category === "CODING" ? form.evaluationType : undefined,
+        functionSignature: form.category === "CODING" && form.evaluationType === "FUNCTION" ? signature : undefined,
       };
       await api.post("/interview/admin/questions", payload);
       setForm(EMPTY_Q);
+      setSignature(EMPTY_SIGNATURE);
       setAdding(false);
       loadAll();
     } catch (err) {
@@ -203,12 +208,19 @@ export default function InterviewAdmin() {
                   <ProblemStatementFields value={form} onChange={(patch) => setForm((f) => ({ ...f, ...patch }))} />
                 </div>
 
-                <label style={labelStyle}>Starter Code</label>
-                <textarea style={{ ...inputStyle, minHeight: 80, fontFamily: "var(--font-mono)", fontSize: 12 }} value={form.starterCode} onChange={(e) => setForm({ ...form, starterCode: e.target.value })} />
-                <label style={labelStyle}>Language</label>
+                <label style={labelStyle}>Default language (which one the candidate sees first)</label>
                 <select style={inputStyle} value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })}>
                   <option value="java">Java</option><option value="python">Python</option><option value="javascript">JavaScript</option><option value="c">C</option><option value="cpp">C++</option>
                 </select>
+
+                <EvaluationTypeFields
+                  evaluationType={form.evaluationType}
+                  onEvaluationTypeChange={(v) => setForm({ ...form, evaluationType: v })}
+                  signature={signature}
+                  onSignatureChange={setSignature}
+                  starterCode={form.starterCode}
+                  onStarterCodeChange={(v) => setForm({ ...form, starterCode: v })}
+                />
 
                 <TestCasesEditor testCases={form.testCases} onChange={(tc) => setForm({ ...form, testCases: tc })} minVisible={2} minHidden={10} />
               </>

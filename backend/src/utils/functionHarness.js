@@ -344,4 +344,23 @@ function wrapFunctionCode(language, signature, studentCode) {
   }
 }
 
-module.exports = { SUPPORTED_TYPES, SCALAR_TYPES, ARRAY_TYPES, validateSignature, languagesSupportedBy, generateStarterCode, wrapFunctionCode };
+// FUNCTION-mode questions always get their starterCodeByLanguage regenerated server-side from the
+// signature, rather than trusting whatever the client sent — this is the guarantee that keeps the
+// starter code the student sees in sync with the signature judge.js's driver-wrapper actually
+// compiles against. Drifting out of sync (e.g. an admin edits the signature but the old starter
+// code sticks around) would silently break every submission for that question. Shared by every
+// coding-question admin CRUD route (Question/Test bank, Module Coding Test, InterviewQuestion,
+// PracticeQuestion) so this guarantee holds identically everywhere FUNCTION mode is offered.
+function resolveCodingFields({ evaluationType, functionSignature, starterCodeByLanguage }) {
+  const mode = evaluationType === "FUNCTION" ? "FUNCTION" : "STDIO";
+  if (mode !== "FUNCTION") {
+    return { evaluationType: "STDIO", functionSignature: null, starterCodeByLanguage: starterCodeByLanguage ?? undefined };
+  }
+  validateSignature(functionSignature);
+  const supported = languagesSupportedBy(functionSignature);
+  const generated = {};
+  for (const lang of supported) generated[lang] = generateStarterCode(lang, functionSignature);
+  return { evaluationType: "FUNCTION", functionSignature, starterCodeByLanguage: generated };
+}
+
+module.exports = { SUPPORTED_TYPES, SCALAR_TYPES, ARRAY_TYPES, validateSignature, languagesSupportedBy, generateStarterCode, wrapFunctionCode, resolveCodingFields };

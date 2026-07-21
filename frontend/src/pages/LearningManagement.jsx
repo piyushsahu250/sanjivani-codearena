@@ -4,6 +4,7 @@ import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import ProblemStatementFields from "../components/ProblemStatementFields";
 import TestCasesEditor from "../components/TestCasesEditor";
+import EvaluationTypeFields, { EMPTY_SIGNATURE } from "../components/EvaluationTypeFields";
 
 const inputStyle = { width: "100%", padding: "9px 11px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, marginTop: 6 };
 const labelStyle = { fontSize: 12, fontWeight: 600, color: "var(--ink-dim)", marginTop: 10, display: "block" };
@@ -325,12 +326,13 @@ const EMPTY_Q = {
   type: "MCQ", prompt: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "", starterCode: "",
   testCases: [{ input: "", expected: "", isHidden: false, explanation: "" }], language: "java",
   title: "", tags: "", estimatedTimeMin: null, realWorldScenario: "", constraints: "",
-  inputFormat: "", outputFormat: "", notes: "", edgeCases: "", problemExplanation: "",
+  inputFormat: "", outputFormat: "", notes: "", edgeCases: "", problemExplanation: "", evaluationType: "STDIO",
 };
 
 function PracticeQuestionsPanel({ lesson, onRefresh }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_Q);
+  const [signature, setSignature] = useState(EMPTY_SIGNATURE);
   const [saving, setSaving] = useState(false);
 
   async function create(e) {
@@ -339,17 +341,20 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
     try {
       const payload = { ...form, order: lesson.questions?.length || 0 };
       payload.tags = form.tags ? form.tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+      if (form.type === "CODING" && form.evaluationType === "FUNCTION") payload.functionSignature = signature;
       if (form.type !== "CODING") {
         payload.starterCode = undefined; payload.testCases = undefined; payload.language = undefined;
         payload.title = undefined; payload.tags = undefined;
         payload.estimatedTimeMin = undefined; payload.realWorldScenario = undefined; payload.constraints = undefined;
         payload.inputFormat = undefined; payload.outputFormat = undefined; payload.notes = undefined;
         payload.edgeCases = undefined; payload.problemExplanation = undefined;
+        payload.evaluationType = undefined; payload.functionSignature = undefined;
       }
       if (form.type !== "MCQ" && form.type !== "DEBUG" && form.type !== "OUTPUT_PREDICTION") payload.options = undefined;
       if (form.type === "FILL_BLANK") payload.correctAnswer = form.correctAnswer;
       await api.post(`/learning/lessons/${lesson.id}/questions`, payload);
       setForm(EMPTY_Q);
+      setSignature(EMPTY_SIGNATURE);
       setAdding(false);
       onRefresh();
     } catch (err) {
@@ -437,8 +442,6 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
 
               <ProblemStatementFields value={form} onChange={(patch) => setForm((f) => ({ ...f, ...patch }))} />
 
-              <label style={labelStyle}>Starter code</label>
-              <textarea style={{ ...inputStyle, minHeight: 80, fontFamily: "var(--font-mono)", fontSize: 12 }} value={form.starterCode} onChange={(e) => setForm({ ...form, starterCode: e.target.value })} />
               <label style={labelStyle}>Default language</label>
               <select style={inputStyle} value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })}>
                 <option value="java">Java</option>
@@ -447,6 +450,15 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
                 <option value="c">C</option>
                 <option value="cpp">C++</option>
               </select>
+
+              <EvaluationTypeFields
+                evaluationType={form.evaluationType}
+                onEvaluationTypeChange={(v) => setForm({ ...form, evaluationType: v })}
+                signature={signature}
+                onSignatureChange={setSignature}
+                starterCode={form.starterCode}
+                onStarterCodeChange={(v) => setForm({ ...form, starterCode: v })}
+              />
 
               <TestCasesEditor testCases={form.testCases} onChange={(tc) => setForm({ ...form, testCases: tc })} minVisible={2} minHidden={10} />
             </>

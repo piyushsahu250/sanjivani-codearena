@@ -4,7 +4,7 @@ const XLSX = require("xlsx");
 const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
-const { validateSignature, generateStarterCode, languagesSupportedBy } = require("../utils/functionHarness");
+const { validateSignature, generateStarterCode, languagesSupportedBy, resolveCodingFields } = require("../utils/functionHarness");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -150,23 +150,6 @@ function buildWhere(query, requesterInstituteId) {
     });
   }
   return where;
-}
-
-// FUNCTION-mode questions always get their starterCodeByLanguage regenerated server-side from the
-// signature, rather than trusting whatever the client sent — this is the guarantee that keeps the
-// starter code the student sees in sync with the signature judge.js's driver-wrapper actually
-// compiles against. Drifting out of sync (e.g. an admin edits the signature but the old starter
-// code sticks around) would silently break every submission for that question.
-function resolveCodingFields({ evaluationType, functionSignature, starterCodeByLanguage }) {
-  const mode = evaluationType === "FUNCTION" ? "FUNCTION" : "STDIO";
-  if (mode !== "FUNCTION") {
-    return { evaluationType: "STDIO", functionSignature: null, starterCodeByLanguage: starterCodeByLanguage ?? undefined };
-  }
-  validateSignature(functionSignature);
-  const supported = languagesSupportedBy(functionSignature);
-  const generated = {};
-  for (const lang of supported) generated[lang] = generateStarterCode(lang, functionSignature);
-  return { evaluationType: "FUNCTION", functionSignature, starterCodeByLanguage: generated };
 }
 
 // ADMIN/STAFF: live preview of the starter code a signature would generate, while authoring a

@@ -551,10 +551,17 @@ model PracticeQuestion {
   correctAnswer Json?
   explanation   String?
   starterCode   String?
+  starterCodeByLanguage Json? // { java, python, cpp, c, javascript } — preferred when present, same as Question
   testCases     Json? // CODING: [{input, expected, isHidden?}] — isHidden absent/false = sample case
   language      String?
   difficulty    Difficulty @default(EASY) // CODING only — drives the tiered solve-XP amount
   tags          Json?   // string[] — parity with Question.tags
+
+  // LeetCode-style function-only submissions — same STDIO/FUNCTION split as Question, see
+  // functionHarness.js. STDIO (default): student's code is the whole program. FUNCTION: student
+  // writes only the method body matching functionSignature; judge.js auto-generates the driver.
+  evaluationType    String @default("STDIO")
+  functionSignature Json?
 
   // "Professional structure" fields — see the identically-named block on Question above for the
   // full rationale; kept in sync field-for-field so ProblemStatement.jsx can render either shape.
@@ -1055,9 +1062,15 @@ model InterviewQuestion {
   correctAnswer         Json?   // Aptitude: correct option index
   explanation           String? // Aptitude: shown after
   starterCode           String? // Coding
+  starterCodeByLanguage Json?   // Coding: { java, python, cpp, c, javascript } — preferred when present, same as Question
   testCases             Json?   // Coding: [{input, expected, isHidden?}] — isHidden absent/false = sample case
   language               String? // Coding: default language
   tags                  Json?   // Coding: string[] — parity with Question.tags
+
+  // Coding: LeetCode-style function-only submissions — same STDIO/FUNCTION split as Question, see
+  // functionHarness.js.
+  evaluationType    String @default("STDIO")
+  functionSignature Json?
 
   // "Professional structure" fields (Coding category only) — see the identically-named block on
   // Question above for the full rationale; kept in sync field-for-field.

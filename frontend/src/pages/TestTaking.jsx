@@ -1334,12 +1334,6 @@ export default function TestTaking() {
                   <input type="checkbox" checked={editorWordWrap} onChange={(e) => setEditorWordWrap(e.target.checked)} /> Wrap lines
                 </label>
               </div>
-              <p className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", padding: "6px 16px 0" }}>
-                Your code is saved automatically as you type. "Run" checks against sample cases only. "Submit"
-                grades this question against the hidden test cases right away and shows the result immediately —
-                you can keep editing and submit again any time; your best-scoring submission counts.
-              </p>
-
               <div style={{ flex: 1, minHeight: 0 }}>
                 <Editor
                   height="100%"
