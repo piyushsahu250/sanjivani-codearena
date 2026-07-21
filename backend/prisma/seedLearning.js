@@ -10,6 +10,9 @@
 // real content without touching anything an admin already edited by hand. Practice questions
 // are only inserted the first time a lesson has none, so re-running never duplicates them.
 
+const { resolveCodingFields } = require("../src/utils/functionHarness");
+const { PRACTICE_CODING_SIGNATURES } = require("./functionSignatures");
+
 function section(label, html) {
   return html ? `<h4>${label}</h4>${html}` : "";
 }
@@ -347,13 +350,15 @@ const MODULE2_QUIZ = [
   },
 ];
 
+// LeetCode-style FUNCTION mode — the student implements only the method matching
+// PRACTICE_CODING_SIGNATURES[prompt] (functionSignatures.js); resolveCodingFields() generates the
+// real starterCodeByLanguage from that signature in the create loop below, same as every admin
+// CRUD route does — never hand-authored here.
 const MODULE2_CODING = [
   {
     type: "CODING",
     prompt: "Read one integer and print \"Even\" if it's even, or \"Odd\" if it's odd.",
     language: "java",
-    starterCode:
-      "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int n = sc.nextInt();\n        // write your code here\n    }\n}",
     testCases: [{ input: "4", expected: "Even" }, { input: "7", expected: "Odd" }, { input: "0", expected: "Even" }],
     explanation: "n % 2 == 0 means n is even (the remainder of dividing by 2 is zero).",
   },
@@ -361,10 +366,8 @@ const MODULE2_CODING = [
     type: "CODING",
     prompt: "Read two integers on one line, separated by a space, and print their sum.",
     language: "java",
-    starterCode:
-      "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int a = sc.nextInt();\n        int b = sc.nextInt();\n        // write your code here\n    }\n}",
-    testCases: [{ input: "3 5", expected: "8" }, { input: "10 20", expected: "30" }, { input: "-5 5", expected: "0" }],
-    explanation: "Scanner's nextInt() reads whitespace-separated tokens regardless of whether they're on the same line.",
+    testCases: [{ input: "3\n5", expected: "8" }, { input: "10\n20", expected: "30" }, { input: "-5\n5", expected: "0" }],
+    explanation: "Each parameter is passed on its own line.",
   },
 ];
 
@@ -495,10 +498,12 @@ async function seedLearningModule(prisma) {
       });
     }
     for (const q of MODULE2_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
       await prisma.practiceQuestion.create({
         data: {
           lessonId: module2PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
-          starterCode: q.starterCode, testCases: q.testCases, explanation: q.explanation, order: order++,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
         },
       });
     }

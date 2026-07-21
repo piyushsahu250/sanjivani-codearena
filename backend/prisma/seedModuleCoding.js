@@ -6,15 +6,20 @@
 // Idempotent and non-destructive to admin edits: the ModuleCodingTest config upserts with
 // `update: {}`, and its question pool is only ever created once (skipped if any question already
 // exists for that test), so admin edits/additions survive a redeploy untouched.
+//
+// Every question here is authored LeetCode-style (FUNCTION mode) — the student writes only a
+// method body matching functionSignature (from functionSignatures.js, the single source of truth
+// also used by migrateCodingToFunctionMode.js to update an already-seeded production database).
+// resolveCodingFields() generates the real starterCodeByLanguage from that signature, exactly the
+// same call every admin CRUD route makes — never hand-authored here.
 
-function javaStarter(body) {
-  return `import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n${body}\n        // write your solution here\n    }\n}`;
-}
+const { resolveCodingFields } = require("../src/utils/functionHarness");
+const { MODULE_CODING_SIGNATURES } = require("./functionSignatures");
 
 const MODULE_TESTS = {
   "Introduction to Java": {
     title: "Module 1 Coding Assessment",
-    instructions: "Solve every question in Java. Read input with Scanner and print only the required output — no extra text.",
+    instructions: "Solve every question by implementing the given method — no need to read input or print output yourself.",
     questionCount: 3,
     timeLimitMin: 30,
     passingPercent: 70,
@@ -23,20 +28,18 @@ const MODULE_TESTS = {
     questions: [
       {
         title: "Sum of Two Integers",
-        description: "Read two space-separated integers on one line and print their sum.",
+        description: "Return the sum of two integers.",
         difficulty: "EASY",
-        starterCode: javaStarter("        int a = sc.nextInt();\n        int b = sc.nextInt();"),
         testCases: [
-          { input: "3 5", expected: "8" },
-          { input: "-2 7", expected: "5" },
-          { input: "0 0", expected: "0" },
+          { input: "3\n5", expected: "8" },
+          { input: "-2\n7", expected: "5" },
+          { input: "0\n0", expected: "0" },
         ],
       },
       {
         title: "Even or Odd",
-        description: 'Read an integer and print "Even" if it is even, or "Odd" if it is odd.',
+        description: 'Return "Even" if the given integer is even, or "Odd" if it is odd.',
         difficulty: "EASY",
-        starterCode: javaStarter("        int n = sc.nextInt();"),
         testCases: [
           { input: "4", expected: "Even" },
           { input: "7", expected: "Odd" },
@@ -45,9 +48,8 @@ const MODULE_TESTS = {
       },
       {
         title: "String Length",
-        description: "Read a line of text and print the number of characters in it.",
+        description: "Return the number of characters in the given string.",
         difficulty: "EASY",
-        starterCode: javaStarter("        String s = sc.nextLine();"),
         testCases: [
           { input: "hello", expected: "5" },
           { input: "Java", expected: "4" },
@@ -56,20 +58,19 @@ const MODULE_TESTS = {
       },
       {
         title: "Largest of Three",
-        description: "Read three space-separated integers and print the largest of the three.",
+        description: "Return the largest of three given integers.",
         difficulty: "EASY",
-        starterCode: javaStarter("        int a = sc.nextInt();\n        int b = sc.nextInt();\n        int c = sc.nextInt();"),
         testCases: [
-          { input: "3 9 5", expected: "9" },
-          { input: "1 1 1", expected: "1" },
-          { input: "-4 -1 -9", expected: "-1" },
+          { input: "3\n9\n5", expected: "9" },
+          { input: "1\n1\n1", expected: "1" },
+          { input: "-4\n-1\n-9", expected: "-1" },
         ],
       },
     ],
   },
   "Java Basics": {
     title: "Module 2 Coding Assessment",
-    instructions: "Solve every question in Java, applying the variables/operators/type-casting concepts from this module. Read input with Scanner and print only the required output.",
+    instructions: "Solve every question by implementing the given method, applying the variables/operators/type-casting concepts from this module.",
     questionCount: 3,
     timeLimitMin: 35,
     passingPercent: 70,
@@ -78,9 +79,8 @@ const MODULE_TESTS = {
     questions: [
       {
         title: "Truncating Cast",
-        description: "Read a decimal number and print it cast to an int (truncated toward zero, no rounding).",
+        description: "Return the given decimal number cast to an int (truncated toward zero, no rounding).",
         difficulty: "EASY",
-        starterCode: javaStarter("        double d = sc.nextDouble();"),
         testCases: [
           { input: "9.7", expected: "9" },
           { input: "3.2", expected: "3" },
@@ -89,9 +89,8 @@ const MODULE_TESTS = {
       },
       {
         title: "Sum 1 to N",
-        description: "Read an integer N and print the sum of all integers from 1 to N (inclusive) using a loop.",
+        description: "Return the sum of all integers from 1 to N (inclusive).",
         difficulty: "EASY",
-        starterCode: javaStarter("        int n = sc.nextInt();"),
         testCases: [
           { input: "5", expected: "15" },
           { input: "1", expected: "1" },
@@ -100,20 +99,18 @@ const MODULE_TESTS = {
       },
       {
         title: "Integer Division",
-        description: "Read two space-separated integers a and b and print the result of integer division a / b (truncated).",
+        description: "Return the result of integer division a / b (truncated).",
         difficulty: "EASY",
-        starterCode: javaStarter("        int a = sc.nextInt();\n        int b = sc.nextInt();"),
         testCases: [
-          { input: "7 2", expected: "3" },
-          { input: "10 3", expected: "3" },
-          { input: "9 3", expected: "3" },
+          { input: "7\n2", expected: "3" },
+          { input: "10\n3", expected: "3" },
+          { input: "9\n3", expected: "3" },
         ],
       },
       {
         title: "Character to ASCII",
-        description: "Read a single character and print its ASCII (integer) value.",
+        description: "Return the ASCII (integer) value of the given single-character string.",
         difficulty: "MEDIUM",
-        starterCode: javaStarter("        char c = sc.next().charAt(0);"),
         testCases: [
           { input: "A", expected: "65" },
           { input: "a", expected: "97" },
@@ -153,6 +150,7 @@ async function seedModuleCoding(prisma) {
     const existingCount = await prisma.question.count({ where: { moduleCodingTestId: test.id } });
     if (existingCount === 0) {
       for (const q of spec.questions) {
+        const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: MODULE_CODING_SIGNATURES[q.title] });
         await prisma.question.create({
           data: {
             moduleCodingTestId: test.id,
@@ -160,8 +158,10 @@ async function seedModuleCoding(prisma) {
             description: q.description,
             difficulty: q.difficulty || "EASY",
             questionType: "CODING",
-            starterCode: q.starterCode,
             timeLimitMs: 3000,
+            evaluationType: resolved.evaluationType,
+            functionSignature: resolved.functionSignature,
+            starterCodeByLanguage: resolved.starterCodeByLanguage,
             testCases: {
               create: q.testCases.map((tc, i) => ({ input: tc.input, expected: tc.expected, isHidden: i > 0 })),
             },

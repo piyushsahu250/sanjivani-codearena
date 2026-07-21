@@ -9,6 +9,9 @@
 // re-running on redeploy never duplicates rows (there's no natural unique key to upsert
 // against — question text isn't guaranteed unique — so "seed once" is the simplest safe rule).
 
+const { resolveCodingFields } = require("../src/utils/functionHarness");
+const { INTERVIEW_CODING_SIGNATURES } = require("./functionSignatures");
+
 const HR_QUESTIONS = [
   { prompt: "Tell me about yourself.", expectedKeywords: ["experience", "skills", "background"] },
   { prompt: "Why should we hire you?", expectedKeywords: ["skills", "value", "contribute"] },
@@ -152,58 +155,64 @@ function javaStarter(body) {
   return `import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n${body}\n        // write your solution here\n    }\n}`;
 }
 
+// All topics below are authored LeetCode-style (FUNCTION mode) — see functionSignatures.js's
+// INTERVIEW_CODING_SIGNATURES (keyed by exact prompt text), which resolveCodingFields() turns
+// into the real starterCodeByLanguage in the create loop below. The Graphs topic is the one
+// deliberate exception: its multi-line "read edges until EOF" input shape doesn't fit FUNCTION
+// mode's one-value/array-per-parameter convention, so it stays full-program (STDIO), the only
+// topic that still carries its own starterCode here.
 const CODING_QUESTIONS = {
   Arrays: [
-    { prompt: "Read space-separated integers on one line and print the maximum value.", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "3 7 2 9 4", expected: "9" }, { input: "1 1 1", expected: "1" }, { input: "-5 -2 -8", expected: "-2" }] },
-    { prompt: "Read space-separated integers and print them in reverse order, space-separated.", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "1 2 3 4 5", expected: "5 4 3 2 1" }, { input: "1 2", expected: "2 1" }] },
+    { prompt: "Read space-separated integers on one line and print the maximum value.", testCases: [{ input: "3 7 2 9 4", expected: "9" }, { input: "1 1 1", expected: "1" }, { input: "-5 -2 -8", expected: "-2" }] },
+    { prompt: "Read space-separated integers and print them in reverse order, space-separated.", testCases: [{ input: "1 2 3 4 5", expected: "5 4 3 2 1" }, { input: "1 2", expected: "2 1" }] },
   ],
   Strings: [
-    { prompt: "Read a string and print \"true\" if it's a palindrome, else \"false\".", starterCode: javaStarter("        String s = sc.nextLine();"), testCases: [{ input: "madam", expected: "true" }, { input: "hello", expected: "false" }, { input: "a", expected: "true" }] },
-    { prompt: "Read a string and print the number of vowels in it.", starterCode: javaStarter("        String s = sc.nextLine();"), testCases: [{ input: "hello world", expected: "3" }, { input: "xyz", expected: "0" }] },
+    { prompt: "Read a string and print \"true\" if it's a palindrome, else \"false\".", testCases: [{ input: "madam", expected: "true" }, { input: "hello", expected: "false" }, { input: "a", expected: "true" }] },
+    { prompt: "Read a string and print the number of vowels in it.", testCases: [{ input: "hello world", expected: "3" }, { input: "xyz", expected: "0" }] },
   ],
   Stack: [
-    { prompt: "Read a string of brackets ()[]{} and print \"true\" if they are balanced, else \"false\".", starterCode: javaStarter("        String s = sc.nextLine();"), testCases: [{ input: "{[()]}", expected: "true" }, { input: "{[(])}", expected: "false" }, { input: "()", expected: "true" }] },
-    { prompt: "Read space-separated integers and print \"true\" if reversing them with a stack gives a strictly descending sequence, else \"false\".", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "1 2 3", expected: "true" }, { input: "1 3 2", expected: "false" }] },
+    { prompt: "Read a string of brackets ()[]{} and print \"true\" if they are balanced, else \"false\".", testCases: [{ input: "{[()]}", expected: "true" }, { input: "{[(])}", expected: "false" }, { input: "()", expected: "true" }] },
+    { prompt: "Read space-separated integers and print \"true\" if reversing them with a stack gives a strictly descending sequence, else \"false\".", testCases: [{ input: "1 2 3", expected: "true" }, { input: "1 3 2", expected: "false" }] },
   ],
   Queue: [
-    { prompt: "Read space-separated integers representing a queue (front to back). Print them after removing the front element.", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "1 2 3 4", expected: "2 3 4" }, { input: "5 6", expected: "6" }] },
-    { prompt: "Read space-separated integers. Print \"true\" if they are already in ascending order (a valid sorted queue), else \"false\".", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "1 2 3", expected: "true" }, { input: "3 1 2", expected: "false" }] },
+    { prompt: "Read space-separated integers representing a queue (front to back). Print them after removing the front element.", testCases: [{ input: "1 2 3 4", expected: "2 3 4" }, { input: "5 6", expected: "6" }] },
+    { prompt: "Read space-separated integers. Print \"true\" if they are already in ascending order (a valid sorted queue), else \"false\".", testCases: [{ input: "1 2 3", expected: "true" }, { input: "3 1 2", expected: "false" }] },
   ],
   Trees: [
-    { prompt: "Read a level-order array of a binary tree (space-separated, -1 for null). Print the count of non-null nodes.", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "1 2 3 -1 4", expected: "4" }, { input: "1 -1 -1", expected: "1" }] },
-    { prompt: "Read a level-order array of a binary tree (space-separated, -1 for null). Print the sum of all non-null node values.", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "1 2 3 -1 4", expected: "10" }, { input: "5 -1 -1", expected: "5" }] },
+    { prompt: "Read a level-order array of a binary tree (space-separated, -1 for null). Print the count of non-null nodes.", testCases: [{ input: "1 2 3 -1 4", expected: "4" }, { input: "1 -1 -1", expected: "1" }] },
+    { prompt: "Read a level-order array of a binary tree (space-separated, -1 for null). Print the sum of all non-null node values.", testCases: [{ input: "1 2 3 -1 4", expected: "10" }, { input: "5 -1 -1", expected: "5" }] },
   ],
   Graphs: [
     { prompt: "Read a list of edges as pairs \"u v\" (one pair per line ends input). Print the count of unique nodes.", starterCode: javaStarter("        // read lines until input ends"), testCases: [{ input: "1 2\n2 3\n3 1", expected: "3" }, { input: "1 2\n1 3", expected: "3" }] },
     { prompt: "Read space-separated node degrees and print their sum (should equal 2 × edge count for a valid graph).", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "2 2 2", expected: "6" }, { input: "1 1", expected: "2" }] },
   ],
   DP: [
-    { prompt: "Read an integer N and print the Nth Fibonacci number (0-indexed, F(0)=0, F(1)=1).", starterCode: javaStarter("        int n = sc.nextInt();"), testCases: [{ input: "10", expected: "55" }, { input: "0", expected: "0" }, { input: "1", expected: "1" }] },
-    { prompt: "Read an integer N and print the number of ways to climb N stairs taking 1 or 2 steps at a time.", starterCode: javaStarter("        int n = sc.nextInt();"), testCases: [{ input: "4", expected: "5" }, { input: "1", expected: "1" }, { input: "2", expected: "2" }] },
+    { prompt: "Read an integer N and print the Nth Fibonacci number (0-indexed, F(0)=0, F(1)=1).", testCases: [{ input: "10", expected: "55" }, { input: "0", expected: "0" }, { input: "1", expected: "1" }] },
+    { prompt: "Read an integer N and print the number of ways to climb N stairs taking 1 or 2 steps at a time.", testCases: [{ input: "4", expected: "5" }, { input: "1", expected: "1" }, { input: "2", expected: "2" }] },
   ],
   "Linked List": [
-    { prompt: "Read space-separated integers (a linked list) and print them in reverse order.", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "1 2 3", expected: "3 2 1" }, { input: "7 8", expected: "8 7" }] },
-    { prompt: "Read space-separated integers and print them with duplicates removed, preserving first-occurrence order.", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "1 2 2 3 1", expected: "1 2 3" }, { input: "5 5 5", expected: "5" }] },
+    { prompt: "Read space-separated integers (a linked list) and print them in reverse order.", testCases: [{ input: "1 2 3", expected: "3 2 1" }, { input: "7 8", expected: "8 7" }] },
+    { prompt: "Read space-separated integers and print them with duplicates removed, preserving first-occurrence order.", testCases: [{ input: "1 2 2 3 1", expected: "1 2 3" }, { input: "5 5 5", expected: "5" }] },
   ],
   Recursion: [
-    { prompt: "Read an integer N and print its factorial using recursion.", starterCode: javaStarter("        int n = sc.nextInt();"), testCases: [{ input: "5", expected: "120" }, { input: "0", expected: "1" }] },
-    { prompt: "Read an integer N and print the sum of its digits using recursion.", starterCode: javaStarter("        int n = sc.nextInt();"), testCases: [{ input: "1234", expected: "10" }, { input: "9", expected: "9" }] },
+    { prompt: "Read an integer N and print its factorial using recursion.", testCases: [{ input: "5", expected: "120" }, { input: "0", expected: "1" }] },
+    { prompt: "Read an integer N and print the sum of its digits using recursion.", testCases: [{ input: "1234", expected: "10" }, { input: "9", expected: "9" }] },
   ],
   Sorting: [
-    { prompt: "Read space-separated integers and print them sorted in ascending order.", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "5 3 1 4 2", expected: "1 2 3 4 5" }, { input: "2 1", expected: "1 2" }] },
-    { prompt: "Read space-separated integers and print them sorted in descending order.", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "5 3 1 4 2", expected: "5 4 3 2 1" }, { input: "1 2", expected: "2 1" }] },
+    { prompt: "Read space-separated integers and print them sorted in ascending order.", testCases: [{ input: "5 3 1 4 2", expected: "1 2 3 4 5" }, { input: "2 1", expected: "1 2" }] },
+    { prompt: "Read space-separated integers and print them sorted in descending order.", testCases: [{ input: "5 3 1 4 2", expected: "5 4 3 2 1" }, { input: "1 2", expected: "2 1" }] },
   ],
   Searching: [
-    { prompt: "Read space-separated sorted integers on one line and a target on the next line. Print the 0-based index of the target, or -1 if not found.", starterCode: javaStarter("        String line = sc.nextLine();\n        int target = sc.nextInt();"), testCases: [{ input: "1 3 5 7 9\n7", expected: "3" }, { input: "2 4 6\n5", expected: "-1" }] },
-    { prompt: "Read space-separated integers on one line and a target on the next. Print \"true\" if the target exists, else \"false\".", starterCode: javaStarter("        String line = sc.nextLine();\n        int target = sc.nextInt();"), testCases: [{ input: "1 3 5 7\n5", expected: "true" }, { input: "1 3 5 7\n4", expected: "false" }] },
+    { prompt: "Read space-separated sorted integers on one line and a target on the next line. Print the 0-based index of the target, or -1 if not found.", testCases: [{ input: "1 3 5 7 9\n7", expected: "3" }, { input: "2 4 6\n5", expected: "-1" }] },
+    { prompt: "Read space-separated integers on one line and a target on the next. Print \"true\" if the target exists, else \"false\".", testCases: [{ input: "1 3 5 7\n5", expected: "true" }, { input: "1 3 5 7\n4", expected: "false" }] },
   ],
   Hashing: [
-    { prompt: "Read space-separated integers and print \"true\" if there are any duplicates, else \"false\".", starterCode: javaStarter("        String line = sc.nextLine();"), testCases: [{ input: "1 2 3 2", expected: "true" }, { input: "1 2 3", expected: "false" }] },
-    { prompt: "Read a string and print its first non-repeating character.", starterCode: javaStarter("        String s = sc.nextLine();"), testCases: [{ input: "swiss", expected: "w" }, { input: "aabbcddc", expected: "-1" }] },
+    { prompt: "Read space-separated integers and print \"true\" if there are any duplicates, else \"false\".", testCases: [{ input: "1 2 3 2", expected: "true" }, { input: "1 2 3", expected: "false" }] },
+    { prompt: "Read a string and print its first non-repeating character.", testCases: [{ input: "swiss", expected: "w" }, { input: "aabbcddc", expected: "-1" }] },
   ],
   Backtracking: [
-    { prompt: "Read an integer N and print the total number of permutations of N distinct items (N!).", starterCode: javaStarter("        int n = sc.nextInt();"), testCases: [{ input: "4", expected: "24" }, { input: "1", expected: "1" }, { input: "3", expected: "6" }] },
-    { prompt: "Read an integer N (board size) and print \"true\" if the N-Queens problem has at least one solution, else \"false\".", starterCode: javaStarter("        int n = sc.nextInt();"), testCases: [{ input: "4", expected: "true" }, { input: "3", expected: "false" }, { input: "1", expected: "true" }] },
+    { prompt: "Read an integer N and print the total number of permutations of N distinct items (N!).", testCases: [{ input: "4", expected: "24" }, { input: "1", expected: "1" }, { input: "3", expected: "6" }] },
+    { prompt: "Read an integer N (board size) and print \"true\" if the N-Queens problem has at least one solution, else \"false\".", testCases: [{ input: "4", expected: "true" }, { input: "3", expected: "false" }, { input: "1", expected: "true" }] },
   ],
 };
 
@@ -239,8 +248,21 @@ async function seedInterviewModule(prisma) {
 
   for (const [topic, questions] of Object.entries(CODING_QUESTIONS)) {
     for (const q of questions) {
+      const signature = INTERVIEW_CODING_SIGNATURES[q.prompt];
+      // A CODING question needs EITHER a FUNCTION-mode signature OR its own starterCode (the
+      // Graphs topic's deliberate STDIO exception) — never neither. Throwing here instead of
+      // silently falling back to STDIO-with-no-starter-code catches a future prompt/signature
+      // typo at seed time (visible in deploy logs) rather than shipping students a blank editor.
+      if (!signature && !q.starterCode) {
+        throw new Error(`No FUNCTION-mode signature or starterCode found for CODING question: "${q.prompt.slice(0, 70)}" — add an entry to INTERVIEW_CODING_SIGNATURES in functionSignatures.js, or give it its own starterCode if it's meant to stay full-program.`);
+      }
+      const resolved = resolveCodingFields(signature ? { evaluationType: "FUNCTION", functionSignature: signature } : { evaluationType: "STDIO" });
       await prisma.interviewQuestion.create({
-        data: { category: "CODING", subject: topic, difficulty: "EASY", prompt: q.prompt, starterCode: q.starterCode, testCases: q.testCases, language: "java" },
+        data: {
+          category: "CODING", subject: topic, difficulty: "EASY", prompt: q.prompt, starterCode: q.starterCode || null,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, language: "java",
+        },
       });
       count++;
     }

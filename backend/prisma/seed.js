@@ -6,6 +6,7 @@ const { seedInterviewModule } = require("./seedInterview");
 const { seedInterviewExtras } = require("./seedInterviewExtras");
 const { seedInterviewExtras2 } = require("./seedInterviewExtras2");
 const { seedModuleCoding } = require("./seedModuleCoding");
+const { migrateCodingToFunctionMode } = require("./migrateCodingToFunctionMode");
 
 const prisma = new PrismaClient();
 
@@ -35,6 +36,7 @@ async function main() {
   await seedInterviewExtras(prisma);
   await seedInterviewExtras2(prisma);
   await seedModuleCoding(prisma);
+  await migrateCodingToFunctionMode(prisma);
 }
 
 main()

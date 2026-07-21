@@ -5,9 +5,8 @@
 // already tripped in production from the first pass, so reusing it here would silently skip
 // this content forever.
 
-function javaStarter(body) {
-  return `import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n${body}\n        // write your solution here\n    }\n}`;
-}
+const { resolveCodingFields } = require("../src/utils/functionHarness");
+const { INTERVIEW_CODING_SIGNATURES } = require("./functionSignatures");
 
 const MANAGERIAL_QUESTIONS = [
   { prompt: "How do you prioritize tasks when your team has multiple urgent deadlines at once?", expectedKeywords: ["priorit", "deadline", "urgent", "plan"] },
@@ -32,7 +31,6 @@ const COMPANY_QUESTIONS = [
   {
     company: "Oracle", category: "CODING",
     prompt: "Read space-separated integers on one line and a target sum on the next. Print the first pair (in index order) that adds up to the target, space-separated.",
-    starterCode: javaStarter("        String line = sc.nextLine();\n        int target = sc.nextInt();"),
     testCases: [{ input: "2 7 11 15\n9", expected: "2 7" }, { input: "3 2 4\n6", expected: "2 4" }, { input: "1 5 3 8\n11", expected: "3 8" }],
     language: "java",
   },
@@ -50,7 +48,6 @@ const COMPANY_QUESTIONS = [
   {
     company: "Intel", category: "CODING",
     prompt: "Read a non-negative integer and print its digits reversed (drop any leading zeros in the result).",
-    starterCode: javaStarter("        int n = sc.nextInt();"),
     testCases: [{ input: "12345", expected: "54321" }, { input: "100", expected: "1" }, { input: "7", expected: "7" }],
     language: "java",
   },
@@ -94,12 +91,22 @@ async function seedInterviewExtras2(prisma) {
     count++;
   }
   for (const q of COMPANY_QUESTIONS) {
+    const signature = q.category === "CODING" ? INTERVIEW_CODING_SIGNATURES[q.prompt] : null;
+    // Same guard as seedInterview.js: a CODING entry needs either a signature or its own
+    // starterCode — never neither, or a future typo would silently ship a blank-editor question.
+    if (q.category === "CODING" && !signature && !q.starterCode) {
+      throw new Error(`No FUNCTION-mode signature or starterCode found for CODING question: "${q.prompt.slice(0, 70)}" — add an entry to INTERVIEW_CODING_SIGNATURES in functionSignatures.js, or give it its own starterCode if it's meant to stay full-program.`);
+    }
+    const resolved = signature ? resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: signature }) : null;
     await prisma.interviewQuestion.create({
       data: {
         category: q.category, company: q.company, subject: q.subject || null,
         difficulty: q.category === "TECHNICAL" || q.category === "SYSTEM_DESIGN" || q.category === "CODING" ? "MEDIUM" : "EASY",
         prompt: q.prompt, expectedKeywords: q.expectedKeywords ?? undefined,
         starterCode: q.starterCode || null, testCases: q.testCases ?? undefined, language: q.language || null,
+        evaluationType: resolved ? resolved.evaluationType : undefined,
+        functionSignature: resolved ? resolved.functionSignature : undefined,
+        starterCodeByLanguage: resolved ? resolved.starterCodeByLanguage : undefined,
       },
     });
     count++;
