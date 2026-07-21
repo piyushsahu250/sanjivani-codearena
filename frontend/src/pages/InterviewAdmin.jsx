@@ -69,6 +69,11 @@ export default function InterviewAdmin() {
         notes: form.category === "CODING" ? (form.notes || null) : undefined,
         edgeCases: form.category === "CODING" ? (form.edgeCases || null) : undefined,
         problemExplanation: form.category === "CODING" ? (form.problemExplanation || null) : undefined,
+        hints: form.category === "CODING" ? (form.hints ?? undefined) : undefined,
+        timeComplexity: form.category === "CODING" ? (form.timeComplexity || null) : undefined,
+        spaceComplexity: form.category === "CODING" ? (form.spaceComplexity || null) : undefined,
+        editorial: form.category === "CODING" ? (form.editorial ?? undefined) : undefined,
+        similarQuestions: form.category === "CODING" ? (form.similarQuestions ?? undefined) : undefined,
         evaluationType: form.category === "CODING" ? form.evaluationType : undefined,
         functionSignature: form.category === "CODING" && form.evaluationType === "FUNCTION" ? signature : undefined,
       };

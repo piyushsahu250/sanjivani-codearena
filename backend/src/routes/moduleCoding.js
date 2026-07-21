@@ -34,6 +34,11 @@ function sanitizeQuestion(q) {
     notes: q.notes || null,
     edgeCases: q.edgeCases || null,
     problemExplanation: q.problemExplanation || null,
+    // hints/timeComplexity/spaceComplexity/editorial/similarQuestions are deliberately NOT
+    // included here — a Module Coding Test is a proctored, permanently-graded assessment, and
+    // showing the editorial or hints mid-attempt would hand out the answer during a formal
+    // evaluation. They're still stored on the Question row (admin routes below accept them) for
+    // parity with every other coding surface; this sanitizer is what actually withholds them.
     testCases: (q.testCases || []).filter((tc) => !tc.isHidden).map((tc) => ({ input: tc.input, expected: tc.expected, explanation: tc.explanation || null })),
   };
 }
@@ -454,7 +459,7 @@ router.post("/admin/tests/:id/questions", authenticate, requireRole("ADMIN", "ST
     const {
       title, description, difficulty, timeLimitMs, starterCode, starterCodeByLanguage, testCases,
       estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes,
-      edgeCases, problemExplanation, tags,
+      edgeCases, problemExplanation, tags, hints, timeComplexity, spaceComplexity, editorial, similarQuestions,
     } = req.body;
     if (!description) return res.status(400).json({ error: "description is required" });
     const cases = Array.isArray(testCases) ? testCases : [];
@@ -478,6 +483,11 @@ router.post("/admin/tests/:id/questions", authenticate, requireRole("ADMIN", "ST
         notes: notes || null,
         edgeCases: edgeCases || null,
         problemExplanation: problemExplanation || null,
+        hints: hints ?? undefined,
+        timeComplexity: timeComplexity || null,
+        spaceComplexity: spaceComplexity || null,
+        editorial: editorial ?? undefined,
+        similarQuestions: similarQuestions ?? undefined,
         moduleCodingTestId: req.params.id,
         testCases: { create: cases.map((tc) => ({ input: tc.input || "", expected: tc.expected || "", isHidden: !!tc.isHidden, explanation: tc.explanation || null })) },
       },
@@ -495,7 +505,7 @@ router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF")
     const {
       title, description, difficulty, timeLimitMs, starterCode, starterCodeByLanguage, testCases,
       estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes,
-      edgeCases, problemExplanation, tags,
+      edgeCases, problemExplanation, tags, hints, timeComplexity, spaceComplexity, editorial, similarQuestions,
     } = req.body;
     const data = {};
     if (title !== undefined) data.title = title;
@@ -513,6 +523,11 @@ router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF")
     if (notes !== undefined) data.notes = notes;
     if (edgeCases !== undefined) data.edgeCases = edgeCases;
     if (problemExplanation !== undefined) data.problemExplanation = problemExplanation;
+    if (hints !== undefined) data.hints = hints;
+    if (timeComplexity !== undefined) data.timeComplexity = timeComplexity;
+    if (spaceComplexity !== undefined) data.spaceComplexity = spaceComplexity;
+    if (editorial !== undefined) data.editorial = editorial;
+    if (similarQuestions !== undefined) data.similarQuestions = similarQuestions;
 
     if (Array.isArray(testCases)) {
       if (testCases.filter((tc) => !tc.isHidden).length < 2) {

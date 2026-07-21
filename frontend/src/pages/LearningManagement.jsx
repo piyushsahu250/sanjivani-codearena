@@ -349,6 +349,8 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
         payload.inputFormat = undefined; payload.outputFormat = undefined; payload.notes = undefined;
         payload.edgeCases = undefined; payload.problemExplanation = undefined;
         payload.evaluationType = undefined; payload.functionSignature = undefined;
+        payload.hints = undefined; payload.timeComplexity = undefined; payload.spaceComplexity = undefined;
+        payload.editorial = undefined; payload.similarQuestions = undefined;
       }
       if (form.type !== "MCQ" && form.type !== "DEBUG" && form.type !== "OUTPUT_PREDICTION") payload.options = undefined;
       if (form.type === "FILL_BLANK") payload.correctAnswer = form.correctAnswer;

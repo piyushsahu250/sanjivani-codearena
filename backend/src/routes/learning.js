@@ -48,6 +48,14 @@ function sanitizeQuestion(q) {
     notes: q.notes || null,
     edgeCases: q.edgeCases || null,
     problemExplanation: q.problemExplanation || null,
+    // Editorial/hints — safe here because Learning Module practice is self-paced, never a
+    // proctored/graded assessment; TestTaking.jsx and ModuleCodingAssessment.jsx use their own
+    // sanitizers which deliberately omit these fields (see moduleCoding.js/tests.js).
+    hints: q.hints || null,
+    timeComplexity: q.timeComplexity || null,
+    spaceComplexity: q.spaceComplexity || null,
+    editorial: q.editorial || null,
+    similarQuestions: q.similarQuestions || null,
   };
 }
 
@@ -772,6 +780,7 @@ router.post("/lessons/:id/questions", authenticate, requireRole("ADMIN", "STAFF"
       type, prompt, options, correctAnswer, explanation, starterCode, testCases, language, order,
       title, tags, estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat,
       notes, edgeCases, problemExplanation, evaluationType, functionSignature, starterCodeByLanguage,
+      hints, timeComplexity, spaceComplexity, editorial, similarQuestions,
     } = req.body;
     if (!type || !prompt) return res.status(400).json({ error: "type and prompt are required" });
     let resolved = { evaluationType: "STDIO", functionSignature: null, starterCodeByLanguage: undefined };
@@ -801,6 +810,11 @@ router.post("/lessons/:id/questions", authenticate, requireRole("ADMIN", "STAFF"
         notes: notes || null,
         edgeCases: edgeCases || null,
         problemExplanation: problemExplanation || null,
+        hints: hints ?? undefined,
+        timeComplexity: timeComplexity || null,
+        spaceComplexity: spaceComplexity || null,
+        editorial: editorial ?? undefined,
+        similarQuestions: similarQuestions ?? undefined,
         evaluationType: resolved.evaluationType,
         functionSignature: resolved.functionSignature,
         starterCodeByLanguage: resolved.starterCodeByLanguage,
@@ -819,6 +833,7 @@ router.patch("/practice/:id", authenticate, requireRole("ADMIN", "STAFF"), async
       type, prompt, options, correctAnswer, explanation, starterCode, testCases, language, order,
       title, tags, estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat,
       notes, edgeCases, problemExplanation, evaluationType, functionSignature, starterCodeByLanguage,
+      hints, timeComplexity, spaceComplexity, editorial, similarQuestions,
     } = req.body;
     const existing = await prisma.practiceQuestion.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Practice question not found" });
@@ -875,6 +890,11 @@ router.patch("/practice/:id", authenticate, requireRole("ADMIN", "STAFF"), async
         ...(notes !== undefined ? { notes } : {}),
         ...(edgeCases !== undefined ? { edgeCases } : {}),
         ...(problemExplanation !== undefined ? { problemExplanation } : {}),
+        ...(hints !== undefined ? { hints } : {}),
+        ...(timeComplexity !== undefined ? { timeComplexity } : {}),
+        ...(spaceComplexity !== undefined ? { spaceComplexity } : {}),
+        ...(editorial !== undefined ? { editorial } : {}),
+        ...(similarQuestions !== undefined ? { similarQuestions } : {}),
         ...resolvedData,
       },
     });

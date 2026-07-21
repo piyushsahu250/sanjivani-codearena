@@ -44,6 +44,13 @@ function sanitizeQuestion(q) {
     notes: q.notes || null,
     edgeCases: q.edgeCases || null,
     problemExplanation: q.problemExplanation || null,
+    // Safe here — Daily/Weekly Challenges are self-paced, not a proctored/permanently-graded
+    // assessment (no useProctoring hook, unlike TestTaking.jsx/ModuleCodingAssessment.jsx).
+    hints: q.hints || null,
+    timeComplexity: q.timeComplexity || null,
+    spaceComplexity: q.spaceComplexity || null,
+    editorial: q.editorial || null,
+    similarQuestions: q.similarQuestions || null,
     starterCode: q.starterCode,
     starterCodeByLanguage: q.starterCodeByLanguage || null,
     evaluationType: q.evaluationType || "STDIO",

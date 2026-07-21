@@ -74,6 +74,14 @@ function sanitizeQuestion(q) {
     notes: q.notes || null,
     edgeCases: q.edgeCases || null,
     problemExplanation: q.problemExplanation || null,
+    // Editorial/hints — safe here because Interview Prep is a self-paced practice tool, never a
+    // permanently-graded formal assessment; TestTaking.jsx/ModuleCodingAssessment.jsx use their
+    // own sanitizers which deliberately omit these fields.
+    hints: q.hints || null,
+    timeComplexity: q.timeComplexity || null,
+    spaceComplexity: q.spaceComplexity || null,
+    editorial: q.editorial || null,
+    similarQuestions: q.similarQuestions || null,
     // Sample cases only — hidden ones (used for real scoring) never leave the server.
     testCases: q.category === "CODING" ? splitInterviewCases(q.testCases).visible : undefined,
   };
@@ -812,7 +820,7 @@ router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asy
     const {
       category, subject, company, aptitudeCategory, difficulty, title, prompt, expectedKeywords, modelAnswer, options, correctAnswer, explanation, starterCode, testCases, language, tags, followUpQuestionId,
       estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes, edgeCases, problemExplanation,
-      evaluationType, functionSignature, starterCodeByLanguage,
+      evaluationType, functionSignature, starterCodeByLanguage, hints, timeComplexity, spaceComplexity, editorial, similarQuestions,
     } = req.body;
     if (!category || !prompt) return res.status(400).json({ error: "category and prompt are required" });
     // CODING was previously the one category with no minimum test-case check at all (every other
@@ -841,6 +849,8 @@ router.post("/admin/questions", authenticate, requireRole("ADMIN", "STAFF"), asy
         estimatedTimeMin: estimatedTimeMin ?? null, realWorldScenario: realWorldScenario || null,
         constraints: constraints || null, inputFormat: inputFormat || null, outputFormat: outputFormat || null,
         notes: notes || null, edgeCases: edgeCases || null, problemExplanation: problemExplanation || null,
+        hints: hints ?? undefined, timeComplexity: timeComplexity || null, spaceComplexity: spaceComplexity || null,
+        editorial: editorial ?? undefined, similarQuestions: similarQuestions ?? undefined,
         followUpQuestionId: followUpQuestionId || null,
         evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
       },
@@ -869,6 +879,7 @@ router.patch("/admin/questions/:id", authenticate, requireRole("ADMIN", "STAFF")
       "category", "subject", "company", "aptitudeCategory", "difficulty", "title", "prompt", "expectedKeywords", "modelAnswer",
       "options", "correctAnswer", "explanation", "starterCode", "testCases", "language", "tags", "isActive", "followUpQuestionId",
       "estimatedTimeMin", "realWorldScenario", "constraints", "inputFormat", "outputFormat", "notes", "edgeCases", "problemExplanation",
+      "hints", "timeComplexity", "spaceComplexity", "editorial", "similarQuestions",
     ];
     const data = {};
     for (const f of fields) if (req.body[f] !== undefined) data[f] = f === "isActive" ? !!req.body[f] : req.body[f];

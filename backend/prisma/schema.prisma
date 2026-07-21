@@ -223,6 +223,17 @@ model Question {
   edgeCases         String?
   problemExplanation String?
 
+  // Editorial/hints block (CODING only) — deliberately excluded from the sanitizer used for
+  // proctored Formal Tests and Module Coding Assessments (same treatment as hidden test cases),
+  // so these only ever reach students in self-paced contexts (Practice, Interview Prep, Daily/
+  // Weekly Challenge). ProblemStatement.jsx renders each section only when present, so omitting
+  // them from a proctored payload is sufficient gating — no extra frontend logic needed.
+  hints            Json?   // string[] — progressive hints, revealed one at a time by the student
+  timeComplexity   String? // e.g. "O(n)"
+  spaceComplexity  String? // e.g. "O(1)"
+  editorial        Json?   // { bruteForce: {approach, complexity}, betterApproach: {...}, optimal: {...} }
+  similarQuestions Json?   // string[] of related question titles — plain text, not a hard relation (spans multiple models)
+
   // "STDIO" (default): the student's submitted code IS the whole program — reads stdin, writes
   // stdout, same as it always has been. "FUNCTION": LeetCode-style — the student writes only a
   // method/function body matching functionSignature; the judge auto-generates the surrounding
@@ -573,6 +584,14 @@ model PracticeQuestion {
   notes              String?
   edgeCases          String?
   problemExplanation String?
+
+  // Editorial/hints block — see the identically-named block on Question above for the full
+  // rationale; kept in sync field-for-field.
+  hints            Json?
+  timeComplexity   String?
+  spaceComplexity  String?
+  editorial        Json?
+  similarQuestions Json?
 
   order         Int      @default(0)
   createdAt     DateTime @default(now())
@@ -1113,6 +1132,14 @@ model InterviewQuestion {
   notes              String?
   edgeCases          String?
   problemExplanation String?
+
+  // Editorial/hints block (Coding category only) — see the identically-named block on Question
+  // above for the full rationale; kept in sync field-for-field.
+  hints            Json?
+  timeComplexity   String?
+  spaceComplexity  String?
+  editorial        Json?
+  similarQuestions Json?
 
   generatedForStudentId String? // set only for ephemeral resume-based questions
   isActive              Boolean  @default(true)

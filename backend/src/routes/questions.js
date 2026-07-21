@@ -176,7 +176,7 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterIns
       timeLimitMs, starterCode, testCases, options, correctAnswer, folderId,
       evaluationType, functionSignature, starterCodeByLanguage, memoryLimitKb, tags, sqlSchema,
       estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes,
-      edgeCases, problemExplanation,
+      edgeCases, problemExplanation, hints, timeComplexity, spaceComplexity, editorial, similarQuestions,
     } = req.body;
 
     if (!description) return res.status(400).json({ error: "Question text is required" });
@@ -209,6 +209,11 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterIns
       notes: notes || null,
       edgeCases: edgeCases || null,
       problemExplanation: problemExplanation || null,
+      hints: hints ?? undefined,
+      timeComplexity: timeComplexity || null,
+      spaceComplexity: spaceComplexity || null,
+      editorial: editorial ?? undefined,
+      similarQuestions: similarQuestions ?? undefined,
     };
 
     if (type === "CODING") {
@@ -909,7 +914,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
       timeLimitMs, starterCode, testCases, options, correctAnswer, folderId,
       evaluationType, functionSignature, starterCodeByLanguage, memoryLimitKb, tags, sqlSchema,
       estimatedTimeMin, realWorldScenario, constraints, inputFormat, outputFormat, notes,
-      edgeCases, problemExplanation,
+      edgeCases, problemExplanation, hints, timeComplexity, spaceComplexity, editorial, similarQuestions,
     } = req.body;
 
     if (folderId !== undefined && folderId !== null && folderId !== existing.folderId) {
@@ -939,6 +944,11 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
       notes: notes !== undefined ? notes : existing.notes,
       edgeCases: edgeCases !== undefined ? edgeCases : existing.edgeCases,
       problemExplanation: problemExplanation !== undefined ? problemExplanation : existing.problemExplanation,
+      hints: hints !== undefined ? hints : existing.hints,
+      timeComplexity: timeComplexity !== undefined ? timeComplexity : existing.timeComplexity,
+      spaceComplexity: spaceComplexity !== undefined ? spaceComplexity : existing.spaceComplexity,
+      editorial: editorial !== undefined ? editorial : existing.editorial,
+      similarQuestions: similarQuestions !== undefined ? similarQuestions : existing.similarQuestions,
     };
 
     if (type === "CODING") {
