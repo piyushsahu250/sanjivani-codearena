@@ -60,6 +60,10 @@ const MODULE_CODING_SIGNATURES = {
   "Total Sequential Execution Time": { methodName: "sumDurations", returnType: "int", params: [{ name: "durations", type: "int[]" }] },
   "Lost Update Count": { methodName: "lostUpdates", returnType: "int", params: [{ name: "totalIncrements", type: "int" }, { name: "actualFinalValue", type: "int" }] },
   "Last Worker Task Count": { methodName: "lastWorkerTaskCount", returnType: "int", params: [{ name: "totalTasks", type: "int" }, { name: "workers", type: "int" }] },
+  "First Match or Default": { methodName: "firstGreaterThan", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "target", type: "int" }] },
+  "Uppercase All Words": { methodName: "uppercaseJoin", returnType: "string", params: [{ name: "words", type: "string[]" }] },
+  "Count Positive Numbers": { methodName: "countPositive", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
+  "Product of All Elements": { methodName: "productOfAll", returnType: "long", params: [{ name: "nums", type: "int[]" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -105,6 +109,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "sumWithSynchronization", returnType: "int", params: [{ name: "amounts", type: "int[]" }] },
   "Read space-separated integers representing the sleep duration in ms of each worker thread, all started at the same time and joined afterward. Print the total wall-clock time until all have finished (the MAXIMUM duration, since they run in parallel, not the sum).":
     { methodName: "maxWorkerDuration", returnType: "int", params: [{ name: "durations", type: "int[]" }] },
+  "Read space-separated integers and print the sum of the squares of only the even numbers.":
+    { methodName: "sumOfEvenSquares", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
+  "Read space-separated integers on one line and a threshold on the next line. Print the count of values strictly greater than the threshold.":
+    { methodName: "countGreaterThan", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "threshold", type: "int" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {

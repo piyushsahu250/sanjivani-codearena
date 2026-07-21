@@ -1990,12 +1990,174 @@ const MODULE11_CODING = [
   },
 ];
 
-// Modules 12-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE12_LESSONS = [
+  {
+    title: "Lambda Expressions",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "A lambda expression is a compact way to write an anonymous function — a block of code you can pass around as a value. It's Java's syntax for implementing a functional interface (an interface with exactly one abstract method) inline, without a full class definition.",
+      syntax:
+        "(parameters) -> expression\n(parameters) -> { statements; }\n\n// Examples:\nRunnable r = () -> System.out.println(\"Hello\");\nComparator<Integer> cmp = (a, b) -> a - b;\nFunction<Integer, Integer> square = x -> x * x;",
+      example:
+        "List<String> names = List.of(\"Charlie\", \"Alice\", \"Bob\");\nnames.forEach(name -> System.out.println(name));\n\n// Sorting with a lambda instead of writing an anonymous Comparator class\nList<Integer> nums = new ArrayList<>(List.of(5, 2, 8, 1));\nnums.sort((a, b) -> a - b);\nSystem.out.println(nums); // [1, 2, 5, 8]",
+      notes: [
+        "A lambda's parameter types are usually inferred from context — you rarely need to write <code>(Integer a, Integer b) -> ...</code> explicitly.",
+        "Lambdas can only implement a functional interface (exactly ONE abstract method) — this is what lets the compiler know which method the lambda's body corresponds to.",
+      ],
+      mistakes: ["Trying to use a lambda where the target type has more than one abstract method — lambdas only work for functional interfaces (single abstract method), which the compiler enforces at compile time."],
+    }),
+  },
+  {
+    title: "Stream API",
+    estimatedMinutes: 14,
+    content: lessonHTML({
+      explanation: "A <code>Stream</code> represents a sequence of elements that supports functional-style operations (filter, map, reduce, etc.) chained together in a pipeline. Streams don't store data themselves — they process data from a source (a collection, array, etc.) and are consumed once.",
+      syntax:
+        "List<Integer> nums = List.of(1, 2, 3, 4, 5, 6);\n\nList<Integer> evenSquares = nums.stream()\n    .filter(n -> n % 2 == 0)     // keep only even numbers\n    .map(n -> n * n)             // square each remaining number\n    .collect(Collectors.toList()); // gather results back into a List\n\nint sum = nums.stream().mapToInt(Integer::intValue).sum();\nlong count = nums.stream().filter(n -> n > 3).count();",
+      example:
+        "List<String> names = List.of(\"Charlie\", \"Alice\", \"Bob\", \"Dave\");\nList<String> result = names.stream()\n    .filter(n -> n.length() > 3)\n    .sorted()\n    .collect(Collectors.toList());\nSystem.out.println(result); // [Alice, Charlie, Dave]",
+      notes: [
+        "Stream operations are either INTERMEDIATE (<code>filter</code>, <code>map</code>, <code>sorted</code> — return a new Stream, lazy) or TERMINAL (<code>collect</code>, <code>sum</code>, <code>count</code>, <code>forEach</code> — actually trigger processing and produce a result).",
+        "A Stream can only be consumed (traversed) ONCE — calling a terminal operation twice on the same stream throws <code>IllegalStateException</code>.",
+      ],
+      mistakes: ["Reusing the same Stream object for two separate pipelines/terminal operations — streams are single-use; you must create a fresh stream (e.g. call <code>.stream()</code> again) for each pipeline."],
+      bestPractices: ["Chain <code>filter()</code>/<code>map()</code> before <code>collect()</code>/<code>reduce()</code> — nothing actually runs until a terminal operation is called, since intermediate operations are lazily evaluated."],
+    }),
+  },
+  {
+    title: "Functional Interfaces",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "A functional interface is any interface with EXACTLY ONE abstract method, making it a valid target for a lambda expression or method reference. <code>java.util.function</code> provides a standard set: <code>Function&lt;T,R&gt;</code>, <code>Predicate&lt;T&gt;</code>, <code>Consumer&lt;T&gt;</code>, <code>Supplier&lt;T&gt;</code>, and more.",
+      syntax:
+        "@FunctionalInterface\ninterface Calculator {\n    int calculate(int a, int b);\n}\n\nCalculator add = (a, b) -> a + b;\nSystem.out.println(add.calculate(3, 4)); // 7\n\n// Standard library interfaces:\nFunction<Integer, Integer> square = x -> x * x;         // takes a T, returns an R\nPredicate<Integer> isEven = x -> x % 2 == 0;             // takes a T, returns boolean\nConsumer<String> printer = s -> System.out.println(s);  // takes a T, returns nothing\nSupplier<String> greeting = () -> \"Hello!\";              // takes nothing, returns a T",
+      example: "Predicate<Integer> isPositive = n -> n > 0;\nSystem.out.println(isPositive.test(5));   // true\nSystem.out.println(isPositive.test(-3));  // false",
+      notes: [
+        "<code>@FunctionalInterface</code> is an OPTIONAL annotation — it doesn't change behavior, but makes the compiler verify the interface really has exactly one abstract method, catching accidental additions early.",
+        "An interface can still have default and static methods (with bodies) and remain functional — only ABSTRACT methods count toward the \"exactly one\" rule.",
+      ],
+      mistakes: ["Adding a second abstract method to an interface already used as a lambda target — this breaks every lambda assigned to it, since the compiler can no longer tell which method the lambda implements."],
+    }),
+  },
+  {
+    title: "Optional",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "<code>Optional&lt;T&gt;</code> is a container that may or may not hold a non-null value — it's designed to make the possibility of \"no value\" explicit in a method's return type, as an alternative to returning null and risking a NullPointerException.",
+      syntax:
+        "Optional<String> present = Optional.of(\"Hello\");        // wraps a known non-null value\nOptional<String> empty = Optional.empty();                // represents \"no value\"\nOptional<String> maybe = Optional.ofNullable(getName());  // wraps a possibly-null value safely\n\nif (present.isPresent()) {\n    System.out.println(present.get());\n}\npresent.ifPresent(s -> System.out.println(s));            // safer — only runs if a value exists\nString result = maybe.orElse(\"default\");                  // fallback value if empty\nString result2 = maybe.orElseThrow(() -> new NoSuchElementException(\"missing\"));",
+      example:
+        "Optional<Integer> findFirst(int[] nums, int target) {\n    for (int n : nums) {\n        if (n == target) return Optional.of(n);\n    }\n    return Optional.empty();\n}\n\nOptional<Integer> result = findFirst(new int[]{1, 2, 3}, 5);\nSystem.out.println(result.orElse(-1)); // -1 — not found, uses the fallback",
+      notes: [
+        "Calling <code>.get()</code> on an EMPTY Optional throws <code>NoSuchElementException</code> — always check <code>isPresent()</code> first, or better, use <code>orElse()</code>/<code>orElseGet()</code>/<code>ifPresent()</code> to avoid the check entirely.",
+        "Optional is intended as a RETURN TYPE to signal \"this might not have a value\" — it's generally discouraged as a field type or method parameter type.",
+      ],
+      mistakes: ["Calling <code>.get()</code> on an Optional without checking <code>isPresent()</code> first (or without using a safer alternative like <code>orElse()</code>) — this just relocates the null-pointer-style risk to a <code>NoSuchElementException</code> instead of actually solving it."],
+    }),
+  },
+  {
+    title: "Method References",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "A method reference is shorthand for a lambda that does nothing but call an existing method — using the <code>::</code> syntax instead of writing out the lambda explicitly.",
+      syntax:
+        "// Lambda                          Equivalent method reference\nnames.forEach(n -> System.out.println(n));   names.forEach(System.out::println);\ns -> s.toUpperCase()                          String::toUpperCase\n(a, b) -> a.compareTo(b)                      String::compareTo\n() -> new ArrayList<>()                       ArrayList::new",
+      example: "List<String> names = List.of(\"charlie\", \"alice\", \"bob\");\nList<String> upper = names.stream()\n    .map(String::toUpperCase)     // same as .map(s -> s.toUpperCase())\n    .collect(Collectors.toList());\nSystem.out.println(upper); // [CHARLIE, ALICE, BOB]",
+      notes: [
+        "There are 4 kinds: static method (<code>ClassName::staticMethod</code>), instance method on a particular object (<code>obj::instanceMethod</code>), instance method on an arbitrary object of a type (<code>ClassName::instanceMethod</code>), and constructor reference (<code>ClassName::new</code>).",
+        "A method reference is purely syntactic sugar for a lambda — it compiles to the same kind of code, just more concise when the lambda would only forward its arguments to an existing method.",
+      ],
+      mistakes: ["Using a method reference when the lambda needs to do MORE than just call one existing method (e.g. transform an argument first) — method references only work as a direct stand-in for \"call this exact method with these exact arguments\"."],
+      bestPractices: ["Prefer a method reference over a lambda when the lambda's body is literally just calling one existing method — it's shorter and often clearer about intent."],
+    }),
+  },
+];
+
+const MODULE12_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "What is required for an interface to be a valid target for a lambda expression?",
+    options: ["It must have at least 2 methods", "It must have exactly one ABSTRACT method (a functional interface)", "It must be annotated @FunctionalInterface", "It must extend Runnable"],
+    correctAnswer: 1,
+    explanation: "A lambda's body implements the single abstract method — the interface must have exactly one for the compiler to know which method it corresponds to. @FunctionalInterface is optional documentation, not a requirement.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\nList<Integer> nums = List.of(1, 2, 3, 4, 5, 6);\nlong count = nums.stream().filter(n -> n % 2 == 0).count();\nSystem.out.println(count);",
+    options: ["6", "3", "2", "0"],
+    correctAnswer: 1,
+    explanation: "The even numbers are 2, 4, and 6 — three elements pass the filter, so count() returns 3.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which of these is a TERMINAL stream operation (as opposed to intermediate)?",
+    options: ["filter()", "map()", "sorted()", "collect()"],
+    correctAnswer: 3,
+    explanation: "collect() triggers the pipeline and produces a result; filter(), map(), and sorted() are lazy intermediate operations that just build up the pipeline.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What happens if you call a terminal operation twice on the same Stream object?",
+    options: ["It runs successfully both times", "It throws IllegalStateException — a stream can only be consumed once", "It automatically creates a new stream", "It returns null the second time"],
+    correctAnswer: 1,
+    explanation: "Streams are single-use — once a terminal operation has been called, that stream is considered consumed, and reusing it throws IllegalStateException.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What is the purpose of Optional<T>?",
+    options: ["To make a variable final", "To make the possibility of 'no value' explicit in a return type, instead of returning null", "To store multiple values of type T", "To replace all uses of arrays"],
+    correctAnswer: 1,
+    explanation: "Optional signals in the type system itself that a method might not have a value to return, encouraging callers to handle that case explicitly rather than risk a NullPointerException.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\nOptional<String> empty = Optional.empty();\nSystem.out.println(empty.orElse(\"default\"));",
+    options: ["null", "Throws NoSuchElementException", "default", "empty"],
+    correctAnswer: 2,
+    explanation: "orElse() returns its argument as a fallback whenever the Optional holds no value, without throwing.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which method reference is equivalent to the lambda `s -> s.toUpperCase()`?",
+    options: ["String::new", "System.out::println", "String::toUpperCase", "String::valueOf"],
+    correctAnswer: 2,
+    explanation: "String::toUpperCase is an instance-method-on-an-arbitrary-object reference — s.toUpperCase() becomes String::toUpperCase, with s supplied as the receiver when the functional interface is invoked.",
+  },
+  {
+    type: "DEBUG",
+    prompt: "What is wrong with calling .get() on an Optional without checking first?\n\nOptional<String> maybe = Optional.empty();\nString value = maybe.get();",
+    options: ["Nothing, this is always safe", "It throws NoSuchElementException, since the Optional is empty", "It returns null", "It's a compile error"],
+    correctAnswer: 1,
+    explanation: "get() on an empty Optional throws NoSuchElementException — the safer alternatives (orElse(), ifPresent(), isPresent() first) avoid this exact pitfall.",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below. The judge
+// grades a single method's return value regardless of implementation technique, so these are phrased
+// as the kind of filter/map/reduce pipeline you'd naturally reach for with the Stream API.
+const MODULE12_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read space-separated integers and print the sum of the squares of only the even numbers.",
+    language: "java",
+    testCases: [{ input: "1 2 3 4", expected: "20" }, { input: "1 3 5", expected: "0" }, { input: "2 4 6", expected: "56" }],
+    explanation: "Filter to even numbers, square each one, then sum — the same pipeline as nums.stream().filter(n -> n % 2 == 0).map(n -> n * n).sum().",
+  },
+  {
+    type: "CODING",
+    prompt: "Read space-separated integers on one line and a threshold on the next line. Print the count of values strictly greater than the threshold.",
+    language: "java",
+    testCases: [{ input: "1 5 3 8 2\n4", expected: "2" }, { input: "10 20 30\n25", expected: "1" }, { input: "1 2 3\n10", expected: "0" }],
+    explanation: "Filter to values greater than the threshold, then count — the same pipeline as nums.stream().filter(n -> n > threshold).count().",
+  },
+];
+
+// Modules 13-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Java 8 Features", topics: ["Lambda Expressions", "Stream API", "Functional Interfaces", "Optional", "Method References"], practiceLabel: "Practice" },
   { title: "JDBC", topics: ["Database Connectivity", "CRUD Operations", "PreparedStatement", "ResultSet"], practiceLabel: "Mini Project" },
   { title: "Advanced Java", topics: ["Generics", "Reflection", "Serialization", "Networking", "Annotations"], practiceLabel: "Coding Practice" },
   { title: "Data Structures & Algorithms in Java", topics: ["Arrays", "Linked Lists", "Stack", "Queue", "Trees", "Graphs", "Sorting", "Searching"], practiceLabel: "Coding Problems" },
@@ -2479,13 +2641,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 12-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 12: full hand-authored content ---
+  const module12 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Java 8 Features" } },
+    update: {},
+    create: { courseId: course.id, title: "Java 8 Features", order: 11 },
+  });
+
+  for (let i = 0; i < MODULE12_LESSONS.length; i++) {
+    const l = MODULE12_LESSONS[i];
+    await upsertLessonContent(prisma, module12.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module12PracticeLesson = await upsertLessonContent(prisma, module12.id, "Practice", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE12_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule12Practice = await prisma.practiceQuestion.count({ where: { lessonId: module12PracticeLesson.id } });
+  if (existingModule12Practice === 0) {
+    let order = 0;
+    for (const q of MODULE12_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module12PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE12_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module12PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 13-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 11 },
+      create: { courseId: course.id, title: spec.title, order: m + 12 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -2507,7 +2709,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 11, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 12, "modules.");
 }
 
 module.exports = { seedLearningModule };

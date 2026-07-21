@@ -578,6 +578,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Java 8 Features": {
+    title: "Module 12 Coding Assessment",
+    instructions: "Solve every question by implementing the given method — these mirror the kind of filter/map/reduce/Optional pipelines you'd write with the Stream API, expressed as plain methods since the judge grades a single static method's return value.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "First Match or Default",
+        description: "Given an array and a target, return the first value strictly greater than the target, or -1 if none exists.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "3 7 2 9\n5", expected: "7" },
+          { input: "1 2 3\n10", expected: "-1" },
+          { input: "10 20\n5", expected: "10" },
+        ],
+      },
+      {
+        title: "Uppercase All Words",
+        description: "Given an array of words, return them uppercased and joined by a single space.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "cat dog", expected: "CAT DOG" },
+          { input: "hello", expected: "HELLO" },
+          { input: "a b c", expected: "A B C" },
+        ],
+      },
+      {
+        title: "Count Positive Numbers",
+        description: "Return the count of strictly positive numbers in the given array.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "1 -2 3 -4 5", expected: "3" },
+          { input: "-1 -2", expected: "0" },
+          { input: "5", expected: "1" },
+        ],
+      },
+      {
+        title: "Product of All Elements",
+        description: "Return the product of every element in the given array.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "1 2 3 4", expected: "24" },
+          { input: "5", expected: "5" },
+          { input: "2 2 2", expected: "8" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {
