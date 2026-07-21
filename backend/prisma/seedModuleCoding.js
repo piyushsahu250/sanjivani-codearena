@@ -629,6 +629,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "JDBC": {
+    title: "Module 13 Coding Assessment",
+    instructions: "Solve every question by implementing the given method — these model the outcome of SQL/JDBC operations (WHERE filters, aggregates, constraint checks, parameterized clauses) as plain computations, since the judge has no real database to connect to.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Simulate Row Count After WHERE Filter",
+        description: "Given an array of scores and a passing score, return the count of scores greater than or equal to the passing score (as if counting rows matching a WHERE score >= ? clause).",
+        difficulty: "EASY",
+        testCases: [
+          { input: "60 75 40 90\n50", expected: "3" },
+          { input: "30 20\n50", expected: "0" },
+          { input: "100\n50", expected: "1" },
+        ],
+      },
+      {
+        title: "Simulate SUM Aggregate Query",
+        description: "Given an array of transaction amounts, return their total (as if computing SELECT SUM(amount) FROM transactions).",
+        difficulty: "EASY",
+        testCases: [
+          { input: "100 200 300", expected: "600" },
+          { input: "50", expected: "50" },
+          { input: "10 20 30", expected: "60" },
+        ],
+      },
+      {
+        title: "Simulate Duplicate Primary Key Detection",
+        description: "Given an array of IDs about to be inserted, return true if any ID is duplicated (which would violate a PRIMARY KEY/UNIQUE constraint), or false if all are unique.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "1 2 3 2", expected: "true" },
+          { input: "1 2 3", expected: "false" },
+          { input: "5", expected: "false" },
+        ],
+      },
+      {
+        title: "Simulate SET Clause Builder",
+        description: "Given an array of column names, return a parameterized SQL SET clause joining them as \"col1 = ?, col2 = ?, ...\" in order.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "name age", expected: "name = ?, age = ?" },
+          { input: "id", expected: "id = ?" },
+          { input: "x y z", expected: "x = ?, y = ?, z = ?" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {

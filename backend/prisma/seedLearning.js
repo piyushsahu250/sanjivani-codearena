@@ -2153,12 +2153,157 @@ const MODULE12_CODING = [
   },
 ];
 
-// Modules 13-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE13_LESSONS = [
+  {
+    title: "Database Connectivity",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "JDBC (Java Database Connectivity) is the standard API for connecting Java applications to relational databases. Establishing a connection requires the database's JDBC driver on the classpath, plus a connection URL, username, and password.",
+      syntax:
+        "import java.sql.*;\n\nString url = \"jdbc:mysql://localhost:3306/mydb\";\nString user = \"root\";\nString password = \"secret\";\n\ntry (Connection conn = DriverManager.getConnection(url, user, password)) {\n    System.out.println(\"Connected successfully!\");\n} catch (SQLException e) {\n    System.out.println(\"Connection failed: \" + e.getMessage());\n}",
+      example: "try (Connection conn = DriverManager.getConnection(\n        \"jdbc:mysql://localhost:3306/school\", \"admin\", \"pass123\")) {\n    System.out.println(\"Database connection established.\");\n} catch (SQLException e) {\n    e.printStackTrace();\n}",
+      notes: [
+        "<code>SQLException</code> is a CHECKED exception — virtually every JDBC operation can throw it, since it represents failures outside the program's control (network issues, wrong credentials, a down database).",
+        "The connection URL format is driver-specific: <code>jdbc:mysql://host:port/database</code>, <code>jdbc:postgresql://host:port/database</code>, etc.",
+      ],
+      mistakes: ["Never closing a Connection — this leaks a database connection resource. Always use try-with-resources (<code>try (Connection conn = ...)</code>) so it's closed automatically."],
+      bestPractices: ["Never hardcode real database credentials directly in source code committed to version control — use environment variables or a configuration file excluded from source control."],
+    }),
+  },
+  {
+    title: "CRUD Operations",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "CRUD stands for Create, Read, Update, Delete — the four basic operations on stored data, corresponding to SQL's INSERT, SELECT, UPDATE, and DELETE statements. In JDBC, a <code>Statement</code> (or <code>PreparedStatement</code>) executes these against the database.",
+      syntax:
+        "Statement stmt = conn.createStatement();\n\n// Create\nstmt.executeUpdate(\"INSERT INTO students (name, age) VALUES ('Asha', 20)\");\n\n// Read\nResultSet rs = stmt.executeQuery(\"SELECT * FROM students\");\n\n// Update\nstmt.executeUpdate(\"UPDATE students SET age = 21 WHERE name = 'Asha'\");\n\n// Delete\nstmt.executeUpdate(\"DELETE FROM students WHERE name = 'Asha'\");",
+      example: "int rowsAffected = stmt.executeUpdate(\"UPDATE students SET age = 21 WHERE id = 5\");\nSystem.out.println(rowsAffected + \" row(s) updated.\");",
+      notes: [
+        "<code>executeQuery()</code> is for SELECT statements and returns a <code>ResultSet</code>; <code>executeUpdate()</code> is for INSERT/UPDATE/DELETE and returns an <code>int</code> (the number of rows affected).",
+        "Calling <code>executeQuery()</code> with an INSERT/UPDATE/DELETE statement (or <code>executeUpdate()</code> with a SELECT) throws <code>SQLException</code> — the method must match the statement type.",
+      ],
+      mistakes: ["Building SQL statements by directly concatenating user input into a query string (e.g. <code>\"SELECT * FROM users WHERE name = '\" + userInput + \"'\"</code>) — this is vulnerable to SQL injection. Use PreparedStatement instead (next lesson)."],
+    }),
+  },
+  {
+    title: "PreparedStatement",
+    estimatedMinutes: 14,
+    content: lessonHTML({
+      explanation: "<code>PreparedStatement</code> precompiles a parameterized SQL statement with placeholders (<code>?</code>), letting you safely bind values without string concatenation. This prevents SQL injection and is also more efficient for repeated execution of the same statement shape.",
+      syntax:
+        "String sql = \"INSERT INTO students (name, age) VALUES (?, ?)\";\nPreparedStatement pstmt = conn.prepareStatement(sql);\npstmt.setString(1, \"Asha\");   // 1-based parameter index, not 0-based\npstmt.setInt(2, 20);\npstmt.executeUpdate();\n\n// Safe against SQL injection, even with untrusted input:\nPreparedStatement query = conn.prepareStatement(\"SELECT * FROM users WHERE name = ?\");\nquery.setString(1, userInput);   // userInput is treated as DATA, never as SQL syntax\nResultSet rs = query.executeQuery();",
+      example: "PreparedStatement pstmt = conn.prepareStatement(\"SELECT * FROM students WHERE age > ?\");\npstmt.setInt(1, 18);\nResultSet rs = pstmt.executeQuery();",
+      notes: [
+        "PreparedStatement parameter indices are 1-based, not 0-based — the first <code>?</code> is index 1, not 0. This is a common off-by-one source of <code>SQLException</code>.",
+        "Because the placeholder value is always treated as pure data (never parsed as SQL), a malicious input like <code>' OR '1'='1</code> cannot alter the query's structure — this is the core SQL-injection defense.",
+      ],
+      mistakes: ["Using regular <code>Statement</code> with string-concatenated user input instead of PreparedStatement — this is the single most common cause of SQL injection vulnerabilities in real applications."],
+      bestPractices: ["Always use PreparedStatement instead of Statement whenever a query includes any value that isn't a fixed literal known at compile time — treat this as the default, not just \"when there's user input\"."],
+    }),
+  },
+  {
+    title: "ResultSet",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "A <code>ResultSet</code> represents the tabular result of a SELECT query — a cursor that starts positioned BEFORE the first row, advanced one row at a time with <code>next()</code>.",
+      syntax:
+        "ResultSet rs = stmt.executeQuery(\"SELECT id, name, age FROM students\");\nwhile (rs.next()) {   // advances to the next row; returns false when there are no more\n    int id = rs.getInt(\"id\");        // read by column name\n    String name = rs.getString(\"name\");\n    int age = rs.getInt(3);           // or read by 1-based column index\n    System.out.println(id + \": \" + name + \", age \" + age);\n}",
+      example: "ResultSet rs = stmt.executeQuery(\"SELECT name FROM students WHERE age > 18\");\nList<String> names = new ArrayList<>();\nwhile (rs.next()) {\n    names.add(rs.getString(\"name\"));\n}\nSystem.out.println(names);",
+      notes: [
+        "You MUST call <code>rs.next()</code> before reading any data — a freshly-returned ResultSet is positioned before the first row, and calling <code>getString()</code>/<code>getInt()</code> before the first <code>next()</code> call throws <code>SQLException</code>.",
+        "Reading columns by NAME (<code>rs.getString(\"name\")</code>) is more readable and resilient to query changes than by index (<code>rs.getString(2)</code>), though index access is marginally faster.",
+      ],
+      mistakes: ["Forgetting the <code>while (rs.next())</code> loop entirely and trying to read from a ResultSet immediately after <code>executeQuery()</code> — the cursor starts before the first row, so this throws an exception."],
+      bestPractices: ["Close a ResultSet (or better, wrap it in try-with-resources alongside its Statement/PreparedStatement) once you're done reading it, to free the underlying database cursor."],
+    }),
+  },
+];
+
+const MODULE13_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "What type of exception does virtually every JDBC operation potentially throw?",
+    options: ["IOException", "SQLException, a checked exception", "ArithmeticException", "NullPointerException, always"],
+    correctAnswer: 1,
+    explanation: "JDBC operations depend on external factors (network, credentials, database availability), which Java models as the checked SQLException.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which method executes a SELECT query and returns a ResultSet?",
+    options: ["executeUpdate()", "executeQuery()", "execute()", "query()"],
+    correctAnswer: 1,
+    explanation: "executeQuery() is specifically for SELECT statements and returns the tabular ResultSet of matching rows.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What does executeUpdate() return?",
+    options: ["A ResultSet", "The generated SQL string", "An int — the number of rows affected", "Nothing, it returns void"],
+    correctAnswer: 2,
+    explanation: "executeUpdate() is used for INSERT/UPDATE/DELETE and returns the count of rows the statement affected.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Why is PreparedStatement preferred over Statement when a query includes a variable value?",
+    options: ["It's the only way to execute a SELECT statement", "It prevents SQL injection by treating parameter values as pure data, never as SQL syntax", "It automatically closes the connection", "There's no real difference"],
+    correctAnswer: 1,
+    explanation: "PreparedStatement placeholders bind values as data, not SQL text, so untrusted input can never change the query's structure — the core SQL-injection defense.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "In `pstmt.setString(1, \"Asha\")`, what does the `1` refer to?",
+    options: ["A zero-based column index", "A 1-based parameter placeholder index — the first ? in the query", "The row number", "The table's primary key"],
+    correctAnswer: 1,
+    explanation: "PreparedStatement parameter indices are 1-based — setString(1, ...) binds the FIRST ? placeholder in the SQL text.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What must you call before reading the first row of data from a ResultSet?",
+    options: ["rs.first()", "rs.next()", "rs.read()", "Nothing — data can be read immediately"],
+    correctAnswer: 1,
+    explanation: "A ResultSet starts positioned before the first row; next() must be called to advance the cursor onto an actual row before reading columns.",
+  },
+  {
+    type: "DEBUG",
+    prompt: "What is the security problem with this code?\n\nString sql = \"SELECT * FROM users WHERE name = '\" + userInput + \"'\";\nStatement stmt = conn.createStatement();\nResultSet rs = stmt.executeQuery(sql);",
+    options: ["No problem, this is safe", "It's vulnerable to SQL injection — userInput is concatenated directly into the SQL string instead of using a PreparedStatement parameter", "Statement objects can't run SELECT queries", "The SQL syntax is invalid"],
+    correctAnswer: 1,
+    explanation: "Directly concatenating untrusted input into SQL text lets an attacker inject SQL syntax (e.g. ' OR '1'='1) — PreparedStatement parameters avoid this by never treating bound values as SQL.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which JDBC interface should be used to safely release a Connection, Statement, or ResultSet once you're done with it?",
+    options: ["Use try-with-resources so close() is called automatically", "Never close them — Java garbage collects them", "Call System.gc() manually", "Restart the database"],
+    correctAnswer: 0,
+    explanation: "Connection, Statement, and ResultSet all implement AutoCloseable — try-with-resources guarantees close() runs even if an exception occurs, preventing resource leaks.",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below. The judge
+// has no real database to connect to, so these model the OUTCOME of SQL/JDBC operations (WHERE
+// filters, LIKE-style prefix matching) as plain array/string computations.
+const MODULE13_CODING = [
+  {
+    type: "CODING",
+    prompt: "Simulate counting matching rows from a SELECT ... WHERE age > ? query, given an array of ages and a threshold parameter. Print the count.",
+    language: "java",
+    testCases: [{ input: "15 20 25 30\n18", expected: "3" }, { input: "10 12\n18", expected: "0" }, { input: "50\n18", expected: "1" }],
+    explanation: "Count how many ages are strictly greater than the threshold — the same result a WHERE age > ? clause would filter to.",
+  },
+  {
+    type: "CODING",
+    prompt: "Simulate a WHERE name LIKE 'prefix%' filter: given an array of names and a prefix, print the count of names starting with that prefix.",
+    language: "java",
+    testCases: [{ input: "Asha Aditi Bob\nA", expected: "2" }, { input: "Tom Tim\nT", expected: "2" }, { input: "Cat\nZ", expected: "0" }],
+    explanation: "Count the names whose first characters match the prefix, mirroring how a SQL LIKE 'prefix%' pattern filters rows.",
+  },
+];
+
+// Modules 14-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "JDBC", topics: ["Database Connectivity", "CRUD Operations", "PreparedStatement", "ResultSet"], practiceLabel: "Mini Project" },
   { title: "Advanced Java", topics: ["Generics", "Reflection", "Serialization", "Networking", "Annotations"], practiceLabel: "Coding Practice" },
   { title: "Data Structures & Algorithms in Java", topics: ["Arrays", "Linked Lists", "Stack", "Queue", "Trees", "Graphs", "Sorting", "Searching"], practiceLabel: "Coding Problems" },
   { title: "Interview Preparation", topics: ["Frequently Asked Java Interview Questions", "MCQs", "Coding Questions", "Company-based Questions", "Previous Placement Questions"], practiceLabel: null },
@@ -2681,13 +2826,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 13-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 13: full hand-authored content ---
+  const module13 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "JDBC" } },
+    update: {},
+    create: { courseId: course.id, title: "JDBC", order: 12 },
+  });
+
+  for (let i = 0; i < MODULE13_LESSONS.length; i++) {
+    const l = MODULE13_LESSONS[i];
+    await upsertLessonContent(prisma, module13.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module13PracticeLesson = await upsertLessonContent(prisma, module13.id, "Mini Project", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE13_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule13Practice = await prisma.practiceQuestion.count({ where: { lessonId: module13PracticeLesson.id } });
+  if (existingModule13Practice === 0) {
+    let order = 0;
+    for (const q of MODULE13_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module13PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE13_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module13PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 14-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 12 },
+      create: { courseId: course.id, title: spec.title, order: m + 13 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -2709,7 +2894,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 12, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 13, "modules.");
 }
 
 module.exports = { seedLearningModule };

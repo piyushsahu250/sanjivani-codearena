@@ -64,6 +64,10 @@ const MODULE_CODING_SIGNATURES = {
   "Uppercase All Words": { methodName: "uppercaseJoin", returnType: "string", params: [{ name: "words", type: "string[]" }] },
   "Count Positive Numbers": { methodName: "countPositive", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
   "Product of All Elements": { methodName: "productOfAll", returnType: "long", params: [{ name: "nums", type: "int[]" }] },
+  "Simulate Row Count After WHERE Filter": { methodName: "countPassingRows", returnType: "int", params: [{ name: "scores", type: "int[]" }, { name: "passingScore", type: "int" }] },
+  "Simulate SUM Aggregate Query": { methodName: "sumAmounts", returnType: "long", params: [{ name: "amounts", type: "int[]" }] },
+  "Simulate Duplicate Primary Key Detection": { methodName: "hasDuplicateIds", returnType: "boolean", params: [{ name: "ids", type: "int[]" }] },
+  "Simulate SET Clause Builder": { methodName: "buildSetClause", returnType: "string", params: [{ name: "columns", type: "string[]" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -113,6 +117,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "sumOfEvenSquares", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
   "Read space-separated integers on one line and a threshold on the next line. Print the count of values strictly greater than the threshold.":
     { methodName: "countGreaterThan", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "threshold", type: "int" }] },
+  "Simulate counting matching rows from a SELECT ... WHERE age > ? query, given an array of ages and a threshold parameter. Print the count.":
+    { methodName: "countMatchingRows", returnType: "int", params: [{ name: "ages", type: "int[]" }, { name: "threshold", type: "int" }] },
+  "Simulate a WHERE name LIKE 'prefix%' filter: given an array of names and a prefix, print the count of names starting with that prefix.":
+    { methodName: "countNameMatches", returnType: "int", params: [{ name: "names", type: "string[]" }, { name: "prefix", type: "string" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {
