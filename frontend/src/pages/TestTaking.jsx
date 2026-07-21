@@ -386,7 +386,8 @@ export default function TestTaking() {
 
   const questions = test?.questions || [];
   const current = questions[activeIdx]?.question;
-  const isQuiz = current && current.questionType !== "CODING";
+  const isSql = current?.questionType === "SQL";
+  const isQuiz = current && current.questionType !== "CODING" && !isSql;
   const isMulti = current?.questionType === "MULTISELECT";
 
   // Overall test timer — recomputes remaining time from the fixed deadline every tick rather
@@ -411,6 +412,9 @@ export default function TestTaking() {
     if (!current) return;
     setAnswers((prev) => {
       if (prev[current.id]) return prev;
+      if (current.questionType === "SQL") {
+        return { ...prev, [current.id]: { language: "sql", code: "" } };
+      }
       if (current.questionType === "CODING") {
         const code = current.starterCodeByLanguage?.javascript || current.starterCode || defaultStarter("javascript");
         return { ...prev, [current.id]: { language: "javascript", code } };
@@ -1179,9 +1183,13 @@ export default function TestTaking() {
                   <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => goToQuestion(1)} disabled={activeIdx === questions.length - 1}>
                     Next ▶
                   </button>
-                  <select value={answer?.language || "javascript"} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
-                    {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-                  </select>
+                  {isSql ? (
+                    <span className="mono" style={{ fontSize: 12, color: "var(--ink-dim)", padding: "6px 10px" }}>SQL</span>
+                  ) : (
+                    <select value={answer?.language || "javascript"} onChange={(e) => setLanguage(e.target.value)} className="mono" style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid var(--line)" }}>
+                      {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+                    </select>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <span className="mono" style={{ fontSize: 12, color: savingAnswer ? "var(--amber-dark)" : "var(--mint)", minWidth: 90, textAlign: "right" }}>
@@ -1219,7 +1227,7 @@ export default function TestTaking() {
               <div style={{ flex: 1, minHeight: 0 }}>
                 <Editor
                   height="100%"
-                  language={LANGUAGES.find((l) => l.id === answer?.language)?.monaco}
+                  language={isSql ? "sql" : LANGUAGES.find((l) => l.id === answer?.language)?.monaco}
                   value={answer?.code || ""}
                   onChange={(v) => setCode(v || "")}
                   theme={editorTheme}

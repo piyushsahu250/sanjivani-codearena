@@ -34,7 +34,7 @@ router.get("/queue-status", authenticate, (req, res) => {
 // answer was actually correct is not, even though the real verdict/score are still stored on
 // the Submission row for later grading.
 function sanitizeSubmitResponse(question, result) {
-  if (question.questionType !== "CODING") {
+  if (question.questionType !== "CODING" && question.questionType !== "SQL") {
     return { status: "SUBMITTED" };
   }
   if (result.verdict === "COMPILE_ERROR" || result.verdict === "TLE" || result.verdict === "MLE") {
@@ -81,12 +81,13 @@ router.post("/run", authenticate, requireRole("STUDENT"), execLimiter, async (re
       include: { testCases: { where: { isHidden: false } } },
     });
     if (!question) return res.status(404).json({ error: "Question not found" });
-    if (question.questionType !== "CODING") {
+    if (question.questionType !== "CODING" && question.questionType !== "SQL") {
       return res.status(400).json({ error: "Run is only available for coding questions" });
     }
 
+    const runLanguage = question.questionType === "SQL" ? "sql" : language;
     const result = await runQueued(() =>
-      judgeSubmission({ language, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs, memoryLimitKb: question.memoryLimitKb || undefined, evaluationType: question.evaluationType, functionSignature: question.functionSignature })
+      judgeSubmission({ language: runLanguage, code, testCases: question.testCases, timeLimitMs: question.timeLimitMs, memoryLimitKb: question.memoryLimitKb || undefined, evaluationType: question.evaluationType, functionSignature: question.functionSignature, sqlSchema: question.sqlSchema })
     );
     res.json(result);
   } catch (err) {
@@ -114,7 +115,7 @@ router.post("/autosave", authenticate, requireRole("STUDENT"), async (req, res) 
 
     const question = await prisma.question.findUnique({ where: { id: questionId } });
     if (!question) return res.status(404).json({ error: "Question not found" });
-    if (question.questionType !== "CODING") {
+    if (question.questionType !== "CODING" && question.questionType !== "SQL") {
       return res.status(400).json({ error: "Autosave is only for coding questions" });
     }
 
@@ -157,7 +158,7 @@ router.post("/submit-code", authenticate, requireRole("STUDENT"), execLimiter, a
 
     const question = await prisma.question.findUnique({ where: { id: questionId }, include: { testCases: true } });
     if (!question) return res.status(404).json({ error: "Question not found" });
-    if (question.questionType !== "CODING") {
+    if (question.questionType !== "CODING" && question.questionType !== "SQL") {
       return res.status(400).json({ error: "Submit is only for coding questions" });
     }
 

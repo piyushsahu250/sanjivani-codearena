@@ -9,6 +9,7 @@ const QUESTION_TYPES = [
   { value: "MCQ", label: "Multiple Choice" },
   { value: "TRUE_FALSE", label: "True/False" },
   { value: "MULTISELECT", label: "Multiple Select" },
+  { value: "SQL", label: "SQL Query" },
 ];
 
 const SIGNATURE_TYPES = ["int", "long", "double", "boolean", "string", "int[]", "long[]", "double[]", "string[]", "boolean[]"];
@@ -21,7 +22,7 @@ const emptyForm = {
   title: "", subject: "", topic: "", description: "", questionType: "CODING",
   difficulty: "EASY", points: 10, explanation: "",
   timeLimitMs: 2000, memoryLimitKb: "", starterCode: "", tags: "",
-  evaluationType: "STDIO",
+  evaluationType: "STDIO", sqlSchema: "",
 };
 
 const emptySignature = { methodName: "", returnType: "int", params: [{ name: "", type: "int" }] };
@@ -102,10 +103,10 @@ export default function CreateQuestion() {
         difficulty: q.difficulty, points: q.points, explanation: q.explanation || "",
         timeLimitMs: q.timeLimitMs ?? 2000, memoryLimitKb: q.memoryLimitKb ? Math.round(q.memoryLimitKb / 1024) : "",
         starterCode: q.starterCode || "", tags: Array.isArray(q.tags) ? q.tags.join(", ") : "",
-        evaluationType: q.evaluationType || "STDIO",
+        evaluationType: q.evaluationType || "STDIO", sqlSchema: q.sqlSchema || "",
       });
       if (q.functionSignature) setSignature(q.functionSignature);
-      if (q.questionType === "CODING") {
+      if (q.questionType === "CODING" || q.questionType === "SQL") {
         setTestCases(q.testCases?.length ? q.testCases.map((tc) => ({ input: tc.input, expected: tc.expected, isHidden: tc.isHidden, explanation: tc.explanation || "" })) : [{ input: "", expected: "", isHidden: false, explanation: "" }]);
       } else {
         setOptions(q.options?.length ? q.options : ["", ""]);
@@ -208,6 +209,9 @@ export default function CreateQuestion() {
       if (form.questionType === "CODING") {
         payload.testCases = testCases;
         if (form.evaluationType === "FUNCTION") payload.functionSignature = signature;
+      } else if (form.questionType === "SQL") {
+        payload.testCases = testCases;
+        payload.sqlSchema = form.sqlSchema;
       } else {
         payload.options = options.map((o) => o.trim()).filter(Boolean);
         payload.correctAnswer = correctIndices;
@@ -228,7 +232,8 @@ export default function CreateQuestion() {
 
   if (loading) return <div style={{ padding: 48 }} className="mono">Loading…</div>;
 
-  const isQuiz = form.questionType !== "CODING";
+  const isSql = form.questionType === "SQL";
+  const isQuiz = form.questionType !== "CODING" && !isSql;
   const isMulti = form.questionType === "MULTISELECT";
   const isTrueFalse = form.questionType === "TRUE_FALSE";
 
@@ -245,7 +250,11 @@ export default function CreateQuestion() {
 
           <div className="card" style={{ padding: 14, marginTop: 10, marginBottom: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>Generate with AI</div>
-            {!aiConfigured ? (
+            {isSql ? (
+              <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 4 }}>
+                AI generation isn't available for SQL questions yet — write the schema, query, and expected results directly below.
+              </p>
+            ) : !aiConfigured ? (
               <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 4 }}>
                 AI generation isn't configured on this server yet.
               </p>
@@ -304,7 +313,7 @@ export default function CreateQuestion() {
             )}
           </div>
 
-          {!isQuiz && (
+          {form.questionType === "CODING" && (
             <>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
@@ -419,6 +428,54 @@ export default function CreateQuestion() {
                     <div>
                       <label style={labelStyle}>Expected {form.evaluationType === "FUNCTION" ? "return value" : "stdout"}</label>
                       <textarea style={{ ...inputStyle, fontFamily: "var(--font-mono)", minHeight: 60 }} value={tc.expected} onChange={(e) => updateCase(idx, "expected", e.target.value)} />
+                    </div>
+                  </div>
+                  {!tc.isHidden && (
+                    <>
+                      <label style={{ ...labelStyle, marginTop: 8 }}>Explanation (optional, shown to students alongside this sample)</label>
+                      <input style={inputStyle} value={tc.explanation || ""} onChange={(e) => updateCase(idx, "explanation", e.target.value)} />
+                    </>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                    <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+                      <input type="checkbox" checked={tc.isHidden} onChange={(e) => updateCase(idx, "isHidden", e.target.checked)} />
+                      Hidden (not shown to students as a sample)
+                    </label>
+                    {testCases.length > 1 && (
+                      <button type="button" onClick={() => removeCase(idx)} style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 13 }}>Remove</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {isSql && (
+            <>
+              <label style={{ ...labelStyle, marginTop: 20 }}>Setup SQL (schema + seed data)</label>
+              <p style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 2 }}>
+                Run once against a fresh database before each test case — e.g. <span className="mono">CREATE TABLE employees (id INTEGER, name TEXT, salary INTEGER); INSERT INTO employees VALUES (1,'Asha',50000), (2,'Ravi',62000);</span> SQLite syntax only.
+              </p>
+              <textarea style={{ ...inputStyle, minHeight: 100, fontFamily: "var(--font-mono)" }} value={form.sqlSchema} onChange={updateField("sqlSchema")} placeholder="CREATE TABLE ...; INSERT INTO ...;" />
+
+              <div style={{ marginTop: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Test cases</div>
+                <button type="button" className="btn btn-ghost" onClick={addCase}>+ Add test case</button>
+              </div>
+              <p style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 2 }}>
+                Each case grades the same student query against the setup SQL above, plus this case's own optional extra setup SQL — the LeetCode-style pattern of varying the data per case while asking for one query.
+              </p>
+
+              {testCases.map((tc, idx) => (
+                <div key={idx} className="card" style={{ padding: 16, marginTop: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div>
+                      <label style={labelStyle}>Extra setup SQL for this case (optional)</label>
+                      <textarea style={{ ...inputStyle, fontFamily: "var(--font-mono)", minHeight: 60 }} value={tc.input} onChange={(e) => updateCase(idx, "input", e.target.value)} placeholder="INSERT INTO ... (leave blank to just use the setup SQL above)" />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Expected result (one row per line, tab-separated columns)</label>
+                      <textarea style={{ ...inputStyle, fontFamily: "var(--font-mono)", minHeight: 60 }} value={tc.expected} onChange={(e) => updateCase(idx, "expected", e.target.value)} placeholder={"Ravi\t62000"} />
                     </div>
                   </div>
                   {!tc.isHidden && (

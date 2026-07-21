@@ -22,6 +22,7 @@ const os = require("os");
 const path = require("path");
 const { mapWithConcurrency } = require("./queue");
 const { wrapFunctionCode } = require("./functionHarness");
+const { judgeSqlSubmission } = require("./sqlJudge");
 
 const CASE_CONCURRENCY = Number(process.env.JUDGE_CASE_CONCURRENCY || 2);
 const MEMORY_LIMIT_KB = Number(process.env.JUDGE_MEMORY_LIMIT_KB || 262144); // 256 MB default
@@ -321,7 +322,12 @@ async function prepare(language, code) {
  * Runs `code` against a list of test cases: [{ input, expected }]
  * Returns { passedCases, totalCases, verdict, details: [...] }
  */
-async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000, memoryLimitKb = MEMORY_LIMIT_KB, evaluationType, functionSignature }) {
+async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000, memoryLimitKb = MEMORY_LIMIT_KB, evaluationType, functionSignature, sqlSchema }) {
+  // SQL questions run on a completely separate path — no compile/run subprocess, no ulimits,
+  // an in-process (worker-thread-isolated) SQLite engine instead. See sqlJudge.js.
+  if (language === "sql") {
+    return judgeSqlSubmission({ sqlSchema, code, testCases, timeLimitMs: timeLimitMs || 3000 });
+  }
   let sourceCode = code;
   if (evaluationType === "FUNCTION" && functionSignature) {
     try {

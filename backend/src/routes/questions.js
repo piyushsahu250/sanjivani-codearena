@@ -25,7 +25,7 @@ function ownsRow(requesterInstituteId, row) {
   return !requesterInstituteId || row.instituteId === requesterInstituteId;
 }
 
-const QUESTION_TYPES = ["CODING", "MCQ", "TRUE_FALSE", "MULTISELECT"];
+const QUESTION_TYPES = ["CODING", "MCQ", "TRUE_FALSE", "MULTISELECT", "SQL"];
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 
 const TEMPLATE_HEADERS = [
@@ -193,7 +193,7 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterIns
     const {
       title, description, subject, topic, questionType, difficulty, points, explanation,
       timeLimitMs, starterCode, testCases, options, correctAnswer, folderId,
-      evaluationType, functionSignature, starterCodeByLanguage, memoryLimitKb, tags,
+      evaluationType, functionSignature, starterCodeByLanguage, memoryLimitKb, tags, sqlSchema,
     } = req.body;
 
     if (!description) return res.status(400).json({ error: "Question text is required" });
@@ -243,6 +243,27 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterIns
       data.testCases = {
         create: cases.map((tc) => ({
           input: tc.input,
+          expected: tc.expected,
+          isHidden: tc.isHidden ?? true,
+          explanation: tc.explanation || null,
+        })),
+      };
+    } else if (type === "SQL") {
+      if (!sqlSchema || !sqlSchema.trim()) {
+        return res.status(400).json({ error: "SQL questions need setup SQL (schema + seed data)" });
+      }
+      const cases = testCases || [];
+      if (cases.filter((tc) => !tc.isHidden).length < 1) {
+        return res.status(400).json({ error: "Each SQL question needs at least 1 visible sample test case" });
+      }
+      if (cases.filter((tc) => tc.isHidden).length < 1) {
+        return res.status(400).json({ error: "Each SQL question needs at least 1 hidden test case for final evaluation" });
+      }
+      data.sqlSchema = sqlSchema;
+      data.timeLimitMs = timeLimitMs ?? 3000;
+      data.testCases = {
+        create: cases.map((tc) => ({
+          input: tc.input || "",
           expected: tc.expected,
           isHidden: tc.isHidden ?? true,
           explanation: tc.explanation || null,
@@ -895,7 +916,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
     const {
       title, description, subject, topic, questionType, difficulty, points, explanation,
       timeLimitMs, starterCode, testCases, options, correctAnswer, folderId,
-      evaluationType, functionSignature, starterCodeByLanguage, memoryLimitKb, tags,
+      evaluationType, functionSignature, starterCodeByLanguage, memoryLimitKb, tags, sqlSchema,
     } = req.body;
 
     if (folderId !== undefined && folderId !== null && folderId !== existing.folderId) {
@@ -946,6 +967,24 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), attachRequeste
         await prisma.testCase.deleteMany({ where: { questionId: existing.id } });
         data.testCases = {
           create: testCases.map((tc) => ({ input: tc.input, expected: tc.expected, isHidden: tc.isHidden ?? true, explanation: tc.explanation || null })),
+        };
+      }
+    } else if (type === "SQL") {
+      data.sqlSchema = sqlSchema !== undefined ? sqlSchema : existing.sqlSchema;
+      data.timeLimitMs = timeLimitMs ?? existing.timeLimitMs;
+      data.options = null;
+      data.correctAnswer = null;
+
+      if (testCases) {
+        if (testCases.filter((tc) => !tc.isHidden).length < 1) {
+          return res.status(400).json({ error: "Each SQL question needs at least 1 visible sample test case" });
+        }
+        if (testCases.filter((tc) => tc.isHidden).length < 1) {
+          return res.status(400).json({ error: "Each SQL question needs at least 1 hidden test case for final evaluation" });
+        }
+        await prisma.testCase.deleteMany({ where: { questionId: existing.id } });
+        data.testCases = {
+          create: testCases.map((tc) => ({ input: tc.input || "", expected: tc.expected, isHidden: tc.isHidden ?? true, explanation: tc.explanation || null })),
         };
       }
     } else {

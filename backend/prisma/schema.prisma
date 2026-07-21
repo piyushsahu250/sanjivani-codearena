@@ -26,6 +26,7 @@ enum QuestionType {
   MCQ
   TRUE_FALSE
   MULTISELECT
+  SQL
 }
 
 model Institute {
@@ -212,6 +213,14 @@ model Question {
   // MCQ / TRUE_FALSE / MULTISELECT fields
   options       Json? // array of option strings
   correctAnswer Json? // array of correct option indices
+
+  // SQL-only: DDL + seed data (CREATE TABLE ...; INSERT INTO ...;) run once against a fresh
+  // in-memory SQLite database before each test case, shared across all of this question's cases.
+  // A case's own TestCase.input is optional *additional* setup SQL run after this (e.g. extra
+  // rows for that specific case — the LeetCode-SQL-problem pattern of varying the underlying
+  // data per case while grading the same submitted query); TestCase.expected holds the
+  // serialized expected result set. SQLite dialect only — see utils/sqlJudge.js.
+  sqlSchema String?
 
   testCases TestCase[]
   testLinks TestQuestion[]
