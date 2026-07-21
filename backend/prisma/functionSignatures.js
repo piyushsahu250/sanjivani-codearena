@@ -36,6 +36,10 @@ const MODULE_CODING_SIGNATURES = {
   "Find Maximum in Array": { methodName: "findMax", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
   "Binary Search": { methodName: "binarySearch", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "target", type: "int" }] },
   "Count Even Numbers": { methodName: "countEven", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
+  "Reverse a String": { methodName: "reverseString", returnType: "string", params: [{ name: "s", type: "string" }] },
+  "Count Character Occurrences": { methodName: "countChar", returnType: "int", params: [{ name: "s", type: "string" }, { name: "c", type: "string" }] },
+  "Check Anagram": { methodName: "isAnagram", returnType: "boolean", params: [{ name: "a", type: "string" }, { name: "b", type: "string" }] },
+  "Title Case a Sentence": { methodName: "titleCase", returnType: "string", params: [{ name: "s", type: "string" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -57,6 +61,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "secondLargest", returnType: "int", params: [{ name: "nums", type: "int[]" }] },
   "Read space-separated integers on one line and a target integer on the next line. Print how many times the target appears in the array.":
     { methodName: "countOccurrences", returnType: "int", params: [{ name: "nums", type: "int[]" }, { name: "target", type: "int" }] },
+  "Read a string and print it with all vowels (a, e, i, o, u, both cases) removed.":
+    { methodName: "removeVowels", returnType: "string", params: [{ name: "s", type: "string" }] },
+  "Read a string and print \"true\" if every character in it is a digit, or \"false\" otherwise.":
+    { methodName: "isNumeric", returnType: "boolean", params: [{ name: "s", type: "string" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {

@@ -272,6 +272,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Strings": {
+    title: "Module 6 Coding Assessment",
+    instructions: "Solve every question by implementing the given method, applying the String/StringBuilder concepts from this module.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Reverse a String",
+        description: "Return the given string reversed.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "hello", expected: "olleh" },
+          { input: "Java", expected: "avaJ" },
+          { input: "a", expected: "a" },
+        ],
+      },
+      {
+        title: "Count Character Occurrences",
+        description: "Return how many times the single-character string c appears in the string s.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "banana\na", expected: "3" },
+          { input: "mississippi\ns", expected: "4" },
+          { input: "hello\nz", expected: "0" },
+        ],
+      },
+      {
+        title: "Check Anagram",
+        description: "Return true if strings a and b are anagrams of each other (same characters, same counts, order doesn't matter), false otherwise.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "listen\nsilent", expected: "true" },
+          { input: "hello\nworld", expected: "false" },
+          { input: "abc\ncab", expected: "true" },
+        ],
+      },
+      {
+        title: "Title Case a Sentence",
+        description: "Return the given sentence with the first letter of each word capitalized and every other letter lowercased.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "hello world", expected: "Hello World" },
+          { input: "JAVA programming", expected: "Java Programming" },
+          { input: "a", expected: "A" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {

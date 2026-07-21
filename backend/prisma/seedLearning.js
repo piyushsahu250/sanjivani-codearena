@@ -943,12 +943,168 @@ const MODULE5_CODING = [
   },
 ];
 
-// Modules 6-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE6_LESSONS = [
+  {
+    title: "String",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation:
+        "<code>String</code> is a reference type representing an <strong>immutable</strong> sequence of characters. Immutable means once created, a String object's contents can never change — every operation that appears to modify a string actually creates a NEW String object.",
+      syntax: "String s1 = \"Hello\";                  // string literal — stored in the String pool\nString s2 = new String(\"Hello\");     // explicit object — always a new object, not pooled\nString s3 = s1 + \" World\";           // concatenation creates a new String",
+      example: "String greeting = \"Hello\";\ngreeting = greeting + \", World!\"; // does NOT modify the original — creates a new String and reassigns greeting\nSystem.out.println(greeting); // Hello, World!",
+      notes: [
+        "String literals are interned in a special memory area called the String pool — two literals with the same text (<code>String a = \"hi\";</code> <code>String b = \"hi\";</code>) can share the SAME object, but <code>new String(\"hi\")</code> always allocates a distinct object.",
+        "Because Strings are objects, always compare their CONTENTS with <code>.equals()</code>, not <code>==</code> — <code>==</code> compares references, which can give a wrong answer even when the text is identical, especially with <code>new String()</code>.",
+      ],
+      mistakes: ["Comparing strings with <code>==</code> instead of <code>.equals()</code> — this can appear to work correctly for literals (due to pooling) but silently breaks for strings built with <code>new String(...)</code> or produced by concatenation/user input."],
+      bestPractices: ["Never build a string incrementally in a loop with <code>+=</code> — each <code>+=</code> allocates a brand-new String object, making a loop with N iterations O(n²). Use StringBuilder for that (next lesson)."],
+    }),
+  },
+  {
+    title: "StringBuilder",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "<code>StringBuilder</code> is a MUTABLE sequence of characters — unlike String, its methods modify the object in place rather than creating a new one. This makes it the right tool for building up a string incrementally (e.g. inside a loop).",
+      syntax:
+        "StringBuilder sb = new StringBuilder();\nsb.append(\"Hello\");\nsb.append(\", \").append(\"World!\"); // methods can be chained — each returns the same StringBuilder\nsb.insert(0, \">> \");\nsb.reverse();\nString result = sb.toString(); // convert back to a String when done",
+      example: "StringBuilder sb = new StringBuilder();\nfor (int i = 1; i <= 3; i++) {\n    sb.append(i).append(\" \");\n}\nSystem.out.println(sb.toString()); // 1 2 3",
+      notes: [
+        "StringBuilder is NOT thread-safe — its methods aren't synchronized, which is exactly what makes it faster than StringBuffer for single-threaded code (the overwhelming majority of use cases).",
+        "Common methods: <code>append()</code>, <code>insert(index, str)</code>, <code>delete(start, end)</code>, <code>reverse()</code>, <code>toString()</code>, <code>length()</code>.",
+      ],
+      mistakes: ["Using String concatenation (<code>+=</code>) inside a loop instead of <code>StringBuilder.append()</code> — each <code>+=</code> silently allocates a new String, turning an O(n) loop into O(n²) for large inputs."],
+      bestPractices: ["Reach for StringBuilder any time you're building a string piece by piece, especially inside a loop."],
+    }),
+  },
+  {
+    title: "StringBuffer",
+    estimatedMinutes: 8,
+    content: lessonHTML({
+      explanation: "<code>StringBuffer</code> is functionally almost identical to StringBuilder (same mutable, chainable API) — the one difference is that StringBuffer's methods are <strong>synchronized</strong>, making it thread-safe at the cost of extra overhead.",
+      syntax: "StringBuffer sb = new StringBuffer();\nsb.append(\"Hello\").append(\" World\");\nString result = sb.toString();",
+      example: "// Same API as StringBuilder — this compiles and behaves identically, just slower due to synchronization:\nStringBuffer buf = new StringBuffer(\"Count: \");\nbuf.append(42);\nSystem.out.println(buf); // Count: 42",
+      notes: [
+        "StringBuffer predates StringBuilder (added in Java 1.0; StringBuilder arrived in Java 5 as an unsynchronized, faster alternative for the common single-threaded case).",
+        "Use StringBuffer only when multiple threads might genuinely mutate the SAME buffer concurrently — for everything else, prefer StringBuilder.",
+      ],
+      bestPractices: ["Default to StringBuilder unless you have a specific, verified need for thread-safety — most code doesn't share a single mutable string buffer across threads."],
+    }),
+  },
+  {
+    title: "String Methods",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "The String class provides a large set of built-in methods for inspecting, transforming, and comparing text. A handful cover the vast majority of real-world use.",
+      syntax:
+        "String s = \"Hello, World!\";\ns.length();               // 13\ns.charAt(0);              // 'H'\ns.substring(7);           // \"World!\"\ns.substring(7, 12);       // \"World\"\ns.indexOf(\"World\");       // 7\ns.toUpperCase();          // \"HELLO, WORLD!\"\ns.toLowerCase();          // \"hello, world!\"\ns.trim();                 // removes leading/trailing whitespace\ns.replace(\"World\", \"Java\"); // \"Hello, Java!\"\ns.split(\", \");            // [\"Hello\", \"World!\"]\ns.equals(\"Hello, World!\"); // true — content comparison\ns.contains(\"World\");      // true",
+      example: "String email = \"  User@Example.com  \";\nString normalized = email.trim().toLowerCase();\nSystem.out.println(normalized); // \"user@example.com\"",
+      notes: [
+        "<code>substring(begin)</code> goes from begin to the end; <code>substring(begin, end)</code> goes from begin UP TO BUT NOT INCLUDING end — a classic off-by-one trap.",
+        "Every one of these methods returns a NEW String — none of them modify the original, because String is immutable.",
+      ],
+      mistakes: ["Calling a method like <code>s.trim()</code> or <code>s.toUpperCase()</code> and expecting <code>s</code> itself to change — since String is immutable, you must capture the return value: <code>s = s.trim();</code>, not just <code>s.trim();</code>."],
+    }),
+  },
+  {
+    title: "Regular Expressions",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "A regular expression (regex) is a pattern for matching text — useful for validating formats (emails, phone numbers), searching, and complex find-and-replace operations that go beyond a literal substring match.",
+      syntax:
+        "String s = \"Order #12345\";\ns.matches(\"[A-Za-z ]+#\\\\d+\");   // true — matches() tests the WHOLE string against the pattern\ns.replaceAll(\"\\\\d+\", \"X\");      // \"Order #X\" — replaces every digit run with X\nString[] parts = \"a,b,,c\".split(\",\");  // [\"a\", \"b\", \"\", \"c\"]\n\nimport java.util.regex.Pattern;\nimport java.util.regex.Matcher;\nPattern p = Pattern.compile(\"\\\\d+\");\nMatcher m = p.matcher(\"Order 123, Item 456\");\nwhile (m.find()) {\n    System.out.println(m.group()); // 123, then 456\n}",
+      notes: [
+        "Common building blocks: <code>\\d</code> (digit), <code>\\w</code> (word character), <code>\\s</code> (whitespace), <code>+</code> (one or more), <code>*</code> (zero or more), <code>?</code> (zero or one), <code>[]</code> (character class), <code>^</code> / <code>$</code> (start/end of string).",
+        "In a Java string literal, backslashes must be doubled (<code>\\\\d</code>, not <code>\\d</code>) because <code>\\</code> is itself the string-escape character — the regex engine sees <code>\\d</code> only after Java's own string parsing removes one backslash.",
+      ],
+      mistakes: ["Forgetting to double the backslash in a Java string literal (writing <code>\"\\d+\"</code> instead of <code>\"\\\\d+\"</code>) — <code>\\d</code> isn't a valid Java string escape, so this often fails to compile or behaves unexpectedly."],
+      bestPractices: ["Use <code>s.matches(pattern)</code> only when the ENTIRE string must match; use <code>Pattern</code>/<code>Matcher</code> with <code>find()</code> when you need to locate a pattern anywhere within a larger string, possibly multiple times."],
+    }),
+  },
+];
+
+const MODULE6_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "Why should you compare String contents with `.equals()` instead of `==`?",
+    options: ["== is slower than .equals()", "== compares references, not contents, which can give the wrong answer for non-pooled strings", "== only works for numbers", "There's no difference in Java"],
+    correctAnswer: 1,
+    explanation: "Strings are objects, so == checks whether two references point to the same object in memory — .equals() checks whether their contents are the same, which is almost always what you actually want.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\nString s = \"hello\";\ns.toUpperCase();\nSystem.out.println(s);",
+    options: ["HELLO", "hello", "null", "Compile error"],
+    correctAnswer: 1,
+    explanation: "toUpperCase() returns a NEW String rather than modifying s in place — since the return value here isn't captured or reassigned, s is unchanged.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which class should you use to efficiently build a string inside a loop?",
+    options: ["String, with += concatenation", "StringBuilder", "Integer", "Scanner"],
+    correctAnswer: 1,
+    explanation: "StringBuilder mutates in place, avoiding the repeated allocation that makes String += inside a loop O(n²).",
+  },
+  {
+    type: "MCQ",
+    prompt: "What is the key functional difference between StringBuilder and StringBuffer?",
+    options: ["StringBuilder is immutable, StringBuffer is mutable", "StringBuffer's methods are synchronized (thread-safe); StringBuilder's are not", "StringBuilder can't be converted to a String", "There is no difference at all"],
+    correctAnswer: 1,
+    explanation: "Both are mutable with an identical API — StringBuffer adds synchronization for thread-safety, at the cost of extra overhead StringBuilder doesn't pay.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does `\"Hello, World!\".substring(7, 12)` return?",
+    options: ["\"World!\"", "\"World\"", "\"Worl\"", "\"orld!\""],
+    correctAnswer: 1,
+    explanation: "Index 7 is 'W' and substring(7, 12) goes up to but not including index 12, covering indices 7-11: \"World\".",
+  },
+  {
+    type: "DEBUG",
+    prompt: "What is wrong with this code, given the goal is to trim and store the result?\n\nString name = \"  Alice  \";\nname.trim();\nSystem.out.println(name);",
+    options: ["Nothing, it prints \"Alice\" trimmed", "trim() doesn't modify name in place — the return value must be reassigned, e.g. name = name.trim();", "trim() only works on StringBuilder", "This throws a NullPointerException"],
+    correctAnswer: 1,
+    explanation: "Like every String method, trim() returns a new String rather than mutating the original — the result here is discarded, so name still has its original leading/trailing spaces.",
+  },
+  {
+    type: "MCQ",
+    prompt: "In a Java string literal representing a regex, why must you write \"\\\\d+\" instead of \"\\d+\"?",
+    options: ["\\d+ is not valid regex syntax", "Java requires all regex to use double backslashes for performance", "\\ is Java's string-escape character, so it must be doubled to produce a literal backslash for the regex engine", "There is no difference, both work identically"],
+    correctAnswer: 2,
+    explanation: "Java's string literal parser consumes one backslash as an escape character first — doubling it (\\\\) is what actually produces a single literal backslash for the regex engine to see as \\d.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does `\"a,b,,c\".split(\",\")` produce (as an array)?",
+    options: ["[\"a\", \"b\", \"c\"]", "[\"a\", \"b\", \"\", \"c\"]", "[\"a,b,,c\"]", "Compile error"],
+    correctAnswer: 1,
+    explanation: "split(\",\") produces one element for every gap between delimiters, including empty strings for consecutive delimiters — the double comma produces an empty string between \"b\" and \"c\".",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below.
+const MODULE6_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read a string and print it with all vowels (a, e, i, o, u, both cases) removed.",
+    language: "java",
+    testCases: [{ input: "Hello World", expected: "Hll Wrld" }, { input: "AEIOUaeiou", expected: "" }, { input: "xyz", expected: "xyz" }],
+    explanation: "Walk the string and append only the characters that aren't in the vowel set to a StringBuilder.",
+  },
+  {
+    type: "CODING",
+    prompt: "Read a string and print \"true\" if every character in it is a digit, or \"false\" otherwise.",
+    language: "java",
+    testCases: [{ input: "007", expected: "true" }, { input: "12.5", expected: "false" }, { input: "abc", expected: "false" }],
+    explanation: "Check every character with Character.isDigit(c) (or compare it against '0'-'9') — if any character fails, the whole string isn't numeric.",
+  },
+];
+
+// Modules 7-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Strings", topics: ["String", "StringBuilder", "StringBuffer", "String Methods", "Regular Expressions"], practiceLabel: "Coding Problems" },
   { title: "Object-Oriented Programming (OOP)", topics: ["Classes", "Objects", "Constructors", "Inheritance", "Polymorphism", "Abstraction", "Encapsulation", "Interfaces"], practiceLabel: "Mini Quiz & Coding Exercises" },
   { title: "Exception Handling", topics: ["try", "catch", "finally", "throw", "throws", "Custom Exceptions"], practiceLabel: "Coding Problems" },
   { title: "Collections Framework", topics: ["ArrayList", "LinkedList", "HashMap", "HashSet", "TreeMap", "Queue", "Stack", "PriorityQueue"], practiceLabel: "Practice Questions" },
@@ -1198,13 +1354,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 6-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 6: full hand-authored content ---
+  const module6 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Strings" } },
+    update: {},
+    create: { courseId: course.id, title: "Strings", order: 5 },
+  });
+
+  for (let i = 0; i < MODULE6_LESSONS.length; i++) {
+    const l = MODULE6_LESSONS[i];
+    await upsertLessonContent(prisma, module6.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module6PracticeLesson = await upsertLessonContent(prisma, module6.id, "Coding Problems", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE6_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule6Practice = await prisma.practiceQuestion.count({ where: { lessonId: module6PracticeLesson.id } });
+  if (existingModule6Practice === 0) {
+    let order = 0;
+    for (const q of MODULE6_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module6PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE6_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module6PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 7-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 5 },
+      create: { courseId: course.id, title: spec.title, order: m + 6 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -1226,7 +1422,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 5, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 6, "modules.");
 }
 
 module.exports = { seedLearningModule };
