@@ -22,6 +22,25 @@ const LANGUAGES = [
 
 const MAX_TAB_VIOLATIONS = 3;
 
+// Persists the split-screen panel sizes across reloads/navigations — a student who drags the
+// layout to their liking during one question shouldn't have it snap back to defaults on the
+// next. Shared across every test attempt (one layout preference per student, not per test).
+const LAYOUT_KEY = "codearena-test-layout";
+const DEFAULT_LAYOUT = { questionPanelWidth: 420, resultsPanelHeight: 220 };
+function loadLayout() {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    if (!raw) return DEFAULT_LAYOUT;
+    const parsed = JSON.parse(raw);
+    return {
+      questionPanelWidth: Number(parsed.questionPanelWidth) || DEFAULT_LAYOUT.questionPanelWidth,
+      resultsPanelHeight: Number(parsed.resultsPanelHeight) || DEFAULT_LAYOUT.resultsPanelHeight,
+    };
+  } catch {
+    return DEFAULT_LAYOUT;
+  }
+}
+
 export default function TestTaking() {
   const { id: testId } = useParams();
   const navigate = useNavigate();
@@ -57,8 +76,9 @@ export default function TestTaking() {
   const [tabWarning, setTabWarning] = useState(null);
   const [showQuestionPanel, setShowQuestionPanel] = useState(true);
   const [showResultsPanel, setShowResultsPanel] = useState(true);
-  const [questionPanelWidth, setQuestionPanelWidth] = useState(420);
-  const [resultsPanelHeight, setResultsPanelHeight] = useState(220);
+  const initialLayout = useState(loadLayout)[0];
+  const [questionPanelWidth, setQuestionPanelWidth] = useState(initialLayout.questionPanelWidth);
+  const [resultsPanelHeight, setResultsPanelHeight] = useState(initialLayout.resultsPanelHeight);
   const resizingRef = useRef(null); // "question" | "results" | null
   const [autoSubmitted, setAutoSubmitted] = useState(false);
   const [timeExpired, setTimeExpired] = useState(false);
@@ -287,15 +307,23 @@ export default function TestTaking() {
   // Drag-to-resize for the question-description panel (width) and the results panel
   // (height). A single window-level listener pair handles both, gated by resizingRef so it's
   // a no-op the rest of the time.
+  const layoutRef = useRef({ questionPanelWidth: initialLayout.questionPanelWidth, resultsPanelHeight: initialLayout.resultsPanelHeight });
   useEffect(() => {
     function onMove(e) {
       if (resizingRef.current === "question") {
-        setQuestionPanelWidth(Math.max(260, Math.min(760, e.clientX - 220)));
+        const w = Math.max(260, Math.min(760, e.clientX - 220));
+        layoutRef.current.questionPanelWidth = w;
+        setQuestionPanelWidth(w);
       } else if (resizingRef.current === "results") {
-        setResultsPanelHeight(Math.max(100, Math.min(560, window.innerHeight - e.clientY)));
+        const h = Math.max(100, Math.min(560, window.innerHeight - e.clientY));
+        layoutRef.current.resultsPanelHeight = h;
+        setResultsPanelHeight(h);
       }
     }
     function onUp() {
+      if (resizingRef.current) {
+        try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layoutRef.current)); } catch { /* private-browsing storage denial, non-fatal */ }
+      }
       resizingRef.current = null;
       document.body.style.cursor = "";
     }
@@ -306,6 +334,13 @@ export default function TestTaking() {
       window.removeEventListener("mouseup", onUp);
     };
   }, []);
+
+  function resetLayout() {
+    setQuestionPanelWidth(DEFAULT_LAYOUT.questionPanelWidth);
+    setResultsPanelHeight(DEFAULT_LAYOUT.resultsPanelHeight);
+    layoutRef.current = { ...DEFAULT_LAYOUT };
+    try { localStorage.removeItem(LAYOUT_KEY); } catch { /* non-fatal */ }
+  }
 
   function startResize(kind) {
     return (e) => {
@@ -965,6 +1000,9 @@ export default function TestTaking() {
               <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={toggleMaximizeEditor}>
                 {!showQuestionPanel && !showResultsPanel ? "⛶ Restore layout" : "⛶ Maximize editor"}
               </button>
+              <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={resetLayout} title="Reset panel sizes to default">
+                ↺ Reset layout
+              </button>
             </>
           )}
           <div className="mono" style={{ fontSize: isMobile ? 16 : 20, color: secondsLeft < 300 ? "var(--rust)" : "var(--amber)" }}>
@@ -1114,6 +1152,7 @@ export default function TestTaking() {
         {!isMobile && (
           <div
             onMouseDown={startResize("question")}
+            className="ca-resize-handle"
             style={{ width: 6, cursor: "col-resize", background: "var(--line)", flexShrink: 0 }}
             title="Drag to resize"
           />
@@ -1245,7 +1284,7 @@ export default function TestTaking() {
           {showResultsPanel && (
           <>
           {!isMobile && (
-            <div onMouseDown={startResize("results")} style={{ height: 6, cursor: "row-resize", background: "var(--line)", flexShrink: 0 }} title="Drag to resize" />
+            <div onMouseDown={startResize("results")} className="ca-resize-handle" style={{ height: 6, cursor: "row-resize", background: "var(--line)", flexShrink: 0 }} title="Drag to resize" />
           )}
           <div style={{ height: isMobile ? Math.min(resultsPanelHeight, 220) : resultsPanelHeight, overflowY: "auto", padding: 16, background: "#FBF9F4", flexShrink: 0 }}>
             {running && (

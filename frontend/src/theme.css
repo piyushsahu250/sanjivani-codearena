@@ -131,6 +131,11 @@ input::placeholder, textarea::placeholder { color: var(--ink-dim); }
 }
 .btn-ghost:hover { background: rgba(28,27,24,0.04); }
 
+/* Split-screen drag handles (question/editor/results dividers) — a visible hover highlight so
+   the draggable divider reads as interactive before the user commits to a mousedown. */
+.ca-resize-handle { transition: background 0.1s ease; }
+.ca-resize-handle:hover, .ca-resize-handle:active { background: var(--amber) !important; }
+
 .btn-dark {
   background: var(--slate-900);
   color: var(--chalk);
