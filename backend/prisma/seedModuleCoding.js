@@ -323,6 +323,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Object-Oriented Programming (OOP)": {
+    title: "Module 7 Coding Assessment",
+    instructions: "Solve every question by implementing the given method — these are real-world word problems in the spirit of this module's class-design examples.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Simple Interest Calculator",
+        description: "Given a principal amount, an annual interest rate (as a whole-number percent), and a duration in years, return the simple interest earned (principal * rate * years / 100).",
+        difficulty: "EASY",
+        testCases: [
+          { input: "1000\n5\n2", expected: "100" },
+          { input: "5000\n10\n3", expected: "1500" },
+          { input: "200\n2\n1", expected: "4" },
+        ],
+      },
+      {
+        title: "Employee Bonus Eligibility",
+        description: "An employee is eligible for a bonus if they have at least 2 years of service AND a performance rating of at least 3. Return whether the given employee is eligible.",
+        difficulty: "EASY",
+        testCases: [
+          { input: "3\n4", expected: "true" },
+          { input: "1\n5", expected: "false" },
+          { input: "5\n2", expected: "false" },
+        ],
+      },
+      {
+        title: "Compare Circle Areas",
+        description: "Given the radii of two circles, return true if the first circle's area is strictly greater than the second's, false otherwise.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "5\n3", expected: "true" },
+          { input: "2\n2", expected: "false" },
+          { input: "1\n10", expected: "false" },
+        ],
+      },
+      {
+        title: "Price After Discount",
+        description: "Given a price and a discount percentage, return the price after applying the discount, floored to the nearest whole number.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "100\n20", expected: "80" },
+          { input: "250\n10", expected: "225" },
+          { input: "99.99\n50", expected: "49" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {

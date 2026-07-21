@@ -1100,12 +1100,215 @@ const MODULE6_CODING = [
   },
 ];
 
-// Modules 7-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE7_LESSONS = [
+  {
+    title: "Classes",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "A class is a blueprint for creating objects — it defines the fields (data/state) and methods (behavior) that every object created from it will have. Nothing runs until you create an object from the class.",
+      syntax: "class Student {\n    String name;      // field\n    int age;           // field\n\n    void greet() {      // method\n        System.out.println(\"Hi, I'm \" + name);\n    }\n}",
+      example:
+        "class Car {\n    String model;\n    int year;\n}\n\npublic class Main {\n    public static void main(String[] args) {\n        Car c = new Car();  // creates an OBJECT from the Car class\n        c.model = \"Civic\";\n        c.year = 2023;\n        System.out.println(c.model + \" \" + c.year);\n    }\n}",
+      notes: [
+        "A single .java file may contain multiple classes, but only ONE can be public, and its name must match the filename.",
+        "Fields declared inside a class but outside any method are called instance fields — each object gets its own copy.",
+      ],
+      mistakes: ["Confusing a class with an object — the class Car is just the blueprint; no memory is allocated for model/year until you write <code>new Car()</code>."],
+      bestPractices: ["Name classes with PascalCase nouns (Car, Student, BankAccount) — a class represents a \"thing\", so its name should read like one."],
+    }),
+  },
+  {
+    title: "Objects",
+    estimatedMinutes: 8,
+    content: lessonHTML({
+      explanation: "An object is a concrete instance of a class, created with the <code>new</code> keyword. Each object has its own independent copy of the class's instance fields.",
+      syntax: "ClassName obj = new ClassName();   // allocates memory, calls the constructor, returns a reference\nobj.field = value;                    // access a field\nobj.method();                          // call a method",
+      example: "Car car1 = new Car();\ncar1.model = \"Civic\";\n\nCar car2 = new Car();\ncar2.model = \"Accord\";\n\nSystem.out.println(car1.model); // Civic — car1 and car2 are independent objects",
+      notes: [
+        "<code>new ClassName()</code> does two things: allocates memory on the heap for the object, and calls a constructor to initialize it.",
+        "A variable of a class type doesn't hold the object itself — it holds a reference (like an address) to the object on the heap, same as arrays.",
+      ],
+      mistakes: ["Declaring a variable (<code>Car car;</code>) and using it before assigning it an object with <code>new</code> — accessing a field on it throws <code>NullPointerException</code> at runtime, not a compile error, since <code>car</code> defaults to <code>null</code> until assigned."],
+    }),
+  },
+  {
+    title: "Constructors",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "A constructor is a special method that runs automatically when an object is created with <code>new</code>, used to initialize its fields. A constructor has the SAME name as the class and no return type (not even <code>void</code>).",
+      syntax:
+        "class Student {\n    String name;\n    int age;\n\n    Student(String name, int age) {   // constructor — same name as class, no return type\n        this.name = name;              // this.name is the field; name is the parameter\n        this.age = age;\n    }\n}",
+      example: "Student s = new Student(\"Asha\", 20);\nSystem.out.println(s.name + \" is \" + s.age); // Asha is 20",
+      notes: [
+        "If you don't write ANY constructor, Java automatically provides a no-argument default constructor that does nothing. The moment you write even one constructor yourself, that automatic default disappears.",
+        "A class can have multiple constructors with different parameter lists — this is constructor overloading, following the same rules as method overloading.",
+        "<code>this.name = name;</code> is necessary specifically because the parameter <code>name</code> shadows the field <code>name</code> — <code>this.name</code> refers to the field, plain <code>name</code> refers to the parameter.",
+      ],
+      mistakes: ["Writing a parameterized constructor and then still trying to call <code>new Student()</code> (no arguments) — once you define any constructor, the free no-argument default is gone unless you explicitly write one too."],
+    }),
+  },
+  {
+    title: "Inheritance",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Inheritance lets one class (the subclass/child) reuse and extend the fields and methods of another class (the superclass/parent), using the <code>extends</code> keyword. It models an \"is-a\" relationship.",
+      syntax: "class Animal {\n    void eat() { System.out.println(\"This animal eats food.\"); }\n}\n\nclass Dog extends Animal {   // Dog IS-A Animal\n    void bark() { System.out.println(\"Woof!\"); }\n}",
+      example: "Dog d = new Dog();\nd.eat();   // inherited from Animal — \"This animal eats food.\"\nd.bark();  // defined in Dog — \"Woof!\"",
+      notes: [
+        "Java supports only SINGLE inheritance for classes — a class can extend only one superclass directly (unlike interfaces, which support multiple inheritance).",
+        "A subclass can call its superclass's constructor explicitly with <code>super(args)</code> as the first line of its own constructor; if omitted, Java inserts an implicit <code>super()</code> call to the no-argument superclass constructor.",
+      ],
+      mistakes: ["Assuming a subclass can access the superclass's private fields directly — private members are never inherited-accessible; use <code>protected</code> or a public getter/setter instead."],
+    }),
+  },
+  {
+    title: "Polymorphism",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Polymorphism (\"many forms\") lets a single method call behave differently depending on the actual object it's invoked on. Java achieves this through method overriding (runtime polymorphism) and method overloading (compile-time polymorphism, covered in the Methods module).",
+      syntax: "class Animal {\n    void sound() { System.out.println(\"Some generic sound\"); }\n}\nclass Cat extends Animal {\n    @Override\n    void sound() { System.out.println(\"Meow\"); }  // overrides the parent's version\n}",
+      example:
+        "Animal a = new Cat();   // Animal reference, Cat object — perfectly legal\na.sound();                 // Meow — the ACTUAL object's method runs, not the reference type's\n\nAnimal[] animals = {new Animal(), new Cat()};\nfor (Animal an : animals) {\n    an.sound();            // \"Some generic sound\" then \"Meow\" — same call, different behavior\n}",
+      notes: [
+        "This is called runtime (or dynamic) polymorphism because the JVM decides WHICH version of <code>sound()</code> to run based on the object's actual type at runtime, not the reference variable's declared type.",
+        "<code>@Override</code> is an annotation, not required by the compiler, but it makes the compiler verify you're actually overriding a real superclass method — catching typos (like a misspelled method name) that would otherwise silently create a brand-new, unrelated method instead.",
+      ],
+      mistakes: ["Believing the reference type (<code>Animal a = ...</code>) determines which overridden method runs — it's always the ACTUAL object's type (<code>Cat</code>) that decides, for overridden instance methods."],
+    }),
+  },
+  {
+    title: "Abstraction",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Abstraction means exposing only the essential details of an object while hiding its internal implementation. In Java, this is achieved with abstract classes (which can mix implemented and unimplemented methods) and interfaces (traditionally fully unimplemented, though Java 8+ allows default methods).",
+      syntax:
+        "abstract class Shape {\n    abstract double area();     // no body — subclasses MUST implement this\n\n    void describe() {           // a regular, implemented method — abstract classes can mix both\n        System.out.println(\"This shape has area \" + area());\n    }\n}\n\nclass Circle extends Shape {\n    double radius;\n    Circle(double radius) { this.radius = radius; }\n    @Override\n    double area() { return Math.PI * radius * radius; }\n}",
+      example: "Shape s = new Circle(5);\ns.describe(); // This shape has area 78.53981633974483",
+      notes: [
+        "An abstract class CANNOT be instantiated directly (<code>new Shape()</code> is a compile error) — it exists only to be extended.",
+        "A class with even ONE abstract method must itself be declared abstract; a subclass must implement every inherited abstract method, or it too must be declared abstract.",
+      ],
+      mistakes: ["Trying to create an object of an abstract class directly, e.g. <code>new Shape()</code> — this is always a compile error, regardless of whether Shape has any implemented methods."],
+    }),
+  },
+  {
+    title: "Encapsulation",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "Encapsulation means bundling an object's data (fields) with the methods that operate on it, and restricting direct outside access to that data — typically by making fields private and exposing controlled access through public getter/setter methods.",
+      syntax:
+        "class BankAccount {\n    private double balance;    // private — can't be accessed directly from outside the class\n\n    public double getBalance() {   // getter — read access\n        return balance;\n    }\n\n    public void deposit(double amount) {  // controlled write access — can validate\n        if (amount > 0) {\n            balance += amount;\n        }\n    }\n}",
+      example: "BankAccount acc = new BankAccount();\nacc.deposit(100);\n// acc.balance = -500;      // compile error — balance is private, can't be set directly\nSystem.out.println(acc.getBalance()); // 100",
+      notes: [
+        "The main benefit is VALIDATION and control — a setter (like <code>deposit()</code> above) can reject invalid values, which a public field can never do.",
+        "Encapsulation also means an object's internal representation can change later without breaking code that uses it, as long as the public method signatures stay the same.",
+      ],
+      mistakes: ["Making every field public \"to keep things simple\" — this removes any ability to validate changes or later refactor the internal representation without breaking every caller."],
+      bestPractices: ["Default to private fields with public getters/setters (or no setter at all, for values that shouldn't change after construction) — only make a field public when there's a specific reason to."],
+    }),
+  },
+  {
+    title: "Interfaces",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "An interface is a fully abstract contract — a set of method signatures (traditionally with no bodies) that any implementing class must provide. Unlike class inheritance, a class can implement MULTIPLE interfaces, which is how Java achieves a form of multiple inheritance.",
+      syntax:
+        "interface Drivable {\n    void drive();          // implicitly public and abstract — no body\n    void stop();\n}\n\nclass Car implements Drivable {\n    @Override\n    public void drive() { System.out.println(\"Car is driving\"); }\n    @Override\n    public void stop() { System.out.println(\"Car has stopped\"); }\n}",
+      example: "Drivable d = new Car();  // interface reference, Car object — legal, like superclass references\nd.drive(); // Car is driving",
+      notes: [
+        "A class can implement any number of interfaces (<code>class Car implements Drivable, Serializable { ... }</code>), but can extend only one class.",
+        "Since Java 8, interfaces can also have default methods (with a body, using the <code>default</code> keyword) and static methods — but every method WITHOUT a body must still be implemented by any concrete implementing class.",
+      ],
+      mistakes: ["Forgetting to mark an implementing method <code>public</code> — interface methods are implicitly public, and Java doesn't allow an implementing class to reduce a method's visibility, so an implementation left package-private won't compile."],
+    }),
+  },
+];
+
+const MODULE7_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "What is the relationship between a class and an object?",
+    options: ["An object is the blueprint, a class is an instance of it", "A class is a blueprint; an object is an instance created from it", "They are the same thing", "An object contains multiple classes"],
+    correctAnswer: 1,
+    explanation: "A class defines the structure and behavior; an object is a concrete instance created from that class with new.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\nclass Counter {\n    int count;\n}\n\npublic static void main(String[] args) {\n    Counter c1 = new Counter();\n    Counter c2 = new Counter();\n    c1.count = 5;\n    System.out.println(c2.count);\n}",
+    options: ["5", "0", "null", "Compile error"],
+    correctAnswer: 1,
+    explanation: "c1 and c2 are independent objects with independent fields — c2.count was never set, so it holds int's default value, 0.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What happens if you define a parameterized constructor but no no-argument constructor, and then call `new MyClass()`?",
+    options: ["Java auto-generates a no-argument constructor anyway", "Compile error — no matching constructor found", "Runtime exception", "It calls the parameterized constructor with default values"],
+    correctAnswer: 1,
+    explanation: "The automatic default constructor only exists if you write NO constructors at all — defining any constructor yourself removes it.",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which keyword establishes inheritance between two classes?",
+    options: ["implements", "extends", "inherits", "super"],
+    correctAnswer: 1,
+    explanation: "extends is used for class-to-class inheritance; implements is used for a class adopting an interface.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "What does this print?\n\nclass Animal { void sound() { System.out.println(\"...\"); } }\nclass Cat extends Animal { @Override void sound() { System.out.println(\"Meow\"); } }\n\nAnimal a = new Cat();\na.sound();",
+    options: ["...", "Meow", "Compile error", "Nothing"],
+    correctAnswer: 1,
+    explanation: "Runtime polymorphism: the JVM calls the overridden method based on the object's actual type (Cat), not the reference's declared type (Animal).",
+  },
+  {
+    type: "MCQ",
+    prompt: "Which of these is true about abstract classes?",
+    options: ["They can be instantiated directly with new", "A class with any abstract method must itself be declared abstract", "They cannot have any implemented (concrete) methods", "They are the same as interfaces"],
+    correctAnswer: 1,
+    explanation: "An abstract class may freely mix implemented and unimplemented (abstract) methods, but it can never be instantiated directly, and any class containing an abstract method must itself be marked abstract.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What is the main purpose of encapsulation?",
+    options: ["To make a program run faster", "To bundle data with the methods that operate on it and control access to that data", "To allow multiple inheritance", "To enable method overloading"],
+    correctAnswer: 1,
+    explanation: "Encapsulation hides internal state behind controlled access (typically private fields + public getters/setters), enabling validation and safe internal changes later.",
+  },
+  {
+    type: "MCQ",
+    prompt: "How many interfaces can a single Java class implement?",
+    options: ["Exactly one", "At most two", "Any number — a class can implement multiple interfaces", "Zero, interfaces can only be extended by other interfaces"],
+    correctAnswer: 2,
+    explanation: "Unlike class extension (limited to one superclass), a class can implement any number of interfaces — this is how Java approximates multiple inheritance.",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below. True
+// class/object design isn't expressible through the single-static-method judge, so these are
+// real-world word problems in the spirit of this module's Shape/BankAccount examples instead.
+const MODULE7_CODING = [
+  {
+    type: "CODING",
+    prompt: "Read a rectangle's length and width, and print its area and perimeter as two space-separated integers (area first, then perimeter).",
+    language: "java",
+    testCases: [{ input: "5\n4", expected: "20 18" }, { input: "3\n3", expected: "9 12" }, { input: "10\n2", expected: "20 24" }],
+    explanation: "area = length * width; perimeter = 2 * (length + width).",
+  },
+  {
+    type: "CODING",
+    prompt: "Read the radius of a circle and print the floor of its area (using pi) as an integer.",
+    language: "java",
+    testCases: [{ input: "5", expected: "78" }, { input: "1", expected: "3" }, { input: "10", expected: "314" }],
+    explanation: "area = Math.PI * radius * radius, then floor (truncate) to an int.",
+  },
+];
+
+// Modules 8-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Object-Oriented Programming (OOP)", topics: ["Classes", "Objects", "Constructors", "Inheritance", "Polymorphism", "Abstraction", "Encapsulation", "Interfaces"], practiceLabel: "Mini Quiz & Coding Exercises" },
   { title: "Exception Handling", topics: ["try", "catch", "finally", "throw", "throws", "Custom Exceptions"], practiceLabel: "Coding Problems" },
   { title: "Collections Framework", topics: ["ArrayList", "LinkedList", "HashMap", "HashSet", "TreeMap", "Queue", "Stack", "PriorityQueue"], practiceLabel: "Practice Questions" },
   { title: "File Handling", topics: ["Reading Files", "Writing Files", "BufferedReader", "FileWriter", "Scanner"], practiceLabel: "Coding Problems" },
@@ -1394,13 +1597,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 7-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 7: full hand-authored content ---
+  const module7 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Object-Oriented Programming (OOP)" } },
+    update: {},
+    create: { courseId: course.id, title: "Object-Oriented Programming (OOP)", order: 6 },
+  });
+
+  for (let i = 0; i < MODULE7_LESSONS.length; i++) {
+    const l = MODULE7_LESSONS[i];
+    await upsertLessonContent(prisma, module7.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module7PracticeLesson = await upsertLessonContent(prisma, module7.id, "Mini Quiz & Coding Exercises", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE7_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule7Practice = await prisma.practiceQuestion.count({ where: { lessonId: module7PracticeLesson.id } });
+  if (existingModule7Practice === 0) {
+    let order = 0;
+    for (const q of MODULE7_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module7PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE7_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module7PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 8-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 6 },
+      create: { courseId: course.id, title: spec.title, order: m + 7 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -1422,7 +1665,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 6, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 7, "modules.");
 }
 
 module.exports = { seedLearningModule };

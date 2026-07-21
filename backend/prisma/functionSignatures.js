@@ -40,6 +40,10 @@ const MODULE_CODING_SIGNATURES = {
   "Count Character Occurrences": { methodName: "countChar", returnType: "int", params: [{ name: "s", type: "string" }, { name: "c", type: "string" }] },
   "Check Anagram": { methodName: "isAnagram", returnType: "boolean", params: [{ name: "a", type: "string" }, { name: "b", type: "string" }] },
   "Title Case a Sentence": { methodName: "titleCase", returnType: "string", params: [{ name: "s", type: "string" }] },
+  "Simple Interest Calculator": { methodName: "simpleInterest", returnType: "long", params: [{ name: "principal", type: "int" }, { name: "ratePercent", type: "int" }, { name: "years", type: "int" }] },
+  "Employee Bonus Eligibility": { methodName: "isEligibleForBonus", returnType: "boolean", params: [{ name: "years", type: "int" }, { name: "rating", type: "int" }] },
+  "Compare Circle Areas": { methodName: "isFirstCircleLarger", returnType: "boolean", params: [{ name: "r1", type: "double" }, { name: "r2", type: "double" }] },
+  "Price After Discount": { methodName: "priceAfterDiscount", returnType: "long", params: [{ name: "price", type: "double" }, { name: "discountPercent", type: "int" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -65,6 +69,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "removeVowels", returnType: "string", params: [{ name: "s", type: "string" }] },
   "Read a string and print \"true\" if every character in it is a digit, or \"false\" otherwise.":
     { methodName: "isNumeric", returnType: "boolean", params: [{ name: "s", type: "string" }] },
+  "Read a rectangle's length and width, and print its area and perimeter as two space-separated integers (area first, then perimeter).":
+    { methodName: "rectangleAreaPerimeter", returnType: "int[]", params: [{ name: "length", type: "int" }, { name: "width", type: "int" }] },
+  "Read the radius of a circle and print the floor of its area (using pi) as an integer.":
+    { methodName: "circleAreaFloor", returnType: "int", params: [{ name: "radius", type: "double" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {
