@@ -78,19 +78,26 @@ function sanitizeQuestion(q) {
   };
 }
 
+// "Soft" narrowing fields — a combination that hasn't been seeded yet falls back to the broader
+// pool rather than a hard error (company-specific/package-band/experience-level banks are seeded
+// modestly on purpose and grown via the admin CMS over time). subject/difficulty/aptitudeCategory
+// stay "hard" filters, applied unconditionally when present, unchanged from before.
+const SOFT_FILTER_FIELDS = ["company", "packageBand", "experienceLevel"];
+
 async function pickQuestions(category, config, count) {
-  const where = { category, isActive: true, generatedForStudentId: null };
-  if (config.subject) where.subject = config.subject;
-  if (config.difficulty) where.difficulty = config.difficulty;
-  if (config.aptitudeCategory) where.aptitudeCategory = config.aptitudeCategory;
-  if (config.company) where.company = config.company;
-  let pool = await prisma.interviewQuestion.findMany({ where });
-  // A company filter that turns up nothing (a category/company combination that hasn't been
-  // seeded yet) falls back to the general pool rather than a hard error — company-specific
-  // banks are seeded modestly on purpose and grown via the admin CMS over time.
-  if (pool.length === 0 && config.company) {
-    const { company, ...rest } = where;
-    pool = await prisma.interviewQuestion.findMany({ where: rest });
+  const hardWhere = { category, isActive: true, generatedForStudentId: null };
+  if (config.subject) hardWhere.subject = config.subject;
+  if (config.difficulty) hardWhere.difficulty = config.difficulty;
+  if (config.aptitudeCategory) hardWhere.aptitudeCategory = config.aptitudeCategory;
+
+  const softWhere = {};
+  for (const field of SOFT_FILTER_FIELDS) {
+    if (config[field]) softWhere[field] = config[field];
+  }
+
+  let pool = await prisma.interviewQuestion.findMany({ where: { ...hardWhere, ...softWhere } });
+  if (pool.length === 0 && Object.keys(softWhere).length > 0) {
+    pool = await prisma.interviewQuestion.findMany({ where: hardWhere });
   }
   return shuffle(pool).slice(0, count || SESSION_QUESTION_COUNT[category] || 6);
 }

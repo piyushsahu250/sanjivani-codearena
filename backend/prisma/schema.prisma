@@ -1039,6 +1039,37 @@ enum AptitudeCategory {
   DATA_INTERPRETATION
 }
 
+// AI-generated-content workflow status — shared by InterviewQuestionDraft and CompanyPatternNote.
+// PENDING rows are never visible to students; only an explicit admin approve/reject action moves
+// a row out of PENDING (see interviewDrafts.js's approve/reject routes).
+enum DraftStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Admin-set-only labels on an already-live InterviewQuestion (see frequencyTag below) — these are
+// a human's editorial judgment call at approval time, never auto-assigned by the AI generator, so
+// "Trending"/"Frequently Asked" is never presented as a fabricated real-world statistic.
+enum FrequencyTag {
+  FREQUENTLY_ASKED
+  RECENTLY_ASKED
+  TRENDING
+  COMPANY_SPECIFIC
+}
+
+enum PackageBand {
+  LPA_3_5
+  LPA_5_10
+  LPA_10_20
+  LPA_20_PLUS
+}
+
+enum ExperienceLevel {
+  FRESHER
+  EXPERIENCED
+}
+
 // Unified question bank. Which fields apply depends on `category`:
 // HR/TECHNICAL use expectedKeywords+modelAnswer (free-text, heuristically
 // graded); APTITUDE uses options+correctAnswer (exact-match, like a quiz);
@@ -1087,6 +1118,15 @@ model InterviewQuestion {
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
 
+  // Browse/catalog metadata for the AI-Powered Auto-Updating Mock Interview System — deliberately
+  // NOT read by sanitizeQuestion() (the mid-session student payload), only by the catalog-browse
+  // endpoints, so these never bleed into a live interview. frequencyTag is set by a human only,
+  // at draft-approval time (see InterviewQuestionDraft below) — never auto-assigned by the AI
+  // generator, so it can never be a laundered fabricated statistic.
+  frequencyTag     FrequencyTag?
+  packageBand      PackageBand?
+  experienceLevel  ExperienceLevel?
+
   // Rule-based "adaptive" follow-up: when an admin links a natural next question (e.g. "Explain
   // JVM" -> "How does JVM differ from JRE?"), answering this question inserts that one as the
   // next question in the session. Deterministic and admin-authored, not a real NLU model
@@ -1103,6 +1143,81 @@ model InterviewQuestion {
   @@index([subject])
   @@index([company])
   @@index([generatedForStudentId])
+  @@index([frequencyTag])
+  @@index([packageBand])
+  @@index([experienceLevel])
+}
+
+// AI-generated candidate question, held here — structurally separate from InterviewQuestion —
+// until an admin explicitly approves it. This is a deliberate structural guarantee rather than a
+// status-filter convention: pickQuestions() and every other student-facing query only ever reads
+// InterviewQuestion, a table this model's rows never touch until POST /admin/drafts/questions/:id/approve
+// performs an explicit create — there is no code path by which a PENDING row can reach a real
+// interview session. Mirrors InterviewQuestion's own field set field-for-field so the approve step
+// is a straight copy, plus the review/audit metadata below.
+model InterviewQuestionDraft {
+  id                    String   @id @default(uuid())
+  category              InterviewCategory
+  subject               String?
+  company               String?
+  aptitudeCategory      AptitudeCategory?
+  difficulty            Difficulty @default(EASY)
+  title                 String?
+  prompt                String
+  expectedKeywords      Json?
+  modelAnswer           String?
+  options               Json?
+  correctAnswer         Json?
+  explanation           String?
+  starterCode           String?
+  starterCodeByLanguage Json?
+  testCases             Json?
+  language              String?
+  tags                  Json?
+
+  evaluationType    String @default("STDIO")
+  functionSignature Json?
+
+  estimatedTimeMin   Int?
+  realWorldScenario  String?
+  constraints        String?
+  inputFormat        String?
+  outputFormat       String?
+  notes              String?
+  edgeCases          String?
+  problemExplanation String?
+
+  status            DraftStatus @default(PENDING)
+  sourceRun         String?  // batch id — set when created by the Phase 5 scheduler, null for an admin-triggered one-off generate
+  generatedAt       DateTime @default(now())
+  reviewedByAdminId String?
+  reviewedAt        DateTime?
+  rejectionReason   String?
+  approvedQuestionId String? // set once promoted — the resulting InterviewQuestion.id, for audit traceability
+
+  @@index([status])
+  @@index([company])
+  @@index([category])
+}
+
+// AI-drafted "hiring pattern" checklist for a company+category (e.g. Amazon/CODING ->
+// ["OA Questions","Interview Questions"]), same PENDING/APPROVED/REJECTED review gate as
+// InterviewQuestionDraft. Only APPROVED rows are ever returned by GET /companies/:company/pattern,
+// and that response is always wrapped `{ aiEstimated: true, ... }` — this is AI-estimated pattern
+// commentary, never presented as verified company data.
+model CompanyPatternNote {
+  id                String      @id @default(uuid())
+  company           String
+  category          InterviewCategory
+  checklistItems    Json        // string[]
+  status            DraftStatus @default(PENDING)
+  sourceRun         String?     // batch id — set when created by the Phase 5 scheduler, null for an admin-triggered one-off generate
+  generatedAt       DateTime    @default(now())
+  reviewedByAdminId String?
+  reviewedAt        DateTime?
+
+  @@index([status])
+  @@index([company])
 }
 
 // One row per attempt. `category` HR/TECHNICAL/CODING/APTITUDE is a focused single-type

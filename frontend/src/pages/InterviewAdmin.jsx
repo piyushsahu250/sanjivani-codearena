@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import ProblemStatementFields from "../components/ProblemStatementFields";
 import TestCasesEditor from "../components/TestCasesEditor";
 import EvaluationTypeFields, { EMPTY_SIGNATURE } from "../components/EvaluationTypeFields";
+import { CATEGORIES, APTITUDE_CATS } from "../constants/interviewCategories";
 
 const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, marginTop: 4 };
 const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--ink-dim)" };
-const CATEGORIES = ["HR", "TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL", "MANAGERIAL"];
-const APTITUDE_CATS = ["QUANTITATIVE", "LOGICAL", "VERBAL", "DATA_INTERPRETATION"];
 
 const EMPTY_Q = {
   category: "HR", subject: "", company: "", aptitudeCategory: "", difficulty: "EASY", title: "", prompt: "",
@@ -28,12 +28,14 @@ export default function InterviewAdmin() {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_Q);
   const [signature, setSignature] = useState(EMPTY_SIGNATURE);
+  const [pendingDraftCount, setPendingDraftCount] = useState(0);
   const fileRef = useRef(null);
 
   function loadAll() {
     api.get("/interview/admin/stats").then((res) => setStats(res.data));
     api.get("/interview/admin/students").then((res) => setStudents(res.data.rows));
     api.get("/interview/admin/weak-topics").then((res) => setWeakTopics(res.data));
+    api.get("/interview/admin/drafts/questions", { params: { status: "PENDING", pageSize: 1 } }).then((res) => setPendingDraftCount(res.data.total)).catch(() => {});
     loadQuestions();
   }
   function loadQuestions() {
@@ -115,8 +117,15 @@ export default function InterviewAdmin() {
     <div>
       <Navbar />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px" }}>
-        <h1>AI Mock Interview — Admin</h1>
-        <ChalkUnderline />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <h1>AI Mock Interview — Admin</h1>
+            <ChalkUnderline />
+          </div>
+          <Link to="/staff/interview-drafts" className="btn btn-ghost">
+            🤖 AI Draft Review{pendingDraftCount > 0 ? ` (${pendingDraftCount} pending)` : ""}
+          </Link>
+        </div>
 
         {stats && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 24 }}>
@@ -237,16 +246,7 @@ export default function InterviewAdmin() {
         )}
 
         <div style={{ display: "grid", gap: 8, marginTop: 16, maxHeight: 400, overflowY: "auto" }}>
-          {(questions || []).map((q) => (
-            <div key={q.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-              <div>
-                <span className="badge">{q.category}{q.subject ? ` · ${q.subject}` : ""}{q.aptitudeCategory ? ` · ${q.aptitudeCategory}` : ""}{q.company ? ` · ${q.company}` : ""}</span>
-                {q.followUpQuestionId && <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>↳ has follow-up</span>}
-                <div style={{ marginTop: 4 }}>{q.prompt}</div>
-              </div>
-              <button style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 12 }} onClick={() => deleteQuestion(q.id)}>Delete</button>
-            </div>
-          ))}
+          {(questions || []).map((q) => <QuestionRow key={q.id} q={q} onDelete={deleteQuestion} />)}
           {questions && questions.length === 0 && <p style={{ fontSize: 13, color: "var(--ink-dim)" }}>No questions in this category yet.</p>}
         </div>
 
@@ -278,6 +278,46 @@ export default function InterviewAdmin() {
           {weakTopics && <p style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 4 }}>Based on {weakTopics.totalReports} report{weakTopics.totalReports === 1 ? "" : "s"}.</p>}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Real, platform-usage analytics (never AI-authored text — see interviewDrafts.js's
+// GET /admin/questions/:id/analytics) shown in its own visually distinct "Platform Usage (real)"
+// card, fetched only when the admin expands a row, so the question list itself stays cheap to load.
+function QuestionRow({ q, onDelete }) {
+  const [usage, setUsage] = useState(null);
+  const [loadingUsage, setLoadingUsage] = useState(false);
+
+  function toggleUsage() {
+    if (usage) { setUsage(null); return; }
+    setLoadingUsage(true);
+    api.get(`/interview/admin/questions/${q.id}/analytics`).then((res) => setUsage(res.data.realUsage)).finally(() => setLoadingUsage(false));
+  }
+
+  return (
+    <div className="card" style={{ padding: 12, fontSize: 13 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <span className="badge">{q.category}{q.subject ? ` · ${q.subject}` : ""}{q.aptitudeCategory ? ` · ${q.aptitudeCategory}` : ""}{q.company ? ` · ${q.company}` : ""}</span>
+          {q.followUpQuestionId && <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>↳ has follow-up</span>}
+          <div style={{ marginTop: 4 }}>{q.prompt}</div>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
+          <button style={{ background: "none", border: "none", color: "var(--ink-dim)", fontSize: 12 }} onClick={toggleUsage}>
+            {loadingUsage ? "Loading…" : usage ? "Hide usage" : "View usage"}
+          </button>
+          <button style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 12 }} onClick={() => onDelete(q.id)}>Delete</button>
+        </div>
+      </div>
+      {usage && (
+        <div className="mono" style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "var(--card-bg, #F7F7F5)", border: "1px solid var(--line)", fontSize: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Platform Usage (real)</div>
+          Served {usage.timesServed} time{usage.timesServed === 1 ? "" : "s"}
+          {usage.averageScore != null && ` · Avg score ${usage.averageScore}%`}
+          {usage.skipRate != null && ` · Skip rate ${usage.skipRate}%`}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,101 @@
+const prisma = require("../prisma");
+const { askClaudeJson } = require("../utils/aiClient");
+
+// Generates AI-drafted InterviewQuestion candidates and CompanyPatternNote checklists — the core
+// content-generation logic behind the AI-Powered Auto-Updating Mock Interview System. Deliberately
+// factored out of routes/interviewDrafts.js so both the admin-triggered "Generate" button and the
+// (opt-in, off-by-default) scheduled auto-refresh job call the exact same implementation — one
+// place that owns "what we ask Claude for and how we validate what comes back."
+//
+// Everything this module writes lands with status "PENDING" and is never read by any
+// student-facing query (pickQuestions() in routes/interview.js only ever reads InterviewQuestion,
+// a table this module never writes to directly) — a human must explicitly approve via
+// routes/interviewDrafts.js before a draft becomes a real, servable question.
+
+const CATEGORY_SCHEMA_HINT = {
+  CODING:
+    'Return exactly {"questions": [{"title": string, "prompt": string, "difficulty": "EASY"|"MEDIUM"|"HARD", ' +
+    '"tags": string[], "testCases": [{"input": string, "expected": string, "isHidden": boolean}]}]}. ' +
+    "Each question's testCases array must contain EXACTLY 2 entries with isHidden:false and EXACTLY 10 entries " +
+    "with isHidden:true (12 total) — this platform requires that minimum before a coding question can be " +
+    "published. `prompt` is the full original problem statement (goal, constraints, sample input/output).",
+  APTITUDE:
+    'Return exactly {"questions": [{"title": string, "prompt": string, ' +
+    '"aptitudeCategory": "QUANTITATIVE"|"LOGICAL"|"VERBAL"|"DATA_INTERPRETATION", "options": string[] (exactly 4), ' +
+    '"correctAnswer": [number] (single-element array, the correct option\'s 0-based index), "explanation": string}]}.',
+  DEFAULT:
+    'Return exactly {"questions": [{"title": string, "prompt": string, ' +
+    '"expectedKeywords": string[] (3-6 concepts a strong answer should mention), "modelAnswer": string}]}.',
+};
+
+const SYSTEM_PROMPT =
+  "You are drafting ORIGINAL practice interview questions for a student mock-interview platform. " +
+  "Never reproduce a real LeetCode/HackerRank/company OA problem's exact wording — write a new problem " +
+  "in a similar style, topic, and difficulty to what is commonly and publicly known to be asked in that " +
+  "category (and, if given, at that company), based on general public knowledge, not any specific copied " +
+  "source. Respond with ONLY the requested JSON, no commentary.";
+
+function buildQuestionPrompt({ category, company, difficulty, count }) {
+  const schemaHint = CATEGORY_SCHEMA_HINT[category] || CATEGORY_SCHEMA_HINT.DEFAULT;
+  const companyLine = company
+    ? `Style them like questions commonly associated with ${company}'s interview process for this category.`
+    : "These are for the general practice pool (not tied to a specific company).";
+  return (
+    `Generate ${count} original ${category} interview practice question(s)${difficulty ? ` at ${difficulty} difficulty` : ""}. ` +
+    `${companyLine} ${schemaHint}`
+  );
+}
+
+// Clamp so one generation call can't ask for an unbounded amount of (billed) content.
+function clampCount(count) {
+  return Math.min(10, Math.max(1, Number(count) || 3));
+}
+
+async function generateQuestionDrafts({ category, company, count, difficulty, packageBand, experienceLevel, sourceRun }) {
+  const n = clampCount(count);
+  const draft = await askClaudeJson({
+    system: SYSTEM_PROMPT,
+    prompt: buildQuestionPrompt({ category, company, difficulty, count: n }),
+    maxTokens: category === "CODING" ? 4096 : 2048,
+  });
+  const questions = Array.isArray(draft?.questions) ? draft.questions : [];
+  const rows = await Promise.all(
+    questions.slice(0, n).map((q) =>
+      prisma.interviewQuestionDraft.create({
+        data: {
+          category,
+          company: company || null,
+          difficulty: q.difficulty || difficulty || "EASY",
+          title: q.title || null,
+          prompt: q.prompt || "",
+          expectedKeywords: q.expectedKeywords ?? undefined,
+          modelAnswer: q.modelAnswer || null,
+          aptitudeCategory: q.aptitudeCategory || null,
+          options: q.options ?? undefined,
+          correctAnswer: q.correctAnswer ?? undefined,
+          explanation: q.explanation || null,
+          tags: Array.isArray(q.tags) && q.tags.length > 0 ? q.tags : undefined,
+          testCases: q.testCases ?? undefined,
+          sourceRun: sourceRun || null,
+        },
+      })
+    )
+  );
+  return rows;
+}
+
+async function generateCompanyPatternNote({ company, category, sourceRun }) {
+  const draft = await askClaudeJson({
+    system: SYSTEM_PROMPT,
+    prompt:
+      `Summarize, from general public knowledge, the commonly-reported ${category} interview pattern at ${company} ` +
+      'as a short checklist. Return exactly {"checklistItems": string[]} with 2-6 short items (e.g. "OA Questions", ' +
+      '"Leadership Principles", "System Design Round"). This is a general pattern summary, not a claim about any ' +
+      "specific real question.",
+    maxTokens: 512,
+  });
+  const checklistItems = Array.isArray(draft?.checklistItems) ? draft.checklistItems.filter((s) => typeof s === "string" && s.trim()) : [];
+  return prisma.companyPatternNote.create({ data: { company, category, checklistItems, sourceRun: sourceRun || undefined } });
+}
+
+module.exports = { generateQuestionDrafts, generateCompanyPatternNote, clampCount };

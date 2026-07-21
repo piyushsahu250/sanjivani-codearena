@@ -27,6 +27,7 @@ const backupRoutes = require("./routes/backup");
 const exportRoutes = require("./routes/exports");
 const aiQuestionRoutes = require("./routes/aiQuestions");
 const challengeRoutes = require("./routes/challenges");
+const interviewDraftRoutes = require("./routes/interviewDrafts");
 
 const app = express();
 // Render sits in front of this service behind a reverse proxy — without trusting it, req.ip
@@ -83,6 +84,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/gamification", gamificationRoutes);
 app.use("/api/resume", resumeRoutes);
 app.use("/api/interview", interviewRoutes);
+app.use("/api/interview", interviewDraftRoutes);
 app.use("/api/module-coding", moduleCodingRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/certificates", certificateRoutes);
