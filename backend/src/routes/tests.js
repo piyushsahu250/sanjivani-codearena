@@ -131,6 +131,7 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
       requireFullscreen, requireWebcam, requireMicrophone,
       shuffleQuestions, shuffleOptions,
       questionSelectionMode, randomBankFolderId, randomQuestionsPerStudent, difficultyDistribution,
+      company,
     } = req.body;
 
     const mode = SELECTION_MODES.includes(questionSelectionMode) ? questionSelectionMode : "FIXED";
@@ -143,6 +144,7 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
         code: code?.trim() || null,
         description,
         instructions: instructions?.trim() || null,
+        company: company?.trim() || null,
         durationMin: durationMin || 60,
         passingMarks: passingMarks !== undefined && passingMarks !== "" ? Number(passingMarks) : null,
         showResults: showResults === undefined ? true : !!showResults,
@@ -182,6 +184,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
       requireFullscreen, requireWebcam, requireMicrophone,
       shuffleQuestions, shuffleOptions,
       questionSelectionMode, randomBankFolderId, randomQuestionsPerStudent, difficultyDistribution,
+      company,
     } = req.body;
 
     const mode = questionSelectionMode !== undefined
@@ -204,6 +207,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
       code: code !== undefined ? (code?.trim() || null) : existing.code,
       description: description ?? existing.description,
       instructions: instructions !== undefined ? (instructions?.trim() || null) : existing.instructions,
+      company: company !== undefined ? (company?.trim() || null) : existing.company,
       durationMin: durationMin !== undefined ? Number(durationMin) : existing.durationMin,
       passingMarks: passingMarks !== undefined ? (passingMarks === "" ? null : Number(passingMarks)) : existing.passingMarks,
       showResults: showResults === undefined ? existing.showResults : !!showResults,

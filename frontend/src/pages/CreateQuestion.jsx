@@ -3,6 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import FolderPicker from "../components/FolderPicker";
+import ProblemStatementFields from "../components/ProblemStatementFields";
+import TestCasesEditor from "../components/TestCasesEditor";
 
 const QUESTION_TYPES = [
   { value: "CODING", label: "Coding" },
@@ -23,6 +25,8 @@ const emptyForm = {
   difficulty: "EASY", points: 10, explanation: "",
   timeLimitMs: 2000, memoryLimitKb: "", starterCode: "", tags: "",
   evaluationType: "STDIO", sqlSchema: "",
+  estimatedTimeMin: null, realWorldScenario: "", constraints: "", inputFormat: "",
+  outputFormat: "", notes: "", edgeCases: "", problemExplanation: "",
 };
 
 const emptySignature = { methodName: "", returnType: "int", params: [{ name: "", type: "int" }] };
@@ -104,6 +108,10 @@ export default function CreateQuestion() {
         timeLimitMs: q.timeLimitMs ?? 2000, memoryLimitKb: q.memoryLimitKb ? Math.round(q.memoryLimitKb / 1024) : "",
         starterCode: q.starterCode || "", tags: Array.isArray(q.tags) ? q.tags.join(", ") : "",
         evaluationType: q.evaluationType || "STDIO", sqlSchema: q.sqlSchema || "",
+        estimatedTimeMin: q.estimatedTimeMin ?? null,
+        realWorldScenario: q.realWorldScenario || "", constraints: q.constraints || "",
+        inputFormat: q.inputFormat || "", outputFormat: q.outputFormat || "",
+        notes: q.notes || "", edgeCases: q.edgeCases || "", problemExplanation: q.problemExplanation || "",
       });
       if (q.functionSignature) setSignature(q.functionSignature);
       if (q.questionType === "CODING" || q.questionType === "SQL") {
@@ -119,20 +127,6 @@ export default function CreateQuestion() {
 
   function updateField(field) {
     return (e) => setForm({ ...form, [field]: e.target.value });
-  }
-
-  function updateCase(idx, field, value) {
-    const next = [...testCases];
-    next[idx] = { ...next[idx], [field]: value };
-    setTestCases(next);
-  }
-
-  function addCase() {
-    setTestCases([...testCases, { input: "", expected: "", isHidden: true, explanation: "" }]);
-  }
-
-  function removeCase(idx) {
-    setTestCases(testCases.filter((_, i) => i !== idx));
   }
 
   function updateSignatureParam(idx, field, value) {
@@ -292,6 +286,10 @@ export default function CreateQuestion() {
           <label style={labelStyle}>Question Text</label>
           <textarea style={{ ...inputStyle, minHeight: 140 }} required value={form.description} onChange={updateField("description")} placeholder="Problem statement / question text…" />
 
+          {!isQuiz && (
+            <ProblemStatementFields value={form} onChange={(patch) => setForm((f) => ({ ...f, ...patch }))} />
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: isQuiz ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>Difficulty Level</label>
@@ -413,40 +411,14 @@ export default function CreateQuestion() {
                 </>
               )}
 
-              <div style={{ marginTop: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>Test cases</div>
-                <button type="button" className="btn btn-ghost" onClick={addCase}>+ Add test case</button>
-              </div>
-
-              {testCases.map((tc, idx) => (
-                <div key={idx} className="card" style={{ padding: 16, marginTop: 10 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <div>
-                      <label style={labelStyle}>{form.evaluationType === "FUNCTION" ? "Input (one line per parameter)" : "Input (stdin)"}</label>
-                      <textarea style={{ ...inputStyle, fontFamily: "var(--font-mono)", minHeight: 60 }} value={tc.input} onChange={(e) => updateCase(idx, "input", e.target.value)} />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>Expected {form.evaluationType === "FUNCTION" ? "return value" : "stdout"}</label>
-                      <textarea style={{ ...inputStyle, fontFamily: "var(--font-mono)", minHeight: 60 }} value={tc.expected} onChange={(e) => updateCase(idx, "expected", e.target.value)} />
-                    </div>
-                  </div>
-                  {!tc.isHidden && (
-                    <>
-                      <label style={{ ...labelStyle, marginTop: 8 }}>Explanation (optional, shown to students alongside this sample)</label>
-                      <input style={inputStyle} value={tc.explanation || ""} onChange={(e) => updateCase(idx, "explanation", e.target.value)} />
-                    </>
-                  )}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-                    <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-                      <input type="checkbox" checked={tc.isHidden} onChange={(e) => updateCase(idx, "isHidden", e.target.checked)} />
-                      Hidden (not shown to students as a sample)
-                    </label>
-                    {testCases.length > 1 && (
-                      <button type="button" onClick={() => removeCase(idx)} style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 13 }}>Remove</button>
-                    )}
-                  </div>
-                </div>
-              ))}
+              <TestCasesEditor
+                testCases={testCases}
+                onChange={setTestCases}
+                inputLabel={form.evaluationType === "FUNCTION" ? "Input (one line per parameter)" : "Input (stdin)"}
+                expectedLabel={`Expected ${form.evaluationType === "FUNCTION" ? "return value" : "stdout"}`}
+                minVisible={2}
+                minHidden={10}
+              />
             </>
           )}
 
@@ -458,43 +430,20 @@ export default function CreateQuestion() {
               </p>
               <textarea style={{ ...inputStyle, minHeight: 100, fontFamily: "var(--font-mono)" }} value={form.sqlSchema} onChange={updateField("sqlSchema")} placeholder="CREATE TABLE ...; INSERT INTO ...;" />
 
-              <div style={{ marginTop: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>Test cases</div>
-                <button type="button" className="btn btn-ghost" onClick={addCase}>+ Add test case</button>
-              </div>
               <p style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 2 }}>
                 Each case grades the same student query against the setup SQL above, plus this case's own optional extra setup SQL — the LeetCode-style pattern of varying the data per case while asking for one query.
               </p>
 
-              {testCases.map((tc, idx) => (
-                <div key={idx} className="card" style={{ padding: 16, marginTop: 10 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <div>
-                      <label style={labelStyle}>Extra setup SQL for this case (optional)</label>
-                      <textarea style={{ ...inputStyle, fontFamily: "var(--font-mono)", minHeight: 60 }} value={tc.input} onChange={(e) => updateCase(idx, "input", e.target.value)} placeholder="INSERT INTO ... (leave blank to just use the setup SQL above)" />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>Expected result (one row per line, tab-separated columns)</label>
-                      <textarea style={{ ...inputStyle, fontFamily: "var(--font-mono)", minHeight: 60 }} value={tc.expected} onChange={(e) => updateCase(idx, "expected", e.target.value)} placeholder={"Ravi\t62000"} />
-                    </div>
-                  </div>
-                  {!tc.isHidden && (
-                    <>
-                      <label style={{ ...labelStyle, marginTop: 8 }}>Explanation (optional, shown to students alongside this sample)</label>
-                      <input style={inputStyle} value={tc.explanation || ""} onChange={(e) => updateCase(idx, "explanation", e.target.value)} />
-                    </>
-                  )}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-                    <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-                      <input type="checkbox" checked={tc.isHidden} onChange={(e) => updateCase(idx, "isHidden", e.target.checked)} />
-                      Hidden (not shown to students as a sample)
-                    </label>
-                    {testCases.length > 1 && (
-                      <button type="button" onClick={() => removeCase(idx)} style={{ background: "none", border: "none", color: "var(--rust)", fontSize: 13 }}>Remove</button>
-                    )}
-                  </div>
-                </div>
-              ))}
+              <TestCasesEditor
+                testCases={testCases}
+                onChange={setTestCases}
+                inputLabel="Extra setup SQL for this case (optional)"
+                inputPlaceholder="INSERT INTO ... (leave blank to just use the setup SQL above)"
+                expectedLabel="Expected result (one row per line, tab-separated columns)"
+                expectedPlaceholder={"Ravi\t62000"}
+                minVisible={1}
+                minHidden={5}
+              />
             </>
           )}
 

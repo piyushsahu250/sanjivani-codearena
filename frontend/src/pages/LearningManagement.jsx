@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import ProblemStatementFields from "../components/ProblemStatementFields";
+import TestCasesEditor from "../components/TestCasesEditor";
 
 const inputStyle = { width: "100%", padding: "9px 11px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, marginTop: 6 };
 const labelStyle = { fontSize: 12, fontWeight: 600, color: "var(--ink-dim)", marginTop: 10, display: "block" };
@@ -319,7 +321,12 @@ function LessonDetailPanel({ lessonId, lessonSummary, onRefresh }) {
   );
 }
 
-const EMPTY_Q = { type: "MCQ", prompt: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "", starterCode: "", testCases: [{ input: "", expected: "", isHidden: false }], language: "java" };
+const EMPTY_Q = {
+  type: "MCQ", prompt: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "", starterCode: "",
+  testCases: [{ input: "", expected: "", isHidden: false, explanation: "" }], language: "java",
+  title: "", tags: "", estimatedTimeMin: null, realWorldScenario: "", constraints: "",
+  inputFormat: "", outputFormat: "", notes: "", edgeCases: "", problemExplanation: "",
+};
 
 function PracticeQuestionsPanel({ lesson, onRefresh }) {
   const [adding, setAdding] = useState(false);
@@ -331,7 +338,14 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
     setSaving(true);
     try {
       const payload = { ...form, order: lesson.questions?.length || 0 };
-      if (form.type !== "CODING") { payload.starterCode = undefined; payload.testCases = undefined; payload.language = undefined; }
+      payload.tags = form.tags ? form.tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+      if (form.type !== "CODING") {
+        payload.starterCode = undefined; payload.testCases = undefined; payload.language = undefined;
+        payload.title = undefined; payload.tags = undefined;
+        payload.estimatedTimeMin = undefined; payload.realWorldScenario = undefined; payload.constraints = undefined;
+        payload.inputFormat = undefined; payload.outputFormat = undefined; payload.notes = undefined;
+        payload.edgeCases = undefined; payload.problemExplanation = undefined;
+      }
       if (form.type !== "MCQ" && form.type !== "DEBUG" && form.type !== "OUTPUT_PREDICTION") payload.options = undefined;
       if (form.type === "FILL_BLANK") payload.correctAnswer = form.correctAnswer;
       await api.post(`/learning/lessons/${lesson.id}/questions`, payload);
@@ -363,6 +377,7 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
           <div key={q.id} className="card" style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
             <div>
               <span className="badge">{q.type}</span>
+              {q.title && <span style={{ marginLeft: 8, fontWeight: 600 }}>{q.title}</span>}
               {q.type === "CODING" && Array.isArray(q.testCases) && (
                 <span className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginLeft: 8 }}>
                   {q.testCases.length} test case(s) — {q.testCases.filter((tc) => tc.isHidden).length} hidden
@@ -415,6 +430,13 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
 
           {form.type === "CODING" && (
             <>
+              <label style={labelStyle}>Title (optional)</label>
+              <input style={inputStyle} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+              <label style={labelStyle}>Tags (comma-separated, optional)</label>
+              <input style={inputStyle} value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="Arrays, Loops" />
+
+              <ProblemStatementFields value={form} onChange={(patch) => setForm((f) => ({ ...f, ...patch }))} />
+
               <label style={labelStyle}>Starter code</label>
               <textarea style={{ ...inputStyle, minHeight: 80, fontFamily: "var(--font-mono)", fontSize: 12 }} value={form.starterCode} onChange={(e) => setForm({ ...form, starterCode: e.target.value })} />
               <label style={labelStyle}>Default language</label>
@@ -425,17 +447,8 @@ function PracticeQuestionsPanel({ lesson, onRefresh }) {
                 <option value="c">C</option>
                 <option value="cpp">C++</option>
               </select>
-              <label style={labelStyle}>Test cases (at least 2 visible + 2 hidden)</label>
-              {form.testCases.map((tc, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, marginTop: 6, alignItems: "center" }}>
-                  <input style={{ ...inputStyle, marginTop: 0 }} placeholder="input" value={tc.input} onChange={(e) => { const t = [...form.testCases]; t[i] = { ...t[i], input: e.target.value }; setForm({ ...form, testCases: t }); }} />
-                  <input style={{ ...inputStyle, marginTop: 0 }} placeholder="expected output" value={tc.expected} onChange={(e) => { const t = [...form.testCases]; t[i] = { ...t[i], expected: e.target.value }; setForm({ ...form, testCases: t }); }} />
-                  <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
-                    <input type="checkbox" checked={!!tc.isHidden} onChange={(e) => { const t = [...form.testCases]; t[i] = { ...t[i], isHidden: e.target.checked }; setForm({ ...form, testCases: t }); }} /> Hidden
-                  </label>
-                </div>
-              ))}
-              <button type="button" className="btn btn-ghost" style={{ fontSize: 12, marginTop: 8 }} onClick={() => setForm({ ...form, testCases: [...form.testCases, { input: "", expected: "", isHidden: true }] })}>+ Add test case</button>
+
+              <TestCasesEditor testCases={form.testCases} onChange={(tc) => setForm({ ...form, testCases: tc })} minVisible={2} minHidden={10} />
             </>
           )}
 
@@ -613,7 +626,12 @@ function ConfigFields({ form, setForm, toggleLanguage }) {
   );
 }
 
-const EMPTY_CODING_Q = { title: "", description: "", difficulty: "EASY", starterCodeByLanguage: {}, timeLimitMs: 3000, testCases: [{ input: "", expected: "", isHidden: false }] };
+const EMPTY_CODING_Q = {
+  title: "", description: "", difficulty: "EASY", starterCodeByLanguage: {}, timeLimitMs: 3000,
+  testCases: [{ input: "", expected: "", isHidden: false, explanation: "" }], tags: "",
+  estimatedTimeMin: null, realWorldScenario: "", constraints: "", inputFormat: "", outputFormat: "",
+  notes: "", edgeCases: "", problemExplanation: "",
+};
 
 // Every language a Module Coding Test can allow (Test.allowedLanguages) — shown unconditionally
 // here since this panel isn't scoped to one test's specific language selection. Leaving one blank
@@ -644,6 +662,7 @@ function CodingQuestionsPanel({ testId, questions, onRefresh }) {
         ...form,
         starterCode: entries[0]?.[1] || "",
         starterCodeByLanguage: entries.length > 0 ? Object.fromEntries(entries) : undefined,
+        tags: form.tags ? form.tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined,
       };
       await api.post(`/module-coding/admin/tests/${testId}/questions`, payload);
       setForm(EMPTY_CODING_Q);
@@ -700,6 +719,11 @@ function CodingQuestionsPanel({ testId, questions, onRefresh }) {
           <select style={inputStyle} value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })}>
             <option value="EASY">Easy</option><option value="MEDIUM">Medium</option><option value="HARD">Hard</option>
           </select>
+          <label style={labelStyle}>Tags (comma-separated, optional)</label>
+          <input style={inputStyle} value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="Arrays, Recursion" />
+
+          <ProblemStatementFields value={form} onChange={(patch) => setForm((f) => ({ ...f, ...patch }))} />
+
           <label style={labelStyle}>Starter code per language (optional — languages left blank fall back to a generic default template instead of another language's code)</label>
           {CODING_LANGS.map((l) => (
             <div key={l.id} style={{ marginTop: 6 }}>
@@ -711,17 +735,7 @@ function CodingQuestionsPanel({ testId, questions, onRefresh }) {
               />
             </div>
           ))}
-          <label style={labelStyle}>Test cases</label>
-          {form.testCases.map((tc, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, marginTop: 6, alignItems: "center" }}>
-              <input style={{ ...inputStyle, marginTop: 0 }} placeholder="input" value={tc.input} onChange={(e) => { const t = [...form.testCases]; t[i] = { ...t[i], input: e.target.value }; setForm({ ...form, testCases: t }); }} />
-              <input style={{ ...inputStyle, marginTop: 0 }} placeholder="expected output" value={tc.expected} onChange={(e) => { const t = [...form.testCases]; t[i] = { ...t[i], expected: e.target.value }; setForm({ ...form, testCases: t }); }} />
-              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
-                <input type="checkbox" checked={tc.isHidden} onChange={(e) => { const t = [...form.testCases]; t[i] = { ...t[i], isHidden: e.target.checked }; setForm({ ...form, testCases: t }); }} /> Hidden
-              </label>
-            </div>
-          ))}
-          <button type="button" className="btn btn-ghost" style={{ fontSize: 12, marginTop: 8 }} onClick={() => setForm({ ...form, testCases: [...form.testCases, { input: "", expected: "", isHidden: true }] })}>+ Add test case</button>
+          <TestCasesEditor testCases={form.testCases} onChange={(tc) => setForm({ ...form, testCases: tc })} minVisible={2} minHidden={10} />
           <button className="btn btn-primary" style={{ width: "100%", marginTop: 14 }} disabled={saving}>{saving ? "Adding…" : "Add question"}</button>
         </form>
       )}

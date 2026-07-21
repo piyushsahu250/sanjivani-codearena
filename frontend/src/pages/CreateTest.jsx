@@ -9,7 +9,7 @@ import FolderPicker from "../components/FolderPicker";
 const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "True/False", MULTISELECT: "Multiple Select" };
 
 const emptyForm = {
-  title: "", code: "", description: "", instructions: "", durationMin: 60, passingMarks: "", showResults: true, startTime: "", endTime: "",
+  title: "", code: "", description: "", instructions: "", company: "", durationMin: 60, passingMarks: "", showResults: true, startTime: "", endTime: "",
   requireFullscreen: true, requireWebcam: false, requireMicrophone: false,
   shuffleQuestions: true, shuffleOptions: false,
   questionSelectionMode: "FIXED", randomBankFolderId: "", randomQuestionsPerStudent: "",
@@ -53,7 +53,7 @@ export default function CreateTest() {
       const t = res.data;
       setForm({
         title: t.title || "", code: t.code || "", description: t.description || "",
-        instructions: t.instructions || "", durationMin: t.durationMin, passingMarks: t.passingMarks ?? "",
+        instructions: t.instructions || "", company: t.company || "", durationMin: t.durationMin, passingMarks: t.passingMarks ?? "",
         showResults: t.showResults, startTime: toLocalInputValue(t.startTime), endTime: toLocalInputValue(t.endTime),
         requireFullscreen: t.requireFullscreen !== false, requireWebcam: !!t.requireWebcam, requireMicrophone: !!t.requireMicrophone,
         shuffleQuestions: t.shuffleQuestions !== false, shuffleOptions: !!t.shuffleOptions,
@@ -170,6 +170,9 @@ export default function CreateTest() {
 
           <label style={labelStyle}>Instructions for students (optional)</label>
           <textarea style={{ ...inputStyle, minHeight: 60 }} value={form.instructions} onChange={updateField("instructions")} />
+
+          <label style={labelStyle}>Company (optional — marks this as a company-specific placement round, e.g. "TCS", "Amazon")</label>
+          <input style={inputStyle} value={form.company} onChange={updateField("company")} placeholder="Leave blank for a regular test" />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
             <div>

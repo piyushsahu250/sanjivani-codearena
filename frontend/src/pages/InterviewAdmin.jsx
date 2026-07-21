@@ -2,13 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import ProblemStatementFields from "../components/ProblemStatementFields";
+import TestCasesEditor from "../components/TestCasesEditor";
 
 const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, marginTop: 4 };
 const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--ink-dim)" };
 const CATEGORIES = ["HR", "TECHNICAL", "CODING", "APTITUDE", "SYSTEM_DESIGN", "BEHAVIORAL", "MANAGERIAL"];
 const APTITUDE_CATS = ["QUANTITATIVE", "LOGICAL", "VERBAL", "DATA_INTERPRETATION"];
 
-const EMPTY_Q = { category: "HR", subject: "", company: "", aptitudeCategory: "", difficulty: "EASY", prompt: "", expectedKeywords: "", modelAnswer: "", options: "", correctAnswer: "", explanation: "", starterCode: "", testCases: "", language: "java", followUpQuestionId: "" };
+const EMPTY_Q = {
+  category: "HR", subject: "", company: "", aptitudeCategory: "", difficulty: "EASY", title: "", prompt: "",
+  expectedKeywords: "", modelAnswer: "", options: "", correctAnswer: "", explanation: "", starterCode: "",
+  testCases: [{ input: "", expected: "", isHidden: false, explanation: "" }], language: "java", tags: "", followUpQuestionId: "",
+  estimatedTimeMin: null, realWorldScenario: "", constraints: "", inputFormat: "", outputFormat: "",
+  notes: "", edgeCases: "", problemExplanation: "",
+};
 
 export default function InterviewAdmin() {
   const [stats, setStats] = useState(null);
@@ -38,23 +46,32 @@ export default function InterviewAdmin() {
       const payload = {
         category: form.category, subject: form.subject || null, company: form.company || null,
         aptitudeCategory: form.category === "APTITUDE" ? (form.aptitudeCategory || null) : null,
-        difficulty: form.difficulty, prompt: form.prompt,
+        difficulty: form.difficulty, title: form.category === "CODING" ? (form.title || null) : undefined, prompt: form.prompt,
         expectedKeywords: form.expectedKeywords ? form.expectedKeywords.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
         modelAnswer: form.modelAnswer || null,
         options: form.options ? form.options.split("|").map((s) => s.trim()).filter(Boolean) : undefined,
         correctAnswer: form.correctAnswer !== "" ? Number(form.correctAnswer) : undefined,
         explanation: form.explanation || null,
         starterCode: form.starterCode || null,
-        testCases: form.testCases ? JSON.parse(form.testCases) : undefined,
+        testCases: form.category === "CODING" ? form.testCases : undefined,
         language: form.language || null,
+        tags: form.category === "CODING" && form.tags ? form.tags.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
         followUpQuestionId: form.followUpQuestionId || null,
+        estimatedTimeMin: form.category === "CODING" ? form.estimatedTimeMin : undefined,
+        realWorldScenario: form.category === "CODING" ? (form.realWorldScenario || null) : undefined,
+        constraints: form.category === "CODING" ? (form.constraints || null) : undefined,
+        inputFormat: form.category === "CODING" ? (form.inputFormat || null) : undefined,
+        outputFormat: form.category === "CODING" ? (form.outputFormat || null) : undefined,
+        notes: form.category === "CODING" ? (form.notes || null) : undefined,
+        edgeCases: form.category === "CODING" ? (form.edgeCases || null) : undefined,
+        problemExplanation: form.category === "CODING" ? (form.problemExplanation || null) : undefined,
       };
       await api.post("/interview/admin/questions", payload);
       setForm(EMPTY_Q);
       setAdding(false);
       loadAll();
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to create question (check JSON fields like Test Cases)");
+      alert(err.response?.data?.error || "Failed to create question");
     }
   }
 
@@ -177,18 +194,23 @@ export default function InterviewAdmin() {
 
             {form.category === "CODING" && (
               <>
+                <label style={labelStyle}>Title (optional)</label>
+                <input style={inputStyle} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+                <label style={labelStyle}>Tags (comma-separated, optional)</label>
+                <input style={inputStyle} value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="Arrays, Recursion" />
+
+                <div style={{ marginTop: 10 }}>
+                  <ProblemStatementFields value={form} onChange={(patch) => setForm((f) => ({ ...f, ...patch }))} />
+                </div>
+
                 <label style={labelStyle}>Starter Code</label>
                 <textarea style={{ ...inputStyle, minHeight: 80, fontFamily: "var(--font-mono)", fontSize: 12 }} value={form.starterCode} onChange={(e) => setForm({ ...form, starterCode: e.target.value })} />
                 <label style={labelStyle}>Language</label>
                 <select style={inputStyle} value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })}>
                   <option value="java">Java</option><option value="python">Python</option><option value="javascript">JavaScript</option><option value="c">C</option><option value="cpp">C++</option>
                 </select>
-                <label style={labelStyle}>
-                  Test Cases (JSON array: [{"{"}"input":"...","expected":"...","isHidden":true{"}"}]) — add "isHidden":true
-                  to keep a case out of the candidate's self-check Run and use it only for scoring. Include at least
-                  2 visible (isHidden omitted/false) and 2 hidden cases.
-                </label>
-                <textarea style={{ ...inputStyle, minHeight: 60, fontFamily: "var(--font-mono)", fontSize: 12 }} value={form.testCases} onChange={(e) => setForm({ ...form, testCases: e.target.value })} placeholder='[{"input":"4","expected":"24"},{"input":"5","expected":"120"},{"input":"6","expected":"720","isHidden":true},{"input":"7","expected":"5040","isHidden":true}]' />
+
+                <TestCasesEditor testCases={form.testCases} onChange={(tc) => setForm({ ...form, testCases: tc })} minVisible={2} minHidden={10} />
               </>
             )}
 
