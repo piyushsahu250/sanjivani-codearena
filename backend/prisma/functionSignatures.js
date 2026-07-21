@@ -68,6 +68,10 @@ const MODULE_CODING_SIGNATURES = {
   "Simulate SUM Aggregate Query": { methodName: "sumAmounts", returnType: "long", params: [{ name: "amounts", type: "int[]" }] },
   "Simulate Duplicate Primary Key Detection": { methodName: "hasDuplicateIds", returnType: "boolean", params: [{ name: "ids", type: "int[]" }] },
   "Simulate SET Clause Builder": { methodName: "buildSetClause", returnType: "string", params: [{ name: "columns", type: "string[]" }] },
+  "Count Type Mismatches": { methodName: "countTypeMismatches", returnType: "int", params: [{ name: "typeTags", type: "int[]" }, { name: "expectedType", type: "int" }] },
+  "Total Serialized Size": { methodName: "totalSerializedSize", returnType: "long", params: [{ name: "objectSizes", type: "int[]" }, { name: "overheadPerObject", type: "int" }] },
+  "Count Reflective Method Matches": { methodName: "countMatchingMethods", returnType: "int", params: [{ name: "methodNameLengths", type: "int[]" }, { name: "targetLength", type: "int" }] },
+  "Simulate Deprecated API Usage Count": { methodName: "countDeprecatedCalls", returnType: "int", params: [{ name: "isDeprecated", type: "boolean[]" }] },
 };
 
 // Keyed by exact `prompt` text — Practice Coding / Interview Prep questions don't have distinct
@@ -121,6 +125,10 @@ const PRACTICE_CODING_SIGNATURES = {
     { methodName: "countMatchingRows", returnType: "int", params: [{ name: "ages", type: "int[]" }, { name: "threshold", type: "int" }] },
   "Simulate a WHERE name LIKE 'prefix%' filter: given an array of names and a prefix, print the count of names starting with that prefix.":
     { methodName: "countNameMatches", returnType: "int", params: [{ name: "names", type: "string[]" }, { name: "prefix", type: "string" }] },
+  "Given arrays of stored values and their per-slot maximum capacities (same length), print the count of slots where the value exceeds its capacity.":
+    { methodName: "countOverflows", returnType: "int", params: [{ name: "values", type: "int[]" }, { name: "capacities", type: "int[]" }] },
+  "Read a list of candidate port numbers on one line and a list of already-used port numbers on the next line. Print the first candidate port that is NOT in the used list, or -1 if all candidates are used.":
+    { methodName: "firstAvailablePort", returnType: "int", params: [{ name: "candidatePorts", type: "int[]" }, { name: "usedPorts", type: "int[]" }] },
 };
 
 const INTERVIEW_CODING_SIGNATURES = {

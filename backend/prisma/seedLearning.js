@@ -2299,12 +2299,171 @@ const MODULE13_CODING = [
   },
 ];
 
-// Modules 14-16: topic list + trailing practice-section label from the spec. Real lesson
+const MODULE14_LESSONS = [
+  {
+    title: "Generics",
+    estimatedMinutes: 14,
+    content: lessonHTML({
+      explanation: "Generics let a class, interface, or method operate on a TYPE PARAMETER specified at usage time, giving compile-time type safety without casting. Instead of writing a separate Box class for every type, you write ONE generic <code>Box&lt;T&gt;</code>.",
+      syntax:
+        "class Box<T> {\n    private T value;\n    public void set(T value) { this.value = value; }\n    public T get() { return value; }\n}\n\nBox<String> stringBox = new Box<>();\nstringBox.set(\"Hello\");\nString s = stringBox.get(); // no cast needed\n\n// Generic method\npublic static <T> T firstElement(T[] array) {\n    return array[0];\n}",
+      example: "Box<Integer> intBox = new Box<>();\nintBox.set(42);\nint value = intBox.get(); // no cast needed, and intBox.set(\"text\") would be a COMPILE error",
+      notes: [
+        "Generics are erased at compile time (\"type erasure\") — at runtime, a <code>Box&lt;String&gt;</code> and a <code>Box&lt;Integer&gt;</code> are both just <code>Box</code>; the type parameter exists only for compile-time checking.",
+        "Bounded type parameters (<code>&lt;T extends Number&gt;</code>) restrict what types can be used, letting you call methods defined on the bound (e.g. Number's methods) inside the generic class.",
+      ],
+      mistakes: ["Trying to create an array of a generic type directly (<code>new T[10]</code>) — this doesn't compile due to type erasure; use an <code>Object[]</code> internally with an unchecked cast, or a collection like <code>ArrayList&lt;T&gt;</code> instead."],
+      bestPractices: ["Use generics instead of raw types (<code>Box</code> instead of <code>Box&lt;Object&gt;</code>) and instead of Object + casting — the compiler catches type mismatches at compile time rather than at runtime with a ClassCastException."],
+    }),
+  },
+  {
+    title: "Reflection",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Reflection lets a program inspect and manipulate classes, methods, and fields at RUNTIME — even ones it didn't know about at compile time. It's how frameworks like Spring and JUnit discover and invoke your code without you wiring it up manually.",
+      syntax:
+        "Class<?> clazz = obj.getClass();                  // get the runtime class of an object\nClass<?> clazz2 = String.class;                    // get a Class object directly\n\nMethod[] methods = clazz.getDeclaredMethods();     // list all declared methods\nField[] fields = clazz.getDeclaredFields();        // list all declared fields\n\nMethod m = clazz.getMethod(\"toUpperCase\");\nObject result = m.invoke(someStringInstance);      // call the method reflectively",
+      example: "Object obj = \"Hello\";\nClass<?> clazz = obj.getClass();\nSystem.out.println(clazz.getName()); // java.lang.String\nSystem.out.println(clazz.getSimpleName()); // String",
+      notes: [
+        "Reflection can access PRIVATE fields/methods too, via <code>setAccessible(true)</code> — bypassing normal encapsulation, which is powerful but should be used sparingly and carefully.",
+        "Reflective calls are significantly slower than direct method calls, since type checks that are normally done at compile time happen at runtime instead.",
+      ],
+      mistakes: ["Overusing reflection for everyday code where a normal method call or interface would work — reflection bypasses compile-time type safety and hurts performance, so it should be reserved for genuinely dynamic scenarios (frameworks, plugin systems, serialization libraries)."],
+    }),
+  },
+  {
+    title: "Serialization",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Serialization converts an object's state into a byte stream (for saving to a file or sending over a network); deserialization reconstructs the object from that stream. A class must implement the marker interface <code>Serializable</code> to be serializable.",
+      syntax:
+        "import java.io.*;\n\nclass Student implements Serializable {\n    String name;\n    int age;\n}\n\n// Writing (serializing)\ntry (ObjectOutputStream out = new ObjectOutputStream(new FileOutputStream(\"student.ser\"))) {\n    out.writeObject(new Student());\n}\n\n// Reading (deserializing)\ntry (ObjectInputStream in = new ObjectInputStream(new FileInputStream(\"student.ser\"))) {\n    Student s = (Student) in.readObject();\n}",
+      example: "class Student implements Serializable {\n    private static final long serialVersionUID = 1L;\n    String name;\n    int age;\n}",
+      notes: [
+        "<code>Serializable</code> is a MARKER interface — it has no methods to implement; it just signals to the JVM that instances of this class are allowed to be serialized.",
+        "A field marked <code>transient</code> is deliberately EXCLUDED from serialization (e.g. a password or a non-serializable resource like a Thread) — it comes back as its default value (null/0/false) after deserialization.",
+        "<code>serialVersionUID</code> is a version identifier for a serializable class — if it doesn't match between the serialized data and the class definition trying to read it, deserialization throws <code>InvalidClassException</code>.",
+      ],
+      mistakes: ["Trying to serialize a class that has a non-serializable field without marking that field <code>transient</code> — this throws <code>NotSerializableException</code> at runtime when <code>writeObject()</code> is called."],
+    }),
+  },
+  {
+    title: "Networking",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Java's <code>java.net</code> package provides classes for network communication — <code>Socket</code> for client-side TCP connections, <code>ServerSocket</code> for a server listening for incoming connections, and <code>URL</code>/<code>HttpURLConnection</code> for HTTP requests.",
+      syntax:
+        "// Client\nSocket socket = new Socket(\"localhost\", 8080);\nPrintWriter out = new PrintWriter(socket.getOutputStream(), true);\nBufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));\nout.println(\"Hello server\");\nString response = in.readLine();\nsocket.close();\n\n// Server\nServerSocket serverSocket = new ServerSocket(8080);\nSocket client = serverSocket.accept();  // blocks until a client connects",
+      example: "try (ServerSocket server = new ServerSocket(5000)) {\n    System.out.println(\"Waiting for a client...\");\n    Socket client = server.accept();\n    System.out.println(\"Client connected: \" + client.getInetAddress());\n} catch (IOException e) {\n    e.printStackTrace();\n}",
+      notes: [
+        "<code>Socket</code> represents one end of a two-way TCP connection between a client and server; <code>ServerSocket</code> only LISTENS for and accepts incoming connections — it doesn't itself send/receive application data.",
+        "<code>accept()</code> BLOCKS the calling thread until a client actually connects — a real server typically spawns a new thread (or uses a thread pool) per accepted connection to handle multiple clients concurrently.",
+      ],
+      mistakes: ["Forgetting that <code>ServerSocket.accept()</code> is a BLOCKING call — code after it won't run until a client connects, which surprises beginners expecting it to return immediately."],
+    }),
+  },
+  {
+    title: "Annotations",
+    estimatedMinutes: 10,
+    content: lessonHTML({
+      explanation: "An annotation is metadata attached to code (<code>@Override</code>, <code>@Deprecated</code>, <code>@FunctionalInterface</code>, or custom ones) — it doesn't change what the code does directly, but tools, the compiler, or the runtime (via reflection) can read and act on it.",
+      syntax:
+        "@Override                  // tells the compiler this method must override a superclass/interface method\npublic void run() { }\n\n@Deprecated                // marks this API as discouraged; usage triggers a compiler warning\npublic void oldMethod() { }\n\n// A simple custom annotation:\n@interface Author {\n    String name();\n}\n\n@Author(name = \"Asha\")\nclass MyClass { }",
+      example: "@Override\npublic String toString() {\n    return \"Custom string representation\";\n}\n// If this method's signature doesn't actually match any superclass method,\n// @Override causes a COMPILE ERROR instead of silently creating an unrelated new method.",
+      notes: [
+        "<code>@Override</code> is purely a compiler-time safety check — it catches typos in method names/signatures that would otherwise silently fail to override anything.",
+        "Custom annotations are defined with <code>@interface</code> and become genuinely useful combined with reflection — frameworks scan for annotated classes/methods/fields at runtime to wire up behavior automatically.",
+      ],
+      mistakes: ["Assuming an annotation by itself changes runtime behavior — most annotations (aside from a few compiler-recognized ones like <code>@Override</code>/<code>@FunctionalInterface</code>) do nothing unless something else (a framework, a reflection-based tool) explicitly reads and acts on them."],
+    }),
+  },
+];
+
+const MODULE14_QUIZ = [
+  {
+    type: "MCQ",
+    prompt: "What is the main benefit of generics like Box<T> over using Object and casting?",
+    options: ["Faster runtime performance always", "Compile-time type safety — type mismatches are caught by the compiler instead of causing a runtime ClassCastException", "Generics remove the need for classes entirely", "Generics only work with primitive types"],
+    correctAnswer: 1,
+    explanation: "Generics let the compiler verify type correctness at compile time, catching mistakes that would otherwise only surface as a runtime ClassCastException.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What happens to generic type parameters at runtime, due to type erasure?",
+    options: ["They are preserved and can be inspected exactly like any other type", "They are erased — a Box<String> and Box<Integer> are the same class at runtime", "They are converted to primitive types", "Type erasure only affects interfaces"],
+    correctAnswer: 1,
+    explanation: "Java implements generics via type erasure — the type parameter is a compile-time-only construct, and both Box<String> and Box<Integer> compile down to the same raw Box class.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What does reflection allow a Java program to do?",
+    options: ["Compile faster", "Inspect and invoke classes, methods, and fields at runtime, even ones not known at compile time", "Automatically parallelize loops", "Encrypt data automatically"],
+    correctAnswer: 1,
+    explanation: "Reflection is the runtime-introspection API that frameworks use to discover and invoke code dynamically.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What must a class do to become serializable?",
+    options: ["Implement the Serializable marker interface", "Extend the Object class (already automatic)", "Override toString()", "Nothing — every class is serializable by default"],
+    correctAnswer: 0,
+    explanation: "Serializable is a marker interface with no methods — implementing it is simply how a class opts in to being serialized.",
+  },
+  {
+    type: "OUTPUT_PREDICTION",
+    prompt: "A field is marked `transient` in a Serializable class. What happens to it after deserialization?",
+    options: ["It keeps its original value", "It is set to its default value (e.g. null, 0, false)", "Deserialization throws an exception", "transient has no effect"],
+    correctAnswer: 1,
+    explanation: "transient fields are skipped during serialization entirely, so on deserialization they come back as their type's default value.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What does ServerSocket.accept() do?",
+    options: ["Immediately returns null if no client is connected", "Blocks the calling thread until a client actually connects, then returns a Socket for that client", "Sends data to all connected clients", "Closes the server"],
+    correctAnswer: 1,
+    explanation: "accept() is a blocking call — execution pauses there until an incoming client connection arrives, at which point it returns a Socket representing that connection.",
+  },
+  {
+    type: "MCQ",
+    prompt: "What is the primary purpose of the @Override annotation?",
+    options: ["It makes the method run faster", "It's a compile-time check confirming the method actually overrides a superclass/interface method, catching signature typos", "It automatically calls the superclass version too", "It's required on every method in Java"],
+    correctAnswer: 1,
+    explanation: "@Override doesn't change runtime behavior — it lets the compiler verify the annotated method really does override something, catching accidental typos.",
+  },
+  {
+    type: "DEBUG",
+    prompt: "What is wrong with this code, given Connection is NOT Serializable?\n\nclass Report implements Serializable {\n    String title;\n    Connection dbConnection;\n}",
+    options: ["Nothing, all fields serialize automatically", "Serializing a Report instance throws NotSerializableException because dbConnection isn't Serializable and isn't marked transient", "Connection objects are automatically skipped", "Report can't implement Serializable at all"],
+    correctAnswer: 1,
+    explanation: "Every non-transient field of a Serializable class must itself be serializable (or null) at serialization time — an unserializable field like a live Connection throws NotSerializableException unless marked transient.",
+  },
+];
+
+// Same LeetCode-style FUNCTION mode as the other modules' embedded practice — resolveCodingFields()
+// generates the real starterCodeByLanguage from PRACTICE_CODING_SIGNATURES[prompt] below. Generics/
+// reflection/serialization/networking/annotations aren't exercisable by the judge directly, so these
+// model outcomes (bounded-type validation, port-availability lookup) as plain computations.
+const MODULE14_CODING = [
+  {
+    type: "CODING",
+    prompt: "Given arrays of stored values and their per-slot maximum capacities (same length), print the count of slots where the value exceeds its capacity.",
+    language: "java",
+    testCases: [{ input: "5 10 3\n4 10 5", expected: "1" }, { input: "1 2 3\n10 10 10", expected: "0" }, { input: "100\n1", expected: "1" }],
+    explanation: "Compare each value against its capacity at the same index and count how many exceed it — the kind of bound violation a bounded generic (<T extends Number>) combined with validation would catch.",
+  },
+  {
+    type: "CODING",
+    prompt: "Read a list of candidate port numbers on one line and a list of already-used port numbers on the next line. Print the first candidate port that is NOT in the used list, or -1 if all candidates are used.",
+    language: "java",
+    testCases: [{ input: "8080 8081 8082\n8080 8081", expected: "8082" }, { input: "80 443\n80 443", expected: "-1" }, { input: "3000 5000\n3000", expected: "5000" }],
+    explanation: "Scan the candidate ports in order and return the first one that doesn't appear in the used-ports list — the same lookup a server binding to a port would perform.",
+  },
+];
+
+// Modules 15-16: topic list + trailing practice-section label from the spec. Real lesson
 // content isn't hand-authored for these — each gets a placeholder lesson body so the course
 // tree, navigation, and progress tracking all work end-to-end, ready for an admin to fill in
 // real content via the Learning Management admin panel.
 const REMAINING_MODULES = [
-  { title: "Advanced Java", topics: ["Generics", "Reflection", "Serialization", "Networking", "Annotations"], practiceLabel: "Coding Practice" },
   { title: "Data Structures & Algorithms in Java", topics: ["Arrays", "Linked Lists", "Stack", "Queue", "Trees", "Graphs", "Sorting", "Searching"], practiceLabel: "Coding Problems" },
   { title: "Interview Preparation", topics: ["Frequently Asked Java Interview Questions", "MCQs", "Coding Questions", "Company-based Questions", "Previous Placement Questions"], practiceLabel: null },
 ];
@@ -2866,13 +3025,53 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Modules 14-16: stub structure only, real content added later via admin CMS ---
+  // --- Module 14: full hand-authored content ---
+  const module14 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Advanced Java" } },
+    update: {},
+    create: { courseId: course.id, title: "Advanced Java", order: 13 },
+  });
+
+  for (let i = 0; i < MODULE14_LESSONS.length; i++) {
+    const l = MODULE14_LESSONS[i];
+    await upsertLessonContent(prisma, module14.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  const module14PracticeLesson = await upsertLessonContent(prisma, module14.id, "Coding Practice", {
+    content: "<p>Test what you've learned in this module — multiple choice, then two coding exercises.</p>",
+    estimatedMinutes: 20, order: MODULE14_LESSONS.length,
+    isModuleTest: true,
+  });
+  const existingModule14Practice = await prisma.practiceQuestion.count({ where: { lessonId: module14PracticeLesson.id } });
+  if (existingModule14Practice === 0) {
+    let order = 0;
+    for (const q of MODULE14_QUIZ) {
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module14PracticeLesson.id, type: q.type, prompt: q.prompt,
+          options: q.options, correctAnswer: q.correctAnswer, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+    for (const q of MODULE14_CODING) {
+      const resolved = resolveCodingFields({ evaluationType: "FUNCTION", functionSignature: PRACTICE_CODING_SIGNATURES[q.prompt] });
+      await prisma.practiceQuestion.create({
+        data: {
+          lessonId: module14PracticeLesson.id, type: q.type, prompt: q.prompt, language: q.language,
+          evaluationType: resolved.evaluationType, functionSignature: resolved.functionSignature, starterCodeByLanguage: resolved.starterCodeByLanguage,
+          testCases: q.testCases, explanation: q.explanation, order: order++,
+        },
+      });
+    }
+  }
+
+  // --- Modules 15-16: stub structure only, real content added later via admin CMS ---
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 13 },
+      create: { courseId: course.id, title: spec.title, order: m + 14 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -2894,7 +3093,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 13, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 14, "modules.");
 }
 
 module.exports = { seedLearningModule };

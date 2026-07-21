@@ -680,6 +680,57 @@ const MODULE_TESTS = {
       },
     ],
   },
+  "Advanced Java": {
+    title: "Module 14 Coding Assessment",
+    instructions: "Solve every question by implementing the given method — these model outcomes from generics, reflection, serialization, and annotations as plain computations, since the judge can't exercise those APIs directly.",
+    questionCount: 4,
+    timeLimitMin: 40,
+    passingPercent: 70,
+    maxAttempts: 3,
+    cooldownMinutes: 10,
+    questions: [
+      {
+        title: "Count Type Mismatches",
+        description: "Given an array of type tags stored in a raw (non-generic) container and the expected type tag, return how many entries do NOT match the expected type (what a generic container would have prevented at compile time).",
+        difficulty: "EASY",
+        testCases: [
+          { input: "1 1 2 1\n1", expected: "1" },
+          { input: "2 2 2\n2", expected: "0" },
+          { input: "1\n2", expected: "1" },
+        ],
+      },
+      {
+        title: "Total Serialized Size",
+        description: "Given an array of object sizes and a fixed per-object serialization overhead, return the total serialized size (sum of sizes plus overhead times the object count).",
+        difficulty: "EASY",
+        testCases: [
+          { input: "10 20 30\n5", expected: "75" },
+          { input: "100\n10", expected: "110" },
+          { input: "1 1 1 1\n2", expected: "12" },
+        ],
+      },
+      {
+        title: "Count Reflective Method Matches",
+        description: "Given an array of method name lengths (as if discovered via reflection) and a target length, return how many methods have that exact name length.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "5 3 5 7\n5", expected: "2" },
+          { input: "3 3 3\n3", expected: "3" },
+          { input: "10\n5", expected: "0" },
+        ],
+      },
+      {
+        title: "Simulate Deprecated API Usage Count",
+        description: "Given an array of booleans, one per method call, indicating whether the called method is annotated @Deprecated, return the count of deprecated calls.",
+        difficulty: "MEDIUM",
+        testCases: [
+          { input: "true false true false true", expected: "3" },
+          { input: "false false", expected: "0" },
+          { input: "true", expected: "1" },
+        ],
+      },
+    ],
+  },
 };
 
 async function seedModuleCoding(prisma) {
