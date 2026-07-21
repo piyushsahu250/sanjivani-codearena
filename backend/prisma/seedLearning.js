@@ -2663,13 +2663,94 @@ const MODULE15_CODING = [
   },
 ];
 
-// Module 16: topic list + trailing practice-section label from the spec. Real lesson content isn't
-// hand-authored for this one yet — it gets placeholder lesson bodies so the course tree, navigation,
-// and progress tracking all work end-to-end, ready for an admin to fill in real content via the
-// Learning Management admin panel.
-const REMAINING_MODULES = [
-  { title: "Interview Preparation", topics: ["Frequently Asked Java Interview Questions", "MCQs", "Coding Questions", "Company-based Questions", "Previous Placement Questions"], practiceLabel: null },
+const MODULE16_LESSONS = [
+  {
+    title: "Frequently Asked Java Interview Questions",
+    estimatedMinutes: 15,
+    content: lessonHTML({
+      explanation: "This lesson is a rapid-fire review of the Java questions that come up most consistently across interviews — a checklist to test yourself against everything covered in Modules 1-15, phrased the way an interviewer would actually ask it.",
+      syntax:
+        "Q: What is the difference between JDK, JRE, and JVM?\nA: JVM runs bytecode; JRE bundles the JVM plus the standard libraries needed to RUN Java programs; JDK bundles the JRE plus the tools (javac, etc.) needed to DEVELOP them.\n\nQ: Why is Java called \"platform independent\"?\nA: Java source compiles to bytecode, which any JVM (on any OS) can run — \"write once, run anywhere.\"\n\nQ: What is the difference between == and .equals() for objects?\nA: == compares references (identity); .equals() compares content, when overridden meaningfully (as String does).\n\nQ: What is the difference between an abstract class and an interface?\nA: A class can extend only one abstract class but implement many interfaces; abstract classes can hold state and constructors, interfaces traditionally cannot.\n\nQ: What is the difference between ArrayList and LinkedList?\nA: ArrayList gives O(1) indexed access but O(n) middle insertion; LinkedList gives O(1) end insertion but O(n) indexed access.\n\nQ: What is a checked vs unchecked exception?\nA: Checked exceptions (like IOException) must be caught or declared; unchecked exceptions (RuntimeException and its subclasses) require neither.\n\nQ: What does the \"static\" keyword mean?\nA: A static member belongs to the CLASS itself, not to any individual instance — one shared copy across all objects.\n\nQ: What is method overloading vs overriding?\nA: Overloading is same name, different parameter list, resolved at compile time; overriding is a subclass replacing an inherited method's implementation, resolved at runtime.",
+      example:
+        "Sample strong answer to \"Explain how HashMap works internally\":\n\"A HashMap stores key-value pairs in an array of buckets. When you call put(key, value), Java computes key.hashCode(), maps it to a bucket index, and stores the entry there. On a collision (two keys landing in the same bucket), Java chains entries in that bucket (as a linked list, or a red-black tree once a bucket gets large enough, since Java 8). get(key) recomputes the hash, jumps to the right bucket, then uses .equals() to find the matching entry among any collisions.\" — Notice this answer explains the MECHANISM, not just the API surface.",
+      notes: [
+        "Interviewers are usually testing whether you understand the WHY behind a concept, not just whether you can recite a definition — practice explaining mechanisms, not just terms.",
+        "Reviewing every module's \"Common Mistakes\" callout in this course is one of the fastest ways to prepare, since interviewers frequently ask about exactly those gotchas.",
+      ],
+      mistakes: ["Memorizing a rehearsed definition without being able to give a concrete example when asked \"can you show me\" — always have a short code snippet ready for any concept you claim to know."],
+      bestPractices: ["When you don't know an answer, say so and reason through it out loud from what you DO know — interviewers usually value clear reasoning over a lucky guess."],
+    }),
+  },
+  {
+    title: "MCQs",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "This lesson reviews rapid multiple-choice-style questions — the format many companies use for an initial screening round before the technical interview.",
+      syntax:
+        "1) What is the default value of a boolean instance field in Java?\n   a) true  b) false  c) null  d) 0\n   Answer: b) false\n\n2) Which collection does NOT allow duplicate elements?\n   a) ArrayList  b) LinkedList  c) HashSet  d) Deque\n   Answer: c) HashSet\n\n3) What does the \"final\" keyword do to a variable?\n   a) Makes it static  b) Prevents reassignment after initialization  c) Makes it private  d) Nothing\n   Answer: b) Prevents reassignment after initialization\n\n4) Which of these is NOT a valid access modifier in Java?\n   a) public  b) private  c) internal  d) protected\n   Answer: c) internal (this is a C#, not a Java, modifier)\n\n5) What is the output of `System.out.println(5 / 2);`?\n   a) 2.5  b) 2  c) 3  d) Compile error\n   Answer: b) 2 (integer division truncates)",
+      example: "MCQ screening rounds are usually TIMED — practicing at speed matters as much as knowing the material. Try covering the answer and timing yourself to under 20 seconds per question.",
+      notes: [
+        "MCQ rounds often include intentionally tricky \"gotcha\" options that test a subtle misunderstanding (like integer division, or default field values) rather than pure recall.",
+        "Elimination is a valid strategy — ruling out 2 clearly wrong options doubles your odds even on a genuine guess.",
+      ],
+      mistakes: ["Rushing past the question stem without noticing a qualifier word like \"NOT\" or \"always\" — MCQ questions are often written specifically to catch skimmers."],
+    }),
+  },
+  {
+    title: "Coding Questions",
+    estimatedMinutes: 15,
+    content: lessonHTML({
+      explanation: "This lesson reviews the shape of coding-round interview questions and how to approach them — the actual practice happens in this platform's dedicated Coding Practice, Module Coding Tests, and Daily/Weekly Challenges, which give you a real compiler and graded test cases.",
+      syntax:
+        "A strong approach to any coding interview question:\n1. Restate the problem in your own words to confirm you understood it.\n2. Ask about edge cases and constraints (empty input? negative numbers? duplicates?).\n3. Talk through a brute-force approach FIRST, even if you already see a better one.\n4. Optimize, explaining the time/space trade-off as you go.\n5. Code it, narrating your reasoning as you write.\n6. Trace through your own code with a sample input before declaring it done.",
+      example:
+        "A classic prompt: \"Given an array of integers, find two numbers that add up to a target value.\"\nBrute force: check every pair — O(n^2).\nOptimized: use a HashMap of value to index; for each number, check if (target - number) was already seen — O(n) time, O(n) space.\nThis \"brute force, then optimize with a HashMap\" pattern recurs across a large fraction of array/string interview questions.",
+      notes: [
+        "Every module in this course (especially Arrays, Strings, Collections Framework, and Data Structures & Algorithms) directly maps to the topics coding rounds draw from — review those modules' practice questions and proctored assessments as your primary coding-round preparation.",
+        "This platform's Coding Practice and Company Coding Tests sections (outside this Learning module) give you real compiler feedback and hidden test cases — use them to simulate the actual round.",
+      ],
+      mistakes: ["Jumping straight to typing code before verbally confirming the approach — interviewers weight your PROCESS heavily, and silent coding gives them nothing to evaluate until you're already done."],
+      bestPractices: ["Practice explaining your approach OUT LOUD, not just solving problems silently — the interview skill being tested is communication under a coding constraint, not just correctness."],
+    }),
+  },
+  {
+    title: "Company-based Questions",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Different companies tend to emphasize different rounds and question styles — this lesson gives a general orientation; this platform's dedicated Company Round and Interview Prep company browse pages let you practice against real company-specific patterns and analytics.",
+      syntax:
+        "Broad patterns across company types (general tendencies, not universal rules):\n- Product companies (large tech firms): heavier emphasis on DSA/algorithmic coding rounds, often multiple rounds.\n- Service/IT companies: broader coverage across core CS fundamentals (OOP, DBMS, OS, CN) plus a coding round, often less algorithmically intense.\n- Startups: more likely to ask about a specific tech stack, past projects, and practical problem-solving over abstract algorithms.\n- Finance/fintech: frequently combine technical rounds with questions about handling correctness/reliability under strict constraints.",
+      example: "Before any company-specific interview, review that company's listed tech stack and product domain, and be ready to explain how relevant Java concepts (concurrency, collections, JDBC) would matter to a system like theirs.",
+      notes: [
+        "This platform's Interview Prep module includes a Company Round mode and a company browse view with real usage analytics — use those for actual company-flavored coding and interview practice.",
+        "Company patterns shift over time — treat any list of \"typical\" questions as a starting point for practice, not a guarantee of what you'll actually be asked.",
+      ],
+      mistakes: ["Assuming every company in the same industry asks identical questions — preparation should cover fundamentals broadly, with company-specific research as a supplement, not a substitute."],
+    }),
+  },
+  {
+    title: "Previous Placement Questions",
+    estimatedMinutes: 12,
+    content: lessonHTML({
+      explanation: "Reviewing real, previously-asked placement questions helps you calibrate difficulty and format expectations — this lesson gives a representative sample; this platform's Interview Prep history and reports let you track your own performance against real practice sessions over time.",
+      syntax:
+        "Representative placement-season question styles:\n- HR round: \"Tell me about yourself\", \"Why should we hire you?\", \"Describe a challenge you overcame.\"\n- Technical round: core-subject questions (OOP, DBMS, OS) mixed with 1-2 coding problems.\n- Coding round: typically 2-3 problems of increasing difficulty, often with a strict time limit.\n- Aptitude round (common in mass-recruitment drives): quantitative reasoning, logical puzzles, verbal ability — not Java-specific, but frequently a first-round filter.",
+      example: "A typical placement-season coding round might give 90 minutes for 2 problems: one straightforward array/string problem, and one requiring a specific data structure (like a HashMap or Stack) to pass within the time/memory limits — matching the proctored assessments in this course's Arrays, Strings, and Collections Framework modules.",
+      notes: [
+        "Placement drives often run under real time pressure and proctoring similar to this platform's Module Coding Tests — practicing under those same constraints (timer running, no external references) builds the right habits.",
+        "Aptitude and HR rounds are frequently a first-pass FILTER before the technical rounds even begin — don't neglect them while focusing only on coding practice.",
+      ],
+      mistakes: ["Preparing only for the coding round and treating the HR/aptitude rounds as an afterthought — many placement processes reject candidates at those earlier filter stages before the coding round is ever reached."],
+      bestPractices: ["Simulate full mock sessions (not just isolated practice problems) close to placement season — this platform's Mock Interview and Company Round modes are built for exactly this end-to-end rehearsal."],
+    }),
+  },
 ];
+
+// No REMAINING_MODULES stub loop is needed anymore — Modules 1-16 are all hand-authored. Module 16
+// ("Interview Preparation") has no trailing quiz/coding-practice lesson (practiceLabel was null in
+// the original spec) — its real graded practice already lives in this platform's dedicated Interview
+// Prep, Coding Practice, and Company Coding Tests systems, which the lessons below point students to.
+const REMAINING_MODULES = [];
 
 // A lesson's content is only overwritten if it's missing or still carries the auto-generated
 // placeholder text — a real admin edit (or previously-seeded real content) is left untouched.
@@ -3308,13 +3389,27 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  // --- Module 16: stub structure only, real content added later via admin CMS ---
+  // --- Module 16: full hand-authored content (no trailing quiz/coding-practice lesson —
+  // practiceLabel was null in the original spec; real graded practice lives in this
+  // platform's dedicated Interview Prep / Coding Practice / Company Coding Tests systems) ---
+  const module16 = await prisma.courseModule.upsert({
+    where: { courseId_title: { courseId: course.id, title: "Interview Preparation" } },
+    update: {},
+    create: { courseId: course.id, title: "Interview Preparation", order: 15 },
+  });
+
+  for (let i = 0; i < MODULE16_LESSONS.length; i++) {
+    const l = MODULE16_LESSONS[i];
+    await upsertLessonContent(prisma, module16.id, l.title, { content: l.content, estimatedMinutes: l.estimatedMinutes, order: i });
+  }
+
+  // REMAINING_MODULES is now empty — Modules 1-16 are all hand-authored above.
   for (let m = 0; m < REMAINING_MODULES.length; m++) {
     const spec = REMAINING_MODULES[m];
     const mod = await prisma.courseModule.upsert({
       where: { courseId_title: { courseId: course.id, title: spec.title } },
       update: {},
-      create: { courseId: course.id, title: spec.title, order: m + 15 },
+      create: { courseId: course.id, title: spec.title, order: m + 16 },
     });
 
     for (let t = 0; t < spec.topics.length; t++) {
@@ -3336,7 +3431,7 @@ async function seedLearningModule(prisma) {
     }
   }
 
-  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 15, "modules.");
+  console.log("Seeded Learning Module: Java course with", REMAINING_MODULES.length + 16, "modules.");
 }
 
 module.exports = { seedLearningModule };
