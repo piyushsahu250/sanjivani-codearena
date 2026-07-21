@@ -19,6 +19,15 @@ async function buildRecommendations(weakAreas) {
     const lower = area.toLowerCase();
     const matchedModule = javaCourse?.modules.find((m) => m.title.toLowerCase().includes(lower));
 
+    // A handful of live, approved questions tagged to this weak area — "generate personalized
+    // practice questions" from the weak-topic recommendation, reusing the exact same
+    // InterviewQuestion pool a real session would draw from (never a draft, isActive:true only).
+    const suggestedQuestions = await prisma.interviewQuestion.findMany({
+      where: { isActive: true, subject: { contains: area, mode: "insensitive" } },
+      select: { id: true, title: true, category: true, difficulty: true },
+      take: 3,
+    });
+
     if (matchedModule) {
       const lessonIds = matchedModule.lessons.map((l) => l.id);
       const suggestedCodingPractice = lessonIds.length
@@ -29,6 +38,7 @@ async function buildRecommendations(weakAreas) {
         action: `Complete "${matchedModule.title}" in the Java Learning Module${suggestedCodingPractice > 0 ? `, then solve its ${suggestedCodingPractice} coding practice problem${suggestedCodingPractice === 1 ? "" : "s"}` : ""} before your next interview.`,
         link: "/learning/java",
         suggestedCodingPractice,
+        suggestedQuestions,
       });
     } else if (/^(java|python|c\+\+|javascript|sql|dbms|os|cn|oop|dsa)$/i.test(area)) {
       recommendations.push({
@@ -36,6 +46,7 @@ async function buildRecommendations(weakAreas) {
         action: `Review the "${area}" subject area and solve a few more coding practice problems in it before your next Technical interview.`,
         link: "/learning",
         suggestedCodingPractice: null,
+        suggestedQuestions,
       });
     } else {
       recommendations.push({
@@ -43,6 +54,7 @@ async function buildRecommendations(weakAreas) {
         action: `Attempt another ${area} interview session, focusing specifically on this topic.`,
         link: "/interview",
         suggestedCodingPractice: null,
+        suggestedQuestions,
       });
     }
   }

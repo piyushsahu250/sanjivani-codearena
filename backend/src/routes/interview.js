@@ -17,6 +17,7 @@ const { generateInterviewReportPdf } = require("../utils/interviewReportPdf");
 const { sendMailLogged, wrapBranded } = require("../utils/mailer");
 const { askClaudeJson } = require("../utils/aiClient");
 const { cached } = require("../utils/cache");
+const { COMPANIES } = require("../utils/companies");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -688,6 +689,42 @@ router.get("/companies", authenticate, async (req, res) => {
     _count: { _all: true },
   });
   res.json(rows.map((r) => ({ company: r.company, questionCount: r._count._all })).sort((a, b) => a.company.localeCompare(b.company)));
+});
+
+// Student-facing browse — unlike GET /companies above (which only lists companies that already
+// have questions, for the session-config dropdown), this always returns all COMPANIES so the
+// browse grid can show a company before any content has been seeded for it yet.
+router.get("/companies/browse", authenticate, requireRole("STUDENT"), async (req, res) => {
+  const [counts, patternCompanies] = await Promise.all([
+    prisma.interviewQuestion.groupBy({ by: ["company"], where: { isActive: true, company: { not: null } }, _count: { _all: true } }),
+    prisma.companyPatternNote.findMany({ where: { status: "APPROVED" }, select: { company: true }, distinct: ["company"] }),
+  ]);
+  const countByCompany = Object.fromEntries(counts.map((c) => [c.company, c._count._all]));
+  const withPattern = new Set(patternCompanies.map((p) => p.company));
+  res.json(COMPANIES.map((company) => ({ company, questionCount: countByCompany[company] || 0, hasApprovedPattern: withPattern.has(company) })));
+});
+
+// Metadata-only catalog browse for the student-facing filter UI — title/tags/difficulty/
+// frequencyTag ONLY, never prompt/modelAnswer/testCases/correctAnswer (the answer-bearing
+// fields), since this isn't a session — a student could otherwise read every question's answer
+// straight off the browse page before ever attempting it.
+router.get("/questions/browse", authenticate, requireRole("STUDENT"), async (req, res) => {
+  const where = { isActive: true, generatedForStudentId: null };
+  if (req.query.company) where.company = req.query.company;
+  if (req.query.difficulty) where.difficulty = req.query.difficulty;
+  if (req.query.category) where.category = req.query.category;
+  if (req.query.topic) where.subject = { contains: req.query.topic, mode: "insensitive" };
+  if (req.query.frequencyTag) where.frequencyTag = req.query.frequencyTag;
+  if (req.query.packageBand) where.packageBand = req.query.packageBand;
+  if (req.query.experienceLevel) where.experienceLevel = req.query.experienceLevel;
+
+  const rows = await prisma.interviewQuestion.findMany({
+    where,
+    select: { id: true, title: true, category: true, subject: true, company: true, difficulty: true, tags: true, frequencyTag: true, packageBand: true, experienceLevel: true },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  res.json(rows);
 });
 
 // =========================== Certificate ===========================

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
   MessagesSquare, Lightbulb, Code2, Building2, Compass, Briefcase, Calculator, Target, FileText, Award, GraduationCap,
 } from "lucide-react";
@@ -39,6 +39,7 @@ const JOB_ROLES = ["Java Developer", "Full Stack Developer", "Backend Developer"
 
 export default function InterviewHub() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [summary, setSummary] = useState(null);
   const { theme } = useTheme();
   const dark = theme === "dark";
@@ -56,6 +57,15 @@ export default function InterviewHub() {
     api.get("/interview/summary").then((res) => setSummary(res.data));
     api.get("/interview/companies").then((res) => setCompanies(res.data));
   }, []);
+
+  // Arriving from the Company Browse page's "Start Company Round" button pre-fills and jumps
+  // straight to that card's setup form instead of making the student re-pick the company.
+  useEffect(() => {
+    if (location.state?.prefillCompany) {
+      setConfig((c) => ({ ...c, company: location.state.prefillCompany }));
+      setSetupCard("COMPANY_ROUND");
+    }
+  }, [location.state]);
 
   async function start(category, extraConfig) {
     setStarting(true);
@@ -100,6 +110,7 @@ export default function InterviewHub() {
             <ChalkUnderline />
           </div>
           <div style={{ display: "flex", gap: 8 }}>
+            <Link to="/interview/companies" className="btn btn-ghost">Browse Companies</Link>
             <Link to="/interview/history" className="btn btn-ghost">History</Link>
             <Link to="/interview/leaderboard" className="btn btn-ghost">Leaderboard</Link>
             <Link to="/interview/progress" className="btn btn-ghost">Progress</Link>

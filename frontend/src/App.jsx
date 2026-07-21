@@ -59,6 +59,7 @@ import InterviewCertificate from "./pages/InterviewCertificate";
 import InterviewVerify from "./pages/InterviewVerify";
 import InterviewAdmin from "./pages/InterviewAdmin";
 import InterviewDraftReview from "./pages/InterviewDraftReview";
+import InterviewCompanies from "./pages/InterviewCompanies";
 import ChallengeAdmin from "./pages/ChallengeAdmin";
 import DailyChallenge from "./pages/DailyChallenge";
 import WeeklyChallenge from "./pages/WeeklyChallenge";
@@ -146,6 +147,7 @@ export default function App() {
           <Route path="/company-tests" element={<Protected roles={["STUDENT"]}><CompanyTests /></Protected>} />
           <Route path="/resume" element={<Protected roles={["STUDENT"]}><ResumeBuilder /></Protected>} />
           <Route path="/interview" element={<Protected roles={["STUDENT"]}><InterviewHub /></Protected>} />
+          <Route path="/interview/companies" element={<Protected roles={["STUDENT"]}><InterviewCompanies /></Protected>} />
           <Route
             path="/interview/session/:id"
             element={

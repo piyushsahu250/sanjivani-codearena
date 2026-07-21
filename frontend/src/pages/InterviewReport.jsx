@@ -152,6 +152,15 @@ export default function InterviewReport() {
                   {typeof rec.suggestedCodingPractice === "number" && rec.suggestedCodingPractice > 0 && (
                     <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>{rec.suggestedCodingPractice} practice problem{rec.suggestedCodingPractice === 1 ? "" : "s"}</span>
                   )}
+                  {rec.suggestedQuestions?.length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                      {rec.suggestedQuestions.map((q) => (
+                        <span key={q.id} className="mono" style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, background: "var(--card-bg, #F7F7F5)", border: "1px solid var(--line)" }}>
+                          {q.title || q.category} · {q.difficulty}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
