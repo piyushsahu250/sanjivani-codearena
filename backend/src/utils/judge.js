@@ -104,7 +104,14 @@ const LINE_PATTERNS = {
   cpp: /:(\d+):\d+:\s*(?:fatal error|error):\s*(.+)/,
   java: /:(\d+):\s*error:\s*(.+)/,
 };
-function summarizeError(language, rawMessage) {
+// `studentCodeOffset` (from functionHarness.js's wrapFunctionCode(), 0 for STDIO-mode or for
+// languages where the driver is appended after the student's code) shifts a compiler-reported
+// line number back to the line the student actually sees in their own editor. If subtracting the
+// offset would put the line at or before the student's own code (i.e. the error is somewhere in
+// the invisible generated driver, not the student's code — should never happen for a genuinely
+// valid signature, but a defensive floor beats showing a confusing/negative line number), the line
+// is dropped instead of shown.
+function summarizeError(language, rawMessage, studentCodeOffset = 0) {
   const message = String(rawMessage || "").trim();
   if (!message) return { line: null, message: "Unknown error" };
 
@@ -115,6 +122,10 @@ function summarizeError(language, rawMessage) {
     const match = message.match(LINE_PATTERNS[language]);
     if (match) {
       line = Number(match[1]);
+      if (studentCodeOffset > 0) {
+        const studentLine = line - studentCodeOffset;
+        line = studentLine > 0 ? studentLine : null;
+      }
       summary = match[2].split("\n")[0].trim();
     }
   } else if (language === "python") {
@@ -356,9 +367,12 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000, 
     return judgeSqlSubmission({ sqlSchema, code, testCases, timeLimitMs: timeLimitMs || 3000 });
   }
   let sourceCode = code;
+  let studentCodeOffset = 0;
   if (evaluationType === "FUNCTION" && functionSignature) {
     try {
-      sourceCode = wrapFunctionCode(language, functionSignature, code);
+      const wrapped = wrapFunctionCode(language, functionSignature, code);
+      sourceCode = wrapped.code;
+      studentCodeOffset = wrapped.studentCodeOffset;
     } catch (err) {
       return {
         passedCases: 0,
@@ -383,7 +397,7 @@ async function judgeSubmission({ language, code, testCases, timeLimitMs = 2000, 
       totalCases: testCases.length,
       verdict: "COMPILE_ERROR",
       details,
-      errorSummary: { type: "Compilation Error", ...summarizeError(language, prepared.error), hint: findCompileHint(prepared.error) },
+      errorSummary: { type: "Compilation Error", ...summarizeError(language, prepared.error, studentCodeOffset), hint: findCompileHint(prepared.error) },
     };
   }
 

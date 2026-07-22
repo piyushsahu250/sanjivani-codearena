@@ -317,8 +317,29 @@ ${printResult}
 `;
 }
 
+// For Java/C++/C, the generated driver is prepended (or wrapped around) the student's own code,
+// so a compiler line number reported against the assembled file is offset from what the student
+// actually sees in their editor — e.g. their own line 2 gets reported as "line 25" once ~23 lines
+// of invisible driver/helper code are counted too. Locating the student's code verbatim inside the
+// assembled file and counting newlines before it gives the exact offset to subtract, without
+// hand-deriving a line count per driver template (which would silently drift if a driver template
+// is ever edited). Python/JS drivers are appended *after* the student's code, so no offset applies
+// there — their compiler/interpreter line numbers already match the student's own lines.
+function computeStudentCodeOffset(assembledCode, studentCode) {
+  // Guard against the degenerate empty-submission case: String.prototype.indexOf("") always
+  // returns 0 (matches immediately), which would silently report "no offset" instead of "student
+  // code wasn't found" — and 0 is never a legitimate match position here anyway, since every
+  // driver template has non-empty content before the student's code.
+  if (!studentCode) return 0;
+  const idx = assembledCode.indexOf(studentCode);
+  if (idx <= 0) return 0;
+  return (assembledCode.slice(0, idx).match(/\n/g) || []).length;
+}
+
 // Concatenates the student's method/class code with the auto-generated driver into one complete,
-// compilable/runnable source string — the only integration point judge.js needs.
+// compilable/runnable source string. Returns { code, studentCodeOffset } — judge.js uses `code` to
+// compile/run, and subtracts `studentCodeOffset` from any compiler-reported line number so the
+// line shown to the student matches their own editor, not the invisible generated driver.
 function wrapFunctionCode(language, signature, studentCode) {
   validateSignature(signature);
   if (!languagesSupportedBy(signature).includes(language)) {
@@ -348,17 +369,29 @@ function wrapFunctionCode(language, signature, studentCode) {
       // Student's `class Solution { ... }` (package-private) coexists with the driver's
       // `public class Main` in one file — Java only requires the public class to match the
       // filename, so this compiles exactly like the platform's existing STDIO-mode Main.java.
-      return `${javaDriver(signature)}\n${studentCode}\n`;
+      const code = `${javaDriver(signature)}\n${studentCode}\n`;
+      return { code, studentCodeOffset: computeStudentCodeOffset(code, studentCode) };
     }
     case "python":
-      // Python executes top-to-bottom, so the class must be defined first, then used.
-      return `${studentCode}\n\n${pythonDriver(signature)}`;
-    case "cpp":
-      return cppDriver(signature).replace("<<<STUDENT_CODE>>>", studentCode);
+      // Python executes top-to-bottom, so the class must be defined first, then used. Student's
+      // own code is first in the file, so its line numbers already match — no offset.
+      return { code: `${studentCode}\n\n${pythonDriver(signature)}`, studentCodeOffset: 0 };
+    case "cpp": {
+      // A function replacer (not a plain string) is required here: String.replace() treats a
+      // string replacement's "$&"/"$`"/"$'"/"$$" sequences as special patterns even when the
+      // search value is a plain string — a student's own code containing a literal "$" (e.g. a
+      // string literal like "Cost: $5") would otherwise silently corrupt the compiled source. A
+      // function's return value is always inserted verbatim, with no pattern substitution.
+      const code = cppDriver(signature).replace("<<<STUDENT_CODE>>>", () => studentCode);
+      return { code, studentCodeOffset: computeStudentCodeOffset(code, studentCode) };
+    }
     case "javascript":
-      return `${studentCode}\n\n${jsDriver(signature)}`;
-    case "c":
-      return cDriver(signature).replace("<<<STUDENT_CODE>>>", studentCode);
+      return { code: `${studentCode}\n\n${jsDriver(signature)}`, studentCodeOffset: 0 };
+    case "c": {
+      // See the cpp case above — function replacer avoids $-pattern corruption from student code.
+      const code = cDriver(signature).replace("<<<STUDENT_CODE>>>", () => studentCode);
+      return { code, studentCodeOffset: computeStudentCodeOffset(code, studentCode) };
+    }
     default:
       throw new Error(`Unsupported language "${language}"`);
   }
