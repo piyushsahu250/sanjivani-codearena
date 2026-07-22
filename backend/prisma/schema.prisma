@@ -1408,11 +1408,14 @@ model StaffClassAssignment {
   staffId String
   class   Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
   classId String
-  subject String
+  // Defaults exist only so `prisma db push` can backfill any pre-redesign rows non-destructively;
+  // every write path (routes/attendance.js) still requires a real, non-empty value at the
+  // application layer — these defaults are a migration safety net, not a relaxed validation rule.
+  subject String @default("")
   // Free text (programs vary in term count/naming across institutes) — mutable, not part of the
   // uniqueness key, since the same staff/class/subject offering carries across semesters and an
   // admin can just update it rather than creating a new assignment each term.
-  semester String
+  semester String @default("")
 
   assignedAt DateTime @default(now())
 
