@@ -59,6 +59,18 @@ function toOriginalIndices(selectedOptions, order) {
   return (Array.isArray(selectedOptions) ? selectedOptions : []).map((pos) => order[pos]).filter((v) => v !== undefined);
 }
 
+// The student's own individual deadline: their server-recorded startedAt plus the test's
+// configured duration — never clamped to the test's scheduled availability window (Test.endTime
+// only gates whether a *new* attempt can be started, see tests.js's POST /:id/start; a student who
+// starts near the window's close still gets the full duration, matching moduleCoding.js's
+// deadlineOf() for Module Coding Tests). This is the server-side source of truth mirrored by
+// TestTaking.jsx's client-side countdown — every write endpoint below enforces it directly rather
+// than trusting the client's timer to fire, since a client that never calls /finalize (blocked JS,
+// closed tab, tampered devtools) must not be able to keep submitting past time.
+function deadlineOf(attempt) {
+  return new Date(attempt.startedAt).getTime() + attempt.test.durationMin * 60 * 1000;
+}
+
 // Exact-match grading for MCQ / TRUE_FALSE / MULTISELECT: the selected set of
 // option indices must equal the correct set exactly (no partial credit).
 function gradeQuizAnswer(question, selectedOptions) {
@@ -106,13 +118,14 @@ router.post("/autosave", authenticate, requireRole("STUDENT"), async (req, res) 
   try {
     const { attemptId, questionId, language, code } = req.body;
 
-    const attempt = await prisma.testAttempt.findUnique({ where: { id: attemptId } });
+    const attempt = await prisma.testAttempt.findUnique({ where: { id: attemptId }, include: { test: { select: { durationMin: true } } } });
     if (!attempt || attempt.studentId !== req.user.id) {
       return res.status(403).json({ error: "Invalid attempt" });
     }
     if (attempt.status !== "IN_PROGRESS") {
       return res.status(403).json({ error: "This test attempt is already finalized" });
     }
+    if (Date.now() > deadlineOf(attempt)) return res.status(403).json({ error: "Time is up for this test" });
 
     const question = await prisma.question.findUnique({ where: { id: questionId } });
     if (!question) return res.status(404).json({ error: "Question not found" });
@@ -151,13 +164,14 @@ router.post("/submit-code", authenticate, requireRole("STUDENT"), execLimiter, a
   try {
     const { attemptId, questionId, language, code } = req.body;
 
-    const attempt = await prisma.testAttempt.findUnique({ where: { id: attemptId } });
+    const attempt = await prisma.testAttempt.findUnique({ where: { id: attemptId }, include: { test: { select: { durationMin: true } } } });
     if (!attempt || attempt.studentId !== req.user.id) {
       return res.status(403).json({ error: "Invalid attempt" });
     }
     if (attempt.status !== "IN_PROGRESS") {
       return res.status(403).json({ error: "This test attempt is already finalized" });
     }
+    if (Date.now() > deadlineOf(attempt)) return res.status(403).json({ error: "Time is up for this test" });
 
     const question = await prisma.question.findUnique({ where: { id: questionId }, include: { testCases: true } });
     if (!question) return res.status(404).json({ error: "Question not found" });
@@ -190,13 +204,14 @@ router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async 
   try {
     const { attemptId, questionId, selectedOptions } = req.body;
 
-    const attempt = await prisma.testAttempt.findUnique({ where: { id: attemptId } });
+    const attempt = await prisma.testAttempt.findUnique({ where: { id: attemptId }, include: { test: { select: { durationMin: true } } } });
     if (!attempt || attempt.studentId !== req.user.id) {
       return res.status(403).json({ error: "Invalid attempt" });
     }
     if (attempt.status !== "IN_PROGRESS") {
       return res.status(403).json({ error: "This test attempt is already finalized" });
     }
+    if (Date.now() > deadlineOf(attempt)) return res.status(403).json({ error: "Time is up for this test" });
 
     const question = await prisma.question.findUnique({ where: { id: questionId } });
     if (!question) return res.status(404).json({ error: "Question not found" });
@@ -251,7 +266,7 @@ router.post("/submit", authenticate, requireRole("STUDENT"), execLimiter, async 
 // again on an already-finalized attempt just returns the current state.
 router.post("/finalize/:attemptId", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
-    const attempt = await prisma.testAttempt.findUnique({ where: { id: req.params.attemptId } });
+    const attempt = await prisma.testAttempt.findUnique({ where: { id: req.params.attemptId }, include: { test: { select: { durationMin: true } } } });
     if (!attempt || attempt.studentId !== req.user.id) {
       return res.status(403).json({ error: "Invalid attempt" });
     }
@@ -262,9 +277,16 @@ router.post("/finalize/:attemptId", authenticate, requireRole("STUDENT"), async 
 
     await gradePendingCodingSubmissions(attempt.id);
 
+    // Finalize is never blocked by the deadline (unlike autosave/submit-code/submit above) — it
+    // must always be able to close out whatever was legitimately submitted before time ran out,
+    // whether triggered by the client's own timer hitting zero or a manual Submit click. Past the
+    // deadline, though, mark it AUTO_SUBMITTED rather than SUBMITTED for accurate reporting — same
+    // status a violation-triggered auto-submit already uses, and mirrors moduleCoding.js's
+    // TIME_EXPIRED handling for Module Coding Test attempts.
+    const isLate = Date.now() > deadlineOf(attempt);
     const updated = await prisma.testAttempt.update({
       where: { id: req.params.attemptId },
-      data: { status: "SUBMITTED", submittedAt: new Date() },
+      data: { status: isLate ? "AUTO_SUBMITTED" : "SUBMITTED", submittedAt: new Date() },
     });
 
     let gamification = null;

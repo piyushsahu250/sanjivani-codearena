@@ -390,14 +390,20 @@ export default function TestTaking() {
       const testRes = await api.get(`/tests/${testId}`);
       setTest(testRes.data);
 
-      // The candidate's deadline is their own start time + the configured duration, capped by
-      // the test's scheduled window close — not "time until the window closes" (which was the
-      // actual bug: a test open all day with a 3-minute duration was handing out ~24 hours).
-      // Anchored to the server-recorded startedAt (fixed at first start, never changes on
-      // refresh) so a reload can't reset or extend the clock.
+      // The candidate's deadline is their own start time + the configured duration — every
+      // student gets the FULL duration from the moment they click Start, regardless of how late
+      // in the test's availability window (Test.startTime/endTime) they started. The window only
+      // gates *when a new attempt can begin* (enforced server-side in tests.js's POST /:id/start);
+      // it is not a shared end-of-test clock. Capping the deadline to the window's close (the
+      // previous behavior) meant a student starting 10 minutes into a 60-minute window got only
+      // 50 minutes while an on-time student got the full 60 — an unfair, inconsistent-per-student
+      // timer that looked like a bug because it was one. Anchored to the server-recorded
+      // startedAt (fixed at first start, never changes on refresh) so a reload can't reset or
+      // extend the clock; the server independently enforces this same deadline on every write
+      // (see submissions.js's deadlineOf()), so a client that never fires this timer can't be used
+      // to keep submitting past time.
       const startedAtMs = new Date(startRes.data.startedAt).getTime();
-      const windowCloseMs = new Date(testRes.data.endTime).getTime();
-      const deadline = Math.min(startedAtMs + testRes.data.durationMin * 60 * 1000, windowCloseMs);
+      const deadline = startedAtMs + testRes.data.durationMin * 60 * 1000;
       deadlineRef.current = deadline;
 
       // Restore previously auto-saved answers — a page refresh mid-test shouldn't lose
