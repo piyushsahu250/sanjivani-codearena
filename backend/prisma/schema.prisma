@@ -53,6 +53,7 @@ model Institute {
   users           User[]
   questions       Question[]
   questionFolders QuestionFolder[]
+  departments     Department[]
 }
 
 model Class {
@@ -67,8 +68,18 @@ model Class {
   institute   Institute? @relation(fields: [instituteId], references: [id], onDelete: Cascade)
   instituteId String?
 
+  // Attendance Management's Department → Division hierarchy — nullable so every existing Class
+  // row (and everything else that already reads Class: tests, learning, resume, etc.) keeps
+  // working unchanged. A Class only becomes attendance-eligible once an admin assigns it into a
+  // Division (see routes/attendance.js's admin division-assignment endpoint).
+  division   Division? @relation(fields: [divisionId], references: [id])
+  divisionId String?
+
   users           User[]
   testAssignments TestClass[]
+
+  staffAssignments   StaffClassAssignment[]
+  attendanceSessions AttendanceSession[]
 
   @@unique([instituteId, name, batchYear])
 }
@@ -128,6 +139,12 @@ model User {
   dailyChallengeSubmissions  DailyChallengeSubmission[]
   weeklyChallengeSubmissions WeeklyChallengeSubmission[]
 
+  // Attendance Management — staff only: which classes this staff member has been assigned to
+  // mark attendance for, and the sessions/records that flow from that.
+  staffClassAssignments   StaffClassAssignment[] @relation("StaffClassAssignments")
+  attendanceSessionsMarked AttendanceSession[]   @relation("AttendanceMarkedBy")
+  attendanceRecords        AttendanceRecord[]    @relation("AttendanceStudentRecords")
+
   @@index([instituteId])
   @@index([classId])
   @@index([role])
@@ -171,6 +188,10 @@ model Test {
   questions TestQuestion[]
   attempts  TestAttempt[]
   classes   TestClass[] // empty = open to all classes (legacy/unscoped tests)
+
+  // Attendance Management: when Lecture Type = Exam, a session can link back to the Test being
+  // administered, so exam attendance is tied to the actual test rather than duplicated.
+  attendanceSessions AttendanceSession[]
 
   @@index([createdById])
   @@index([isPublished])
@@ -1336,4 +1357,101 @@ model InterviewCertificate {
   studentId       String   @unique
   averageScore    Int
   issuedAt        DateTime @default(now())
+}
+
+// ===================== Attendance Management =====================
+// Institute → Department → Division → Class → Student. Department/Division are new — this
+// platform's existing hierarchy was Institute → Class → Student, with no structured department
+// or division concept (User.department was a free-text tag, not a relation). Both are admin-
+// managed and additive: existing Class rows start with divisionId = null and remain fully
+// functional for every other feature (tests, learning, etc.); a Class only needs a Division once
+// an admin wants to take attendance for it.
+
+model Department {
+  id          String    @id @default(uuid())
+  name        String
+  institute   Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  instituteId String
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  divisions Division[]
+
+  @@unique([instituteId, name])
+}
+
+model Division {
+  id           String     @id @default(uuid())
+  name         String     // e.g. "A", "Division 1"
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  departmentId String
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+
+  classes Class[]
+
+  @@unique([departmentId, name])
+}
+
+// Admin-managed: which staff can mark/edit attendance for which classes. Many-to-many — a class
+// can have multiple staff, a staff member can be assigned multiple classes.
+model StaffClassAssignment {
+  id      String @id @default(uuid())
+  staff   User   @relation("StaffClassAssignments", fields: [staffId], references: [id], onDelete: Cascade)
+  staffId String
+  class   Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId String
+
+  assignedAt DateTime @default(now())
+
+  @@unique([staffId, classId])
+  @@index([classId])
+}
+
+enum LectureType {
+  REGULAR
+  PRACTICE_TEST
+  EXAM
+}
+
+// One row per (class, date, lectureNumber) — the "roll call" event. AttendanceRecord rows (one
+// per student) hang off it. lectureNumber is suggested by the backend as "count of this class's
+// sessions so far + 1" but stored explicitly so it can't silently shift if an earlier session is
+// later edited/deleted.
+model AttendanceSession {
+  id            String      @id @default(uuid())
+  class         Class       @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId       String
+  date          DateTime // calendar date this lecture was held (time-of-day not meaningful)
+  // Captured per-session, not on Class/Division — a class/cohort progresses through multiple
+  // semesters over its life, so semester isn't a fixed property of the class itself.
+  semester      String?
+  lectureNumber Int
+  lectureType   LectureType @default(REGULAR)
+  // Only set when lectureType = EXAM — links this attendance session to the actual Test being
+  // administered, reusing the existing Test module instead of duplicating exam metadata.
+  test          Test?       @relation(fields: [testId], references: [id])
+  testId        String?
+  markedBy      User        @relation("AttendanceMarkedBy", fields: [markedById], references: [id])
+  markedById    String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  records AttendanceRecord[]
+
+  @@unique([classId, date, lectureNumber])
+  @@index([classId, date])
+  @@index([testId])
+}
+
+model AttendanceRecord {
+  id        String            @id @default(uuid())
+  session   AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  student   User              @relation("AttendanceStudentRecords", fields: [studentId], references: [id], onDelete: Cascade)
+  studentId String
+  status    String            @default("PRESENT") // PRESENT | ABSENT
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
 }

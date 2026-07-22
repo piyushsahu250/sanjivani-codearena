@@ -38,6 +38,9 @@ import BulkUpload from "./pages/BulkUpload";
 import ClassManagement from "./pages/ClassManagement";
 import ClassStudents from "./pages/ClassStudents";
 import InstituteManagement from "./pages/InstituteManagement";
+import AttendanceStructure from "./pages/AttendanceStructure";
+import AttendanceMark from "./pages/AttendanceMark";
+import AttendanceReports from "./pages/AttendanceReports";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import ForceChangePassword from "./pages/ForceChangePassword";
@@ -212,6 +215,8 @@ export default function App() {
           <Route path="/staff/audit-log" element={<Protected roles={["ADMIN", "STAFF"]}><AuditLogPage basePath="/staff" /></Protected>} />
           <Route path="/staff/certificates" element={<Protected roles={["ADMIN", "STAFF"]}><CertificateAdmin basePath="/staff" /></Protected>} />
           <Route path="/staff/exports" element={<Protected roles={["ADMIN", "STAFF"]}><ExportCenter basePath="/staff" /></Protected>} />
+          <Route path="/staff/attendance" element={<Protected roles={["ADMIN", "STAFF"]}><AttendanceMark /></Protected>} />
+          <Route path="/staff/attendance/reports" element={<Protected roles={["ADMIN", "STAFF"]}><AttendanceReports /></Protected>} />
 
           {/* Admin only: account management */}
           <Route path="/admin" element={<Protected roles={["ADMIN"]}><Suspense fallback={<LoadingScreen />}><AdminDashboard /></Suspense></Protected>} />
@@ -219,6 +224,7 @@ export default function App() {
           <Route path="/admin/classes" element={<Protected roles={["ADMIN"]}><ClassManagement /></Protected>} />
           <Route path="/admin/classes/:id/students" element={<Protected roles={["ADMIN"]}><ClassStudents /></Protected>} />
           <Route path="/admin/institutes" element={<Protected roles={["ADMIN"]}><InstituteManagement /></Protected>} />
+          <Route path="/admin/attendance-structure" element={<Protected roles={["ADMIN"]}><AttendanceStructure /></Protected>} />
           <Route path="/admin/email-logs" element={<Protected roles={["ADMIN"]}><EmailLogs /></Protected>} />
           <Route path="/admin/password-reset-history" element={<Protected roles={["ADMIN"]}><PasswordResetHistory basePath="/admin" /></Protected>} />
           <Route path="/admin/audit-log" element={<Protected roles={["ADMIN"]}><AuditLogPage basePath="/admin" /></Protected>} />

@@ -48,6 +48,7 @@ const AUDIT_ACTIONS = {
   DATABASE_BACKUP_DOWNLOADED: "DATABASE_BACKUP_DOWNLOADED",
   DATA_EXPORTED: "DATA_EXPORTED",
   AI_AUTO_REFRESH_RUN: "AI_AUTO_REFRESH_RUN",
+  STAFF_CLASS_ASSIGNMENT_CHANGED: "STAFF_CLASS_ASSIGNMENT_CHANGED",
 };
 
 // Never throws — audit logging is a best-effort side channel (same posture as this codebase's

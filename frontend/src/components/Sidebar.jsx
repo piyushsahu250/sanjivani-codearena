@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BookOpen, BarChart3, Mic, FileText, History, Award, Trophy, Settings,
   Users, FileQuestion, Building2, School, Upload, ChevronLeft, ChevronRight, ClipboardList,
-  Mail, Activity, Download, CalendarDays, CalendarRange, Briefcase, Sparkles,
+  Mail, Activity, Download, CalendarDays, CalendarRange, Briefcase, Sparkles, CheckSquare, Layers,
 } from "lucide-react";
 import { useSidebarUI } from "../context/SidebarContext";
 
@@ -48,6 +48,10 @@ const MENU = {
       { label: "AI Draft Review", to: "/staff/interview-drafts", icon: Sparkles },
       { label: "Interview Reports", to: "/staff/interview-reports", icon: ClipboardList },
     ] },
+    { group: "Attendance", items: [
+      { label: "Mark Attendance", to: "/staff/attendance", icon: CheckSquare },
+      { label: "Attendance Reports", to: "/staff/attendance/reports", icon: ClipboardList },
+    ] },
     { group: "", items: [{ label: "Settings", to: "/account", icon: Settings }] },
   ],
   ADMIN: [
@@ -57,6 +61,11 @@ const MENU = {
       { label: "Classes", to: "/admin/classes", icon: School },
       { label: "Bulk Upload", to: "/admin/bulk-upload", icon: Upload },
       { label: "Students", to: "/admin/students", icon: Users },
+    ] },
+    { group: "Attendance", items: [
+      { label: "Attendance Setup", to: "/admin/attendance-structure", icon: Layers },
+      { label: "Mark Attendance", to: "/staff/attendance", icon: CheckSquare },
+      { label: "Attendance Reports", to: "/staff/attendance/reports", icon: ClipboardList },
     ] },
     { group: "Content", items: [
       { label: "Learning Management", to: "/staff/learning", icon: BookOpen },
