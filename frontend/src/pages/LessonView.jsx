@@ -8,6 +8,7 @@ import ChalkUnderline from "../components/ChalkUnderline";
 import CodeResultBlock from "../components/CodeResultBlock";
 import RunSubmitButtons from "../components/RunSubmitButtons";
 import ProblemStatement from "../components/ProblemStatement";
+import useAiStatus from "../hooks/useAiStatus";
 
 const AUTOSAVE_DEBOUNCE_MS = 2000;
 
@@ -40,6 +41,7 @@ function defaultStarter(language) {
 }
 
 export default function LessonView() {
+  const aiAvailable = useAiStatus();
   const { slug, lessonId } = useParams();
   const navigate = useNavigate();
   const { notify } = useGamification();
@@ -539,10 +541,10 @@ function PracticeQuestionCard({ question }) {
           {submitResult && (
             <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: submitResult.verdict === "ACCEPTED" ? "#E7F3EB" : "#F7E4E0" }}>
               <CodeResultBlock title="Submission result" result={submitResult} />
-              {submitResult.verdict !== "ACCEPTED" && (
+              {submitResult.verdict !== "ACCEPTED" && aiAvailable !== false && (
                 <div style={{ marginTop: 10 }}>
                   {!hint && (
-                    <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} disabled={gettingHint} onClick={getHint}>
+                    <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} disabled={gettingHint || aiAvailable !== true} onClick={getHint}>
                       {gettingHint ? "Thinking…" : "Get a Hint"}
                     </button>
                   )}

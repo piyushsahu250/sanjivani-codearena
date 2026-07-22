@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import useAiStatus from "../hooks/useAiStatus";
 
 const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, marginTop: 4 };
 const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--ink-dim)" };
@@ -57,6 +58,7 @@ const LANGUAGE_FIELDS = [
 ];
 
 export default function ResumeBuilder() {
+  const aiAvailable = useAiStatus();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [ats, setAts] = useState(null);
@@ -533,10 +535,17 @@ export default function ResumeBuilder() {
             <div className="card" style={{ padding: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>AI Resume Review</div>
-                <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={getAiReview} disabled={aiReviewing || reviewPending}>
-                  {aiReviewing ? "Reviewing…" : aiReview ? "Regenerate" : "Get AI Review"}
-                </button>
+                {aiAvailable === false ? (
+                  <span style={{ fontSize: 11, color: "var(--ink-dim)" }}>Coming soon</span>
+                ) : (
+                  <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={getAiReview} disabled={aiReviewing || reviewPending || aiAvailable !== true}>
+                    {aiReviewing ? "Reviewing…" : aiReview ? "Regenerate" : "Get AI Review"}
+                  </button>
+                )}
               </div>
+              {aiAvailable === false && (
+                <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 8 }}>AI-powered review isn't available on this server yet.</p>
+              )}
               {reviewPending && (
                 <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 8 }}>Complete the "Review Extracted Data" step above first.</p>
               )}

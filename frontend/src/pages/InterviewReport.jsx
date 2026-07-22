@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import useAiStatus from "../hooks/useAiStatus";
 import "./interviewPrep.css";
 
 const SCORE_LABELS = {
@@ -11,6 +12,7 @@ const SCORE_LABELS = {
 };
 
 export default function InterviewReport() {
+  const aiAvailable = useAiStatus();
   const { id } = useParams();
   const location = useLocation();
   const [report, setReport] = useState(location.state?.report || null);
@@ -124,10 +126,17 @@ export default function InterviewReport() {
         <div className="ip-glass" style={{ padding: 16, marginTop: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>AI Performance Analysis</div>
-            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={getAiInsights} disabled={loadingInsights}>
-              {loadingInsights ? "Analyzing…" : aiInsights ? "Regenerate" : "Get AI Analysis"}
-            </button>
+            {aiAvailable === false ? (
+              <span style={{ fontSize: 11, color: "var(--ink-dim)" }}>Coming soon</span>
+            ) : (
+              <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={getAiInsights} disabled={loadingInsights || aiAvailable !== true}>
+                {loadingInsights ? "Analyzing…" : aiInsights ? "Regenerate" : "Get AI Analysis"}
+              </button>
+            )}
           </div>
+          {aiAvailable === false && (
+            <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 8 }}>AI-powered analysis isn't available on this server yet.</p>
+          )}
           {aiInsightsError && <p style={{ color: "var(--rust)", fontSize: 12, marginTop: 8 }}>{aiInsightsError}</p>}
           {aiInsights && (
             <div style={{ marginTop: 10, fontSize: 13 }}>

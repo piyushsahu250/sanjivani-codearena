@@ -7,6 +7,7 @@ import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import ProblemStatementFields from "../components/ProblemStatementFields";
 import TestCasesEditor from "../components/TestCasesEditor";
+import useAiStatus from "../hooks/useAiStatus";
 import {
   CATEGORIES, APTITUDE_CATS, PACKAGE_BANDS, PACKAGE_BAND_LABEL,
   EXPERIENCE_LEVELS, FREQUENCY_TAGS, FREQUENCY_TAG_LABEL,
@@ -54,6 +55,7 @@ export default function InterviewDraftReview() {
 
 function QuestionDraftsTab() {
   const toast = useToast();
+  const aiAvailable = useAiStatus();
   const [statusFilter, setStatusFilter] = useState("PENDING");
   const [drafts, setDrafts] = useState(null);
   const [genForm, setGenForm] = useState({ category: "HR", company: "", count: 3, difficulty: "" });
@@ -106,9 +108,12 @@ function QuestionDraftsTab() {
             <input type="number" min="1" max="10" style={inputStyle} value={genForm.count} onChange={(e) => setGenForm({ ...genForm, count: e.target.value })} />
           </div>
         </div>
-        <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={generating} onClick={generate}>
+        <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={generating || aiAvailable !== true} onClick={generate}>
           {generating ? "Generating…" : "🤖 Generate drafts"}
         </button>
+        {aiAvailable === false && (
+          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 8 }}>AI generation isn't available on this server yet — set ANTHROPIC_API_KEY to enable it.</p>
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
@@ -275,6 +280,7 @@ function DraftQuestionCard({ draft, onChanged }) {
 
 function PatternDraftsTab() {
   const toast = useToast();
+  const aiAvailable = useAiStatus();
   const [statusFilter, setStatusFilter] = useState("PENDING");
   const [notes, setNotes] = useState(null);
   const [genForm, setGenForm] = useState({ company: "", category: "CODING" });
@@ -318,7 +324,10 @@ function PatternDraftsTab() {
             </select>
           </div>
         </div>
-        <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={generating} onClick={generate}>{generating ? "Generating…" : "🤖 Generate"}</button>
+        <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={generating || aiAvailable !== true} onClick={generate}>{generating ? "Generating…" : "🤖 Generate"}</button>
+        {aiAvailable === false && (
+          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 8 }}>AI generation isn't available on this server yet — set ANTHROPIC_API_KEY to enable it.</p>
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
