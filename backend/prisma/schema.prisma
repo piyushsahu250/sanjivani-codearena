@@ -79,7 +79,6 @@ model Class {
   testAssignments TestClass[]
 
   staffAssignments   StaffClassAssignment[]
-  attendanceSessions AttendanceSession[]
 
   @@unique([instituteId, name, batchYear])
 }
@@ -140,10 +139,12 @@ model User {
   weeklyChallengeSubmissions WeeklyChallengeSubmission[]
 
   // Attendance Management — staff only: which classes this staff member has been assigned to
-  // mark attendance for, and the sessions/records that flow from that.
-  staffClassAssignments   StaffClassAssignment[] @relation("StaffClassAssignments")
-  attendanceSessionsMarked AttendanceSession[]   @relation("AttendanceMarkedBy")
-  attendanceRecords        AttendanceRecord[]    @relation("AttendanceStudentRecords")
+  // mark attendance for, and the plans/sessions/records that flow from that.
+  staffClassAssignments    StaffClassAssignment[] @relation("StaffClassAssignments")
+  lecturePlansCreated      LecturePlan[]          @relation("LecturePlanCreatedBy")
+  attendanceSessionsMarked AttendanceSession[]    @relation("AttendanceMarkedBy")
+  attendanceSessionsUpdated AttendanceSession[]   @relation("AttendanceUpdatedBy")
+  attendanceRecords        AttendanceRecord[]     @relation("AttendanceStudentRecords")
 
   @@index([instituteId])
   @@index([classId])
@@ -169,6 +170,10 @@ model Test {
   requireFullscreen Boolean @default(true)
   requireWebcam     Boolean @default(false) // best-effort face presence check, mirrors ModuleCodingTest
   requireMicrophone Boolean @default(false) // mic-drop is monitored/warned but never blocks Submit
+  // Attendance Management integration: when true, this test only appears in the Attendance
+  // module's Practice Test/Exam "Select Test" dropdown, and POST /:id/start blocks any student
+  // who hasn't been marked Present for the lecture this test is linked to (see AttendanceSession).
+  attendanceMandatory Boolean @default(false)
   shuffleQuestions  Boolean @default(true)  // each student gets a random per-attempt question order (same question set)
   shuffleOptions    Boolean @default(false) // each student also gets randomized MCQ/MULTISELECT option order
   // "FIXED" (default): every student gets the test's full configured question list (questions[]).
@@ -1393,18 +1398,27 @@ model Division {
   @@unique([departmentId, name])
 }
 
-// Admin-managed: which staff can mark/edit attendance for which classes. Many-to-many — a class
-// can have multiple staff, a staff member can be assigned multiple classes.
+// Admin-managed: which staff can mark/edit attendance for which classes, for which subject. A
+// staff member can hold multiple assignments against the same class (one per subject they teach
+// it) — Class itself stays a plain roster container shared platform-wide (Tests, etc.), so Subject
+// and Semester live here rather than on Class, keeping this a purely Attendance-scoped concept.
 model StaffClassAssignment {
   id      String @id @default(uuid())
   staff   User   @relation("StaffClassAssignments", fields: [staffId], references: [id], onDelete: Cascade)
   staffId String
   class   Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
   classId String
+  subject String
+  // Free text (programs vary in term count/naming across institutes) — mutable, not part of the
+  // uniqueness key, since the same staff/class/subject offering carries across semesters and an
+  // admin can just update it rather than creating a new assignment each term.
+  semester String
 
   assignedAt DateTime @default(now())
 
-  @@unique([staffId, classId])
+  lecturePlans LecturePlan[]
+
+  @@unique([staffId, classId, subject])
   @@index([classId])
 }
 
@@ -1414,33 +1428,55 @@ enum LectureType {
   EXAM
 }
 
-// One row per (class, date, lectureNumber) — the "roll call" event. AttendanceRecord rows (one
-// per student) hang off it. lectureNumber is suggested by the backend as "count of this class's
-// sessions so far + 1" but stored explicitly so it can't silently shift if an earlier session is
-// later edited/deleted.
-model AttendanceSession {
-  id            String      @id @default(uuid())
-  class         Class       @relation(fields: [classId], references: [id], onDelete: Cascade)
-  classId       String
-  date          DateTime // calendar date this lecture was held (time-of-day not meaningful)
-  // Captured per-session, not on Class/Division — a class/cohort progresses through multiple
-  // semesters over its life, so semester isn't a fixed property of the class itself.
-  semester      String?
+// The "Add Plan" entity — a scheduled lecture for a staff-class-subject assignment, created ahead
+// of (and independently from) marking attendance. lectureNumber is explicit (manually assigned or
+// imported), scoped per-assignment so two subjects taught to the same class never collide.
+model LecturePlan {
+  id           String               @id @default(uuid())
+  assignment   StaffClassAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignmentId String
   lectureNumber Int
-  lectureType   LectureType @default(REGULAR)
-  // Only set when lectureType = EXAM — links this attendance session to the actual Test being
-  // administered, reusing the existing Test module instead of duplicating exam metadata.
-  test          Test?       @relation(fields: [testId], references: [id])
-  testId        String?
-  markedBy      User        @relation("AttendanceMarkedBy", fields: [markedById], references: [id])
-  markedById    String
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  topic        String
+  scheduleDate DateTime // calendar date this lecture is scheduled for (time-of-day not meaningful)
+  // "Slot 1".."Slot 7" or "Other" — startTime/endTime are always stored explicitly (even for the
+  // fixed slots) so the scheduled-lecture list and Excel import don't need a second lookup table.
+  slotLabel    String
+  startTime    String // e.g. "09:50"
+  endTime      String // e.g. "10:45"
+  lectureType  LectureType @default(REGULAR)
+  createdBy    User     @relation("LecturePlanCreatedBy", fields: [createdById], references: [id])
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  session AttendanceSession?
+
+  @@unique([assignmentId, lectureNumber])
+  @@index([assignmentId, scheduleDate])
+}
+
+// The "Execute Attendance" record — created only once a plan's attendance is actually marked
+// (1:1 with LecturePlan, hence @unique on planId). markedBy/markedAt are set once, at first save;
+// updatedBy/updatedAt track every subsequent edit, giving the audit trail the Edit flow needs
+// without ever losing who originally took the roll call.
+model AttendanceSession {
+  id          String      @id @default(uuid())
+  plan        LecturePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId      String      @unique
+  // Only meaningful when the plan's lectureType is PRACTICE_TEST/EXAM — links this attendance to
+  // the actual Test being administered, reusing the existing Test module instead of duplicating
+  // exam metadata. Must be an isPublished, attendanceMandatory-enabled, currently-active Test.
+  test        Test?       @relation(fields: [testId], references: [id])
+  testId      String?
+  markedBy    User        @relation("AttendanceMarkedBy", fields: [markedById], references: [id])
+  markedById  String
+  markedAt    DateTime    @default(now())
+  updatedBy   User?       @relation("AttendanceUpdatedBy", fields: [updatedById], references: [id])
+  updatedById String?
+  updatedAt   DateTime    @updatedAt
 
   records AttendanceRecord[]
 
-  @@unique([classId, date, lectureNumber])
-  @@index([classId, date])
   @@index([testId])
 }
 

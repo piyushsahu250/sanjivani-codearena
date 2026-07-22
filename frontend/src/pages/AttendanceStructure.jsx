@@ -216,13 +216,18 @@ function AssignClassesTab({ classes, divisions, onChange, setError }) {
 function AssignStaffTab({ classes, staff, onChange, setError }) {
   const [selectedClassId, setSelectedClassId] = useState("");
   const [selectedStaffId, setSelectedStaffId] = useState("");
+  const [subject, setSubject] = useState("");
+  const [semester, setSemester] = useState("");
+  const [editingSemesters, setEditingSemesters] = useState({}); // assignmentId -> draft semester value
   const selectedClass = classes.find((c) => c.id === selectedClassId);
 
   async function assign() {
-    if (!selectedClassId || !selectedStaffId) return;
+    if (!selectedClassId || !selectedStaffId || !subject.trim() || !semester.trim()) return;
     try {
-      await api.post("/attendance/admin/staff-assignments", { staffId: selectedStaffId, classId: selectedClassId });
+      await api.post("/attendance/admin/staff-assignments", { staffId: selectedStaffId, classId: selectedClassId, subject: subject.trim(), semester: semester.trim() });
       setSelectedStaffId("");
+      setSubject("");
+      setSemester("");
       onChange();
     } catch (err) {
       setError(err.response?.data?.error || "Failed to assign staff");
@@ -238,24 +243,44 @@ function AssignStaffTab({ classes, staff, onChange, setError }) {
     }
   }
 
+  async function saveSemester(a) {
+    const value = editingSemesters[a.id];
+    if (value === undefined || !value.trim() || value.trim() === a.semester) return;
+    try {
+      await api.patch(`/attendance/admin/staff-assignments/${a.id}`, { semester: value.trim() });
+      setEditingSemesters((prev) => { const next = { ...prev }; delete next[a.id]; return next; });
+      onChange();
+    } catch (err) {
+      setError(err.response?.data?.error || "Failed to update semester");
+    }
+  }
+
   return (
     <div style={{ marginTop: 20 }}>
       <div className="card" style={{ padding: 16, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div style={{ flex: "1 1 220px" }}>
+        <div style={{ flex: "1 1 200px" }}>
           <label style={labelStyle}>Class</label>
           <select style={inputStyle} value={selectedClassId} onChange={(e) => setSelectedClassId(e.target.value)}>
             <option value="">Select class…</option>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name} {c.batchYear ? `(${c.batchYear})` : ""}{c.division ? ` — ${c.division.department?.name}/${c.division.name}` : " — no division"}</option>)}
           </select>
         </div>
-        <div style={{ flex: "1 1 220px" }}>
+        <div style={{ flex: "1 1 200px" }}>
           <label style={labelStyle}>Staff member</label>
           <select style={inputStyle} value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value)}>
             <option value="">Select staff…</option>
             {staff.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.email})</option>)}
           </select>
         </div>
-        <button className="btn btn-primary" onClick={assign} disabled={!selectedClassId || !selectedStaffId}>Assign</button>
+        <div style={{ flex: "1 1 160px" }}>
+          <label style={labelStyle}>Subject</label>
+          <input style={inputStyle} placeholder="e.g. Data Structures" value={subject} onChange={(e) => setSubject(e.target.value)} />
+        </div>
+        <div style={{ flex: "1 1 120px" }}>
+          <label style={labelStyle}>Semester</label>
+          <input style={inputStyle} placeholder="e.g. 3" value={semester} onChange={(e) => setSemester(e.target.value)} />
+        </div>
+        <button className="btn btn-primary" onClick={assign} disabled={!selectedClassId || !selectedStaffId || !subject.trim() || !semester.trim()}>Assign</button>
       </div>
 
       {selectedClass && (
@@ -263,9 +288,20 @@ function AssignStaffTab({ classes, staff, onChange, setError }) {
           <h3 style={{ fontSize: 15 }}>Staff assigned to {selectedClass.name}</h3>
           <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
             {(selectedClass.staffAssignments || []).map((a) => (
-              <div key={a.id} className="card" style={{ padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 13 }}>{a.staff.name} <span className="mono" style={{ color: "var(--ink-dim)", fontSize: 11 }}>({a.staff.email})</span></span>
-                <button className="btn btn-ghost" style={{ fontSize: 12, color: "var(--rust)" }} onClick={() => unassign(a.id)}>Remove</button>
+              <div key={a.id} className="card" style={{ padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <span style={{ fontSize: 13 }}>{a.staff.name} <span className="mono" style={{ color: "var(--ink-dim)", fontSize: 11 }}>({a.staff.email})</span></span>
+                  <div style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>{a.subject}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    style={{ ...inputStyle, width: 90, padding: "6px 8px", fontSize: 12 }}
+                    value={editingSemesters[a.id] ?? a.semester}
+                    onChange={(e) => setEditingSemesters((prev) => ({ ...prev, [a.id]: e.target.value }))}
+                    onBlur={() => saveSemester(a)}
+                  />
+                  <button className="btn btn-ghost" style={{ fontSize: 12, color: "var(--rust)" }} onClick={() => unassign(a.id)}>Remove</button>
+                </div>
               </div>
             ))}
             {(!selectedClass.staffAssignments || selectedClass.staffAssignments.length === 0) && (

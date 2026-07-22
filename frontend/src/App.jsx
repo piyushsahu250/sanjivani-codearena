@@ -39,7 +39,9 @@ import ClassManagement from "./pages/ClassManagement";
 import ClassStudents from "./pages/ClassStudents";
 import InstituteManagement from "./pages/InstituteManagement";
 import AttendanceStructure from "./pages/AttendanceStructure";
-import AttendanceMark from "./pages/AttendanceMark";
+import AttendanceHome from "./pages/AttendanceHome";
+import AttendanceAssignmentDetail from "./pages/AttendanceAssignmentDetail";
+import ExecuteAttendance from "./pages/ExecuteAttendance";
 import AttendanceReports from "./pages/AttendanceReports";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -215,8 +217,10 @@ export default function App() {
           <Route path="/staff/audit-log" element={<Protected roles={["ADMIN", "STAFF"]}><AuditLogPage basePath="/staff" /></Protected>} />
           <Route path="/staff/certificates" element={<Protected roles={["ADMIN", "STAFF"]}><CertificateAdmin basePath="/staff" /></Protected>} />
           <Route path="/staff/exports" element={<Protected roles={["ADMIN", "STAFF"]}><ExportCenter basePath="/staff" /></Protected>} />
-          <Route path="/staff/attendance" element={<Protected roles={["ADMIN", "STAFF"]}><AttendanceMark /></Protected>} />
+          <Route path="/staff/attendance" element={<Protected roles={["ADMIN", "STAFF"]}><AttendanceHome /></Protected>} />
           <Route path="/staff/attendance/reports" element={<Protected roles={["ADMIN", "STAFF"]}><AttendanceReports /></Protected>} />
+          <Route path="/staff/attendance/:assignmentId" element={<Protected roles={["ADMIN", "STAFF"]}><AttendanceAssignmentDetail /></Protected>} />
+          <Route path="/staff/attendance/:assignmentId/execute/:planId" element={<Protected roles={["ADMIN", "STAFF"]}><ExecuteAttendance /></Protected>} />
 
           {/* Admin only: account management */}
           <Route path="/admin" element={<Protected roles={["ADMIN"]}><Suspense fallback={<LoadingScreen />}><AdminDashboard /></Suspense></Protected>} />

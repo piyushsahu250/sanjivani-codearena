@@ -986,6 +986,10 @@ export default function TestTaking() {
     const needsMedia = needsWebcam || needsMic;
     const needsFullscreen = testMeta.requireFullscreen !== false;
     const mediaLabel = needsWebcam && needsMic ? "camera and microphone" : needsWebcam ? "camera" : "microphone";
+    const attendanceBlocked = !!testMeta.attendanceMandatory && testMeta.attendanceStatus !== "PRESENT";
+    const attendanceMessage = testMeta.attendanceStatus === "ABSENT"
+      ? "You have been marked absent for this test and cannot start it."
+      : "Attendance has not yet been marked for this test. Please contact your faculty.";
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
         <div className="card" style={{ padding: 32, maxWidth: 480, textAlign: "center" }}>
@@ -1004,6 +1008,12 @@ export default function TestTaking() {
             one continuous {testMeta.durationMin}-minute timer for the whole test — answer any question in any
             order, and change your answers freely until you submit or time runs out.
           </p>
+
+          {attendanceBlocked && (
+            <div style={{ marginTop: 20, padding: 16, border: "1px solid var(--rust)", borderRadius: 10, background: "rgba(220,38,38,0.08)" }}>
+              <p style={{ fontSize: 13, color: "var(--rust)", fontWeight: 600 }}>{attendanceMessage}</p>
+            </div>
+          )}
 
           {needsMedia && (
             <div style={{ marginTop: 20, padding: 16, border: "1px solid var(--line)", borderRadius: 10 }}>
@@ -1037,9 +1047,9 @@ export default function TestTaking() {
 
           <button
             className="btn btn-primary"
-            style={{ marginTop: 20, padding: "12px 24px", opacity: (!needsMedia || mediaGranted) ? 1 : 0.4 }}
+            style={{ marginTop: 20, padding: "12px 24px", opacity: (!needsMedia || mediaGranted) && !attendanceBlocked ? 1 : 0.4 }}
             onClick={beginTest}
-            disabled={starting || (needsMedia && !mediaGranted)}
+            disabled={starting || attendanceBlocked || (needsMedia && !mediaGranted)}
           >
             {starting ? "Starting…" : needsFullscreen ? "Begin Test (Fullscreen)" : "Begin Test"}
           </button>

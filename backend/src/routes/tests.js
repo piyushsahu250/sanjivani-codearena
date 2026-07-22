@@ -128,7 +128,7 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
     const {
       title, code, description, instructions, durationMin, passingMarks, showResults,
       startTime, endTime, questionIds, questionTimeLimits, classIds,
-      requireFullscreen, requireWebcam, requireMicrophone,
+      requireFullscreen, requireWebcam, requireMicrophone, attendanceMandatory,
       shuffleQuestions, shuffleOptions,
       questionSelectionMode, randomBankFolderId, randomQuestionsPerStudent, difficultyDistribution,
       company,
@@ -153,6 +153,7 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
         requireFullscreen: requireFullscreen === undefined ? true : !!requireFullscreen,
         requireWebcam: !!requireWebcam,
         requireMicrophone: !!requireMicrophone,
+        attendanceMandatory: !!attendanceMandatory,
         shuffleQuestions: shuffleQuestions === undefined ? true : !!shuffleQuestions,
         shuffleOptions: !!shuffleOptions,
         questionSelectionMode: mode,
@@ -181,7 +182,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
     const {
       title, code, description, instructions, durationMin, passingMarks, showResults,
       startTime, endTime, questionIds, questionTimeLimits, classIds,
-      requireFullscreen, requireWebcam, requireMicrophone,
+      requireFullscreen, requireWebcam, requireMicrophone, attendanceMandatory,
       shuffleQuestions, shuffleOptions,
       questionSelectionMode, randomBankFolderId, randomQuestionsPerStudent, difficultyDistribution,
       company,
@@ -216,6 +217,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
       requireFullscreen: requireFullscreen === undefined ? existing.requireFullscreen : !!requireFullscreen,
       requireWebcam: requireWebcam === undefined ? existing.requireWebcam : !!requireWebcam,
       requireMicrophone: requireMicrophone === undefined ? existing.requireMicrophone : !!requireMicrophone,
+      attendanceMandatory: attendanceMandatory === undefined ? existing.attendanceMandatory : !!attendanceMandatory,
       shuffleQuestions: shuffleQuestions === undefined ? existing.shuffleQuestions : !!shuffleQuestions,
       shuffleOptions: shuffleOptions === undefined ? existing.shuffleOptions : !!shuffleOptions,
       questionSelectionMode: mode,
@@ -424,6 +426,19 @@ router.get("/:id", authenticate, async (req, res) => {
     }
   }
 
+  // Attendance Management integration: surface the student's own attendance status for this test
+  // so the pre-start screen can show the right message and disable Begin Test — computed here (not
+  // trusted from the client) since this is the same GET the pre-start screen already calls as
+  // `testMeta`, avoiding an extra round trip. "NOT_MARKED" covers both "no lecture has linked this
+  // test yet" and "linked but this student has no record" (e.g. added to the class afterward).
+  if (req.user.role === "STUDENT" && test.attendanceMandatory) {
+    const record = await prisma.attendanceRecord.findFirst({
+      where: { studentId: req.user.id, session: { testId: test.id } },
+      select: { status: true },
+    });
+    test.attendanceStatus = record ? record.status : "NOT_MARKED";
+  }
+
   res.json(test);
 });
 
@@ -455,6 +470,19 @@ router.post("/:id/start", authenticate, requireRole("STUDENT"), async (req, res)
     // sequence for the rest of the attempt.
     let attempt = existing;
     if (!attempt) {
+      // Attendance Management integration: gate only the creation of a brand-new attempt, not a
+      // resume (existing already short-circuited past this) — re-checking on every resume could
+      // lock a student out mid-test if their attendance record is edited afterward, which isn't
+      // what "when a student clicks Start Test" is asking for.
+      if (test.attendanceMandatory) {
+        const record = await prisma.attendanceRecord.findFirst({
+          where: { studentId: req.user.id, session: { testId: test.id } },
+          select: { status: true },
+        });
+        if (!record) return res.status(403).json({ error: "Attendance has not yet been marked for this test. Please contact your faculty." });
+        if (record.status === "ABSENT") return res.status(403).json({ error: "You have been marked absent for this test and cannot start it." });
+      }
+
       const testWithQuestions = await prisma.test.findUnique({
         where: { id: testId },
         include: { questions: { include: { question: { select: { id: true, questionType: true, options: true, difficulty: true } } } } },

@@ -10,7 +10,7 @@ const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "Tru
 
 const emptyForm = {
   title: "", code: "", description: "", instructions: "", company: "", durationMin: 60, passingMarks: "", showResults: true, startTime: "", endTime: "",
-  requireFullscreen: true, requireWebcam: false, requireMicrophone: false,
+  requireFullscreen: true, requireWebcam: false, requireMicrophone: false, attendanceMandatory: false,
   shuffleQuestions: true, shuffleOptions: false,
   questionSelectionMode: "FIXED", randomBankFolderId: "", randomQuestionsPerStudent: "",
   randomEasy: "", randomMedium: "", randomHard: "",
@@ -56,6 +56,7 @@ export default function CreateTest() {
         instructions: t.instructions || "", company: t.company || "", durationMin: t.durationMin, passingMarks: t.passingMarks ?? "",
         showResults: t.showResults, startTime: toLocalInputValue(t.startTime), endTime: toLocalInputValue(t.endTime),
         requireFullscreen: t.requireFullscreen !== false, requireWebcam: !!t.requireWebcam, requireMicrophone: !!t.requireMicrophone,
+        attendanceMandatory: !!t.attendanceMandatory,
         shuffleQuestions: t.shuffleQuestions !== false, shuffleOptions: !!t.shuffleOptions,
         questionSelectionMode: t.questionSelectionMode || "FIXED",
         randomBankFolderId: t.randomBankFolderId || "",
@@ -217,6 +218,16 @@ export default function CreateTest() {
               <input type="checkbox" checked={form.requireMicrophone} onChange={(e) => setForm({ ...form, requireMicrophone: e.target.checked })} /> Enable microphone monitoring
             </label>
           </div>
+
+          <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <input type="checkbox" checked={form.attendanceMandatory} onChange={(e) => setForm({ ...form, attendanceMandatory: e.target.checked })} /> Attendance Mandatory
+            </label>
+          </div>
+          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>
+            When checked, this test only appears in the Attendance module's Practice Test/Exam "Select Test" list, and a
+            student must be marked Present for the linked lecture before they can start it.
+          </p>
 
           <div style={{ marginTop: 20, fontWeight: 700, fontSize: 14 }}>Question Order</div>
           <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>

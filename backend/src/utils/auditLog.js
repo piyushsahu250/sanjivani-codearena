@@ -49,6 +49,7 @@ const AUDIT_ACTIONS = {
   DATA_EXPORTED: "DATA_EXPORTED",
   AI_AUTO_REFRESH_RUN: "AI_AUTO_REFRESH_RUN",
   STAFF_CLASS_ASSIGNMENT_CHANGED: "STAFF_CLASS_ASSIGNMENT_CHANGED",
+  ATTENDANCE_MARKED: "ATTENDANCE_MARKED",
 };
 
 // Never throws — audit logging is a best-effort side channel (same posture as this codebase's

@@ -3,18 +3,22 @@ import { Link } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import { useAuth } from "../context/AuthContext";
 
 const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, marginBottom: 6 };
 const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13 };
 
-// Filterable attendance report — STAFF automatically sees only their assigned classes (enforced
-// server-side; the department/division/class filter options here are derived from the same
-// scoped my-classes list the marking form uses, so a staff member never even sees a filter option
-// for a class they can't access). ADMIN sees everything in their institute scope.
+// Filterable attendance report — STAFF automatically sees only their own assignments (enforced
+// server-side; the filter options here are derived from the same scoped my-assignments list the
+// landing page uses, so a staff member never even sees a filter option they can't access). ADMIN
+// sees everything in their institute scope, including a Faculty filter.
 export default function AttendanceReports() {
-  const [myClasses, setMyClasses] = useState([]);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
+  const [myAssignments, setMyAssignments] = useState([]);
   const [filters, setFilters] = useState({
-    date: "", dateFrom: "", dateTo: "", departmentId: "", divisionId: "", classId: "", lectureType: "", studentId: "",
+    date: "", dateFrom: "", dateTo: "", academicYear: "", departmentId: "", divisionId: "",
+    subject: "", semester: "", facultyId: "", lectureType: "", status: "",
   });
   const [rows, setRows] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -22,26 +26,34 @@ export default function AttendanceReports() {
   const [exporting, setExporting] = useState("");
 
   useEffect(() => {
-    api.get("/attendance/my-classes").then((res) => setMyClasses(res.data)).catch(() => setMyClasses([]));
+    api.get("/attendance/my-assignments").then((res) => setMyAssignments(res.data)).catch(() => setMyAssignments([]));
   }, []);
+
+  const academicYears = useMemo(() => {
+    return [...new Set(myAssignments.map((a) => a.class.batchYear).filter(Boolean))];
+  }, [myAssignments]);
 
   const departments = useMemo(() => {
     const map = new Map();
-    myClasses.forEach((c) => c.division?.department && map.set(c.division.department.id, c.division.department.name));
+    myAssignments.forEach((a) => a.class.division?.department && map.set(a.class.division.department.id, a.class.division.department.name));
     return [...map.entries()].map(([id, name]) => ({ id, name }));
-  }, [myClasses]);
+  }, [myAssignments]);
 
   const divisions = useMemo(() => {
     const map = new Map();
-    myClasses.forEach((c) => {
-      if (c.division && (!filters.departmentId || c.division.departmentId === filters.departmentId)) map.set(c.division.id, c.division.name);
+    myAssignments.forEach((a) => {
+      if (a.class.division && (!filters.departmentId || a.class.division.departmentId === filters.departmentId)) map.set(a.class.division.id, a.class.division.name);
     });
     return [...map.entries()].map(([id, name]) => ({ id, name }));
-  }, [myClasses, filters.departmentId]);
+  }, [myAssignments, filters.departmentId]);
 
-  const classOptions = useMemo(() => {
-    return myClasses.filter((c) => (!filters.departmentId || c.division?.departmentId === filters.departmentId) && (!filters.divisionId || c.divisionId === filters.divisionId));
-  }, [myClasses, filters.departmentId, filters.divisionId]);
+  const subjects = useMemo(() => [...new Set(myAssignments.map((a) => a.subject))], [myAssignments]);
+  const semesters = useMemo(() => [...new Set(myAssignments.map((a) => a.semester))], [myAssignments]);
+  const faculty = useMemo(() => {
+    const map = new Map();
+    myAssignments.forEach((a) => map.set(a.staff.id, a.staff.name));
+    return [...map.entries()].map(([id, name]) => ({ id, name }));
+  }, [myAssignments]);
 
   function set(field, value) {
     setFilters((f) => ({ ...f, [field]: value }));
@@ -86,10 +98,12 @@ export default function AttendanceReports() {
     }
   }
 
+  const columns = ["Date", "Academic Year", "Department", "Division", "Class", "Subject", "Semester", "Faculty", "Lecture #", "Lecture Type", "Test", "Roll Number", "Student Name"];
+
   return (
     <div>
       <Navbar />
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
           <div>
             <h1>Attendance Reports</h1>
@@ -112,26 +126,49 @@ export default function AttendanceReports() {
             <input type="date" style={inputStyle} value={filters.dateTo} onChange={(e) => set("dateTo", e.target.value)} disabled={!!filters.date} />
           </div>
           <div>
+            <label style={labelStyle}>Academic Year</label>
+            <select style={inputStyle} value={filters.academicYear} onChange={(e) => set("academicYear", e.target.value)}>
+              <option value="">All</option>
+              {academicYears.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <div>
             <label style={labelStyle}>Department</label>
-            <select style={inputStyle} value={filters.departmentId} onChange={(e) => { set("departmentId", e.target.value); set("divisionId", ""); set("classId", ""); }}>
+            <select style={inputStyle} value={filters.departmentId} onChange={(e) => { set("departmentId", e.target.value); set("divisionId", ""); }}>
               <option value="">All</option>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
           <div>
             <label style={labelStyle}>Division</label>
-            <select style={inputStyle} value={filters.divisionId} onChange={(e) => { set("divisionId", e.target.value); set("classId", ""); }}>
+            <select style={inputStyle} value={filters.divisionId} onChange={(e) => set("divisionId", e.target.value)}>
               <option value="">All</option>
               {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={labelStyle}>Class</label>
-            <select style={inputStyle} value={filters.classId} onChange={(e) => set("classId", e.target.value)}>
+            <label style={labelStyle}>Semester</label>
+            <select style={inputStyle} value={filters.semester} onChange={(e) => set("semester", e.target.value)}>
               <option value="">All</option>
-              {classOptions.map((c) => <option key={c.id} value={c.id}>{c.name}{c.batchYear ? ` (${c.batchYear})` : ""}</option>)}
+              {semesters.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+          <div>
+            <label style={labelStyle}>Subject</label>
+            <select style={inputStyle} value={filters.subject} onChange={(e) => set("subject", e.target.value)}>
+              <option value="">All</option>
+              {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          {isAdmin && (
+            <div>
+              <label style={labelStyle}>Faculty</label>
+              <select style={inputStyle} value={filters.facultyId} onChange={(e) => set("facultyId", e.target.value)}>
+                <option value="">All</option>
+                {faculty.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label style={labelStyle}>Lecture Type</label>
             <select style={inputStyle} value={filters.lectureType} onChange={(e) => set("lectureType", e.target.value)}>
@@ -139,6 +176,14 @@ export default function AttendanceReports() {
               <option value="REGULAR">Regular Class</option>
               <option value="PRACTICE_TEST">Practice Test</option>
               <option value="EXAM">Exam</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Attendance Status</label>
+            <select style={inputStyle} value={filters.status} onChange={(e) => set("status", e.target.value)}>
+              <option value="">All</option>
+              <option value="PRESENT">Present</option>
+              <option value="ABSENT">Absent</option>
             </select>
           </div>
         </div>
@@ -156,22 +201,21 @@ export default function AttendanceReports() {
             <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8, fontSize: 12 }}>
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "2px solid var(--line)", color: "var(--ink-dim)" }}>
-                  {["Date", "Department", "Division", "Class", "Semester", "Lecture #", "Lecture Type", "Test", "Roll Number", "Student Name", "Status"].map((h) => (
-                    <th key={h} style={{ padding: "6px 8px" }}>{h}</th>
-                  ))}
+                  {columns.map((h) => <th key={h} style={{ padding: "6px 8px" }}>{h}</th>)}
+                  <th style={{ padding: "6px 8px" }}>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i} style={{ borderBottom: "1px solid var(--line)" }}>
-                    {["Date", "Department", "Division", "Class", "Semester", "Lecture #", "Lecture Type", "Test", "Roll Number", "Student Name"].map((k) => (
+                    {columns.map((k) => (
                       <td key={k} style={{ padding: "6px 8px" }} className={k === "Roll Number" ? "mono" : undefined}>{r[k]}</td>
                     ))}
                     <td style={{ padding: "6px 8px", fontWeight: 700, color: r.Status === "ABSENT" ? "var(--rust)" : "var(--mint)" }}>{r.Status}</td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={11} style={{ padding: 24, textAlign: "center", color: "var(--ink-dim)" }}>No records match these filters.</td></tr>
+                  <tr><td colSpan={columns.length + 1} style={{ padding: 24, textAlign: "center", color: "var(--ink-dim)" }}>No records match these filters.</td></tr>
                 )}
               </tbody>
             </table>
