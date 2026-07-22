@@ -325,11 +325,31 @@ function wrapFunctionCode(language, signature, studentCode) {
     throw new Error(`This question's signature isn't available in ${language} (array types aren't supported in C)`);
   }
   switch (language) {
-    case "java":
+    case "java": {
+      // Guards against a specific, confusing failure: a question can be switched from STDIO to
+      // FUNCTION mode after a student has already autosaved a full STDIO-style program (their own
+      // `public class Main` with its own `main()`) — e.g. via the platform-wide FUNCTION-mode
+      // migration converting an already-live question out from under an in-progress attempt. On
+      // resume, that stale code is correctly restored to the editor (autosave must never silently
+      // drop real work), but naively concatenating it after the driver's own `public class Main`
+      // produces a file with two conflicting top-level declarations — javac's actual error
+      // ("class, interface, enum, or record expected") is a generic parser message pointing at a
+      // line number that doesn't correspond to anything the student can see in their editor, since
+      // it falls inside the invisible generated driver. Detecting the shape here and failing with
+      // a clear, specific message (routed through the same COMPILE_ERROR path as any other
+      // wrapFunctionCode() throw — see judge.js's catch around this call) is far more actionable
+      // than letting the raw compiler output through.
+      if (/\bpublic\s+class\s+\w+/.test(studentCode) || /\bpublic\s+static\s+void\s+main\s*\(/.test(studentCode)) {
+        throw new Error(
+          "This looks like a full Java program (with its own \"public class\" and/or main() method), but this question now expects only a method body inside \"class Solution { ... }\" — no class declaration or main() of your own. " +
+          "This usually happens when a question is switched to function-based grading after you already started writing a full program. Replace your solution with just the method body shown in the starter code."
+        );
+      }
       // Student's `class Solution { ... }` (package-private) coexists with the driver's
       // `public class Main` in one file — Java only requires the public class to match the
       // filename, so this compiles exactly like the platform's existing STDIO-mode Main.java.
       return `${javaDriver(signature)}\n${studentCode}\n`;
+    }
     case "python":
       // Python executes top-to-bottom, so the class must be defined first, then used.
       return `${studentCode}\n\n${pythonDriver(signature)}`;
