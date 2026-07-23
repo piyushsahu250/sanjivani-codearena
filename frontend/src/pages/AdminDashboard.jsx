@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
-import { Building2, School, Upload, PlusCircle, Users as UsersIcon, BarChart3, FileText, Mic, Settings, Trophy, Mail } from "lucide-react";
+import { Building2, Upload, PlusCircle, Users as UsersIcon, BarChart3, FileText, Mic, Settings, Trophy, Mail } from "lucide-react";
 import api from "../api";
 import { useToast } from "../context/ToastContext";
 import { useConfirm } from "../context/ConfirmContext";
@@ -10,7 +10,7 @@ import ChalkUnderline from "../components/ChalkUnderline";
 
 const ROLES = ["STUDENT", "STAFF", "ADMIN"];
 const emptyForm = {
-  name: "", email: "", role: "STUDENT", instituteId: "", classId: "",
+  name: "", email: "", role: "STUDENT", instituteId: "",
   rollNumber: "", registrationNumber: "", department: "", mobile: "", gender: "",
   program: "", batchYear: "", section: "",
 };
@@ -20,7 +20,6 @@ export default function AdminDashboard() {
   const confirmDialog = useConfirm();
   const [users, setUsers] = useState([]);
   const [institutes, setInstitutes] = useState([]);
-  const [classes, setClasses] = useState([]);
   const [stats, setStats] = useState(null);
   const [tests, setTests] = useState(null);
   const [gamiStats, setGamiStats] = useState(null);
@@ -48,14 +47,17 @@ export default function AdminDashboard() {
     api.get("/gamification/admin/stats").then((res) => setGamiStats(res.data)).catch(() => setGamiStats(null));
   }, []);
 
-  useEffect(() => {
-    if (!form.instituteId) return setClasses([]);
-    api.get("/classes", { params: { instituteId: form.instituteId } }).then((res) => setClasses(res.data));
-  }, [form.instituteId]);
-
   function updateField(field) {
-    return (e) => setForm({ ...form, [field]: e.target.value, ...(field === "instituteId" ? { classId: "" } : {}) });
+    return (e) => setForm({ ...form, [field]: e.target.value });
   }
+
+  // Autocomplete options for Batch/Department/Section, derived from students already loaded for
+  // the selected institute (covers both legacy free-text fields and the new academicGroup, so
+  // suggestions work regardless of when a student was created) — no dedicated endpoint needed.
+  const instituteStudents = users.filter((u) => u.role === "STUDENT" && u.institute?.id === form.instituteId);
+  const batchOptions = [...new Set(instituteStudents.map((u) => u.academicGroup?.batch || u.batchYear).filter(Boolean))];
+  const departmentOptions = [...new Set(instituteStudents.map((u) => u.academicGroup?.department?.name || u.department).filter(Boolean))];
+  const sectionOptions = [...new Set(instituteStudents.map((u) => u.academicGroup?.section || u.section).filter(Boolean))];
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -63,7 +65,6 @@ export default function AdminDashboard() {
     setCreatedCredential(null);
     setCopied(false);
     if (!form.instituteId) return setError("Please choose an institute");
-    if (form.role === "STUDENT" && !form.classId) return setError("Please choose a class for this student");
     if (form.role === "STUDENT" && !form.mobile.trim()) return setError("Mobile number is required for students");
     if (form.role === "STUDENT" && !form.batchYear.trim()) return setError("Batch is required for students");
     setSaving(true);
@@ -163,7 +164,6 @@ export default function AdminDashboard() {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Link to="/admin/institutes" className="btn btn-ghost"><Building2 size={15} /> Create Institute</Link>
-            <Link to="/admin/classes" className="btn btn-ghost"><School size={15} /> Create Class</Link>
             <Link to="/admin/bulk-upload" className="btn btn-primary"><Upload size={15} /> Bulk Student Upload</Link>
             <Link to="/staff/tests/new" className="btn btn-ghost"><PlusCircle size={15} /> Create Test</Link>
             <Link to="/admin/students" className="btn btn-ghost"><UsersIcon size={15} /> Student Performance</Link>
@@ -178,7 +178,7 @@ export default function AdminDashboard() {
         {stats && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, marginTop: 28 }}>
             <StatCard label="Institutes" value={stats.totalInstitutes} />
-            <StatCard label="Classes" value={stats.totalClasses} />
+            <StatCard label="Academic Groups" value={stats.totalAcademicGroups} />
             <StatCard label="Students" value={stats.totalStudents} />
             <StatCard label="Staff" value={stats.totalStaff} />
             <StatCard label="Learning Modules" value={stats.totalCourses} />
@@ -187,6 +187,17 @@ export default function AdminDashboard() {
             <StatCard label="Active Tests" value={stats.activeTests} accent="var(--mint)" />
             <StatCard label="Scheduled Tests" value={stats.scheduledTests} accent="var(--amber-dark)" />
             <StatCard label="Completed Tests" value={stats.completedTests} accent="var(--ink-dim)" />
+          </div>
+        )}
+
+        {stats && stats.studentsUnlinkedFromAcademicGroup > 0 && (
+          <div className="card" style={{ padding: 14, marginTop: 16, borderLeft: "3px solid var(--rust)" }}>
+            <p style={{ fontSize: 13, color: "var(--rust)", fontWeight: 600 }}>
+              {stats.studentsUnlinkedFromAcademicGroup} student{stats.studentsUnlinkedFromAcademicGroup === 1 ? "" : "s"} still {stats.studentsUnlinkedFromAcademicGroup === 1 ? "has" : "have"} a class but no academic group.
+            </p>
+            <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>
+              The Institute/Batch/Department/Section migration hasn't finished for everyone yet — this should reach 0 shortly after deploy.
+            </p>
           </div>
         )}
 
@@ -325,16 +336,6 @@ export default function AdminDashboard() {
                   {institutes.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
                 </select>
 
-                {(form.role === "STUDENT" || form.instituteId) && (
-                  <>
-                    <label style={labelStyle}>Class{form.role === "STUDENT" ? "" : " (optional)"}</label>
-                    <select style={inputStyle} required={form.role === "STUDENT"} value={form.classId} onChange={updateField("classId")} disabled={!form.instituteId}>
-                      <option value="">Select class…</option>
-                      {classes.map((c) => <option key={c.id} value={c.id}>{c.name}{c.batchYear ? ` (${c.batchYear})` : ""}</option>)}
-                    </select>
-                  </>
-                )}
-
                 {form.role === "STUDENT" && (
                   <>
                     <label style={labelStyle}>Roll number</label>
@@ -368,19 +369,26 @@ export default function AdminDashboard() {
                       placeholder="e.g. 2025–2027"
                     />
                     <datalist id="batch-options">
-                      {[...new Set(classes.map((c) => c.batchYear).filter(Boolean))].map((b) => <option key={b} value={b} />)}
+                      {batchOptions.map((b) => <option key={b} value={b} />)}
                     </datalist>
                     <p style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 2 }}>
-                      Pick an existing batch or type a new one — it'll be available for future students once saved.
+                      Pick an existing batch or type a new one. Together with Department and Section below, this
+                      places the student into an academic group — auto-created if it's new, reused if it exists.
                     </p>
 
                     <label style={labelStyle}>Section (optional)</label>
-                    <input style={inputStyle} value={form.section} onChange={updateField("section")} />
+                    <input style={inputStyle} list="section-options" value={form.section} onChange={updateField("section")} placeholder="Defaults to Section A" />
+                    <datalist id="section-options">
+                      {sectionOptions.map((s) => <option key={s} value={s} />)}
+                    </datalist>
                   </>
                 )}
 
                 <label style={labelStyle}>Department</label>
-                <input style={inputStyle} value={form.department} onChange={updateField("department")} />
+                <input style={inputStyle} list="department-options" value={form.department} onChange={updateField("department")} placeholder={form.role === "STUDENT" ? "Defaults to Unassigned" : undefined} />
+                <datalist id="department-options">
+                  {departmentOptions.map((d) => <option key={d} value={d} />)}
+                </datalist>
 
                 <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 12 }}>
                   A unique, randomly generated password is created automatically for this account — never a shared or predictable one. The account must change it on first login.
@@ -432,7 +440,8 @@ export default function AdminDashboard() {
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
                     <div className="mono" style={{ fontSize: 12, color: "var(--ink-dim)" }}>{u.email}</div>
                     <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)" }}>
-                      {u.institute?.name || "—"}{u.class?.name ? ` · ${u.class.name}${u.class.batchYear ? ` (${u.class.batchYear})` : ""}` : ""}
+                      {u.institute?.name || "—"}
+                      {u.academicGroup ? ` · ${u.academicGroup.department?.name} · ${u.academicGroup.section} (${u.academicGroup.batch})` : (u.class?.name ? ` · ${u.class.name}${u.class.batchYear ? ` (${u.class.batchYear})` : ""}` : "")}
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

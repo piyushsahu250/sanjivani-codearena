@@ -14,6 +14,7 @@ router.get("/stats", authenticate, requireRole("ADMIN"), async (req, res) => {
       totalInstitutes, totalClasses, totalUsers, totalStudents, totalStaff,
       totalTests, totalQuestions, activeTests, scheduledTests, completedTests,
       totalCourses, totalPracticeQuestions, certificatesIssued, interviewCertificatesIssued,
+      totalAcademicGroups, studentsUnlinkedFromAcademicGroup,
     ] = await Promise.all([
       prisma.institute.count(),
       prisma.class.count(),
@@ -29,12 +30,18 @@ router.get("/stats", authenticate, requireRole("ADMIN"), async (req, res) => {
       prisma.practiceQuestion.count(),
       prisma.certificate.count(),
       prisma.interviewCertificate.count(),
+      // Institute->Batch->Department->Section migration visibility (see
+      // backend/scripts/migrateAcademicGroups.js) — surfaced here so the zero-data-loss gate is
+      // checkable at a glance from the dashboard that's already loaded, no separate API call needed.
+      prisma.academicGroup.count(),
+      prisma.user.count({ where: { role: "STUDENT", classId: { not: null }, academicGroupId: null } }),
     ]);
 
     res.json({
       totalInstitutes, totalClasses, totalUsers, totalStudents, totalStaff,
       totalTests, totalQuestions, activeTests, scheduledTests, completedTests,
       totalCourses, totalPracticeQuestions, certificatesIssued: certificatesIssued + interviewCertificatesIssued,
+      totalAcademicGroups, studentsUnlinkedFromAcademicGroup,
     });
   } catch (err) {
     console.error(err);

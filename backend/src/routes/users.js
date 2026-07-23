@@ -26,6 +26,7 @@ const SELECT_FIELDS = {
   mustChangePassword: true,
   institute: { select: { id: true, name: true } },
   class: { select: { id: true, name: true, batchYear: true } },
+  academicGroup: { select: { id: true, batch: true, section: true, department: { select: { id: true, name: true } } } },
 };
 
 
@@ -40,8 +41,41 @@ const FIELD_ALIASES = {
   batchYear: ["batch/year", "batch year", "batch", "year"],
   section: ["section"],
   instituteName: ["institute", "institute name", "college", "college name"],
-  className: ["class", "class name", "program/class"],
 };
+
+// Institute -> Batch -> Department -> Section: find-or-create the academic group a student belongs
+// to, replacing the old single-key Class match. Department/Section fall back to "Unassigned"/
+// "Section A" when left blank (same fallback the one-time migration script used for pre-existing
+// classes with no Division), matched case-insensitively/trimmed so trivial spelling differences
+// don't fragment groups. `cache` is an optional per-request Map to avoid redundant lookups when a
+// bulk upload has many rows sharing the same group.
+async function resolveAcademicGroup({ instituteId, batchYear, departmentName, section }, cache) {
+  const batch = String(batchYear || "").trim() || "Unassigned";
+  const deptName = String(departmentName || "").trim() || "Unassigned";
+  const sectionName = String(section || "").trim() || "Section A";
+  const key = `${instituteId}::${batch.toLowerCase()}::${deptName.toLowerCase()}::${sectionName.toLowerCase()}`;
+  if (cache && cache.has(key)) return cache.get(key);
+
+  let department = await prisma.department.findFirst({
+    where: { instituteId, name: { equals: deptName, mode: "insensitive" } },
+  });
+  if (!department) {
+    department = await prisma.department.create({ data: { instituteId, name: deptName } });
+  }
+
+  let group = await prisma.academicGroup.findFirst({
+    where: { instituteId, batch, departmentId: department.id, section: { equals: sectionName, mode: "insensitive" } },
+    include: { department: true },
+  });
+  if (!group) {
+    group = await prisma.academicGroup.create({
+      data: { instituteId, batch, departmentId: department.id, section: sectionName },
+      include: { department: true },
+    });
+  }
+  if (cache) cache.set(key, group);
+  return group;
+}
 
 function normalizeHeader(str) {
   return String(str || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -58,7 +92,7 @@ function buildHeaderMap(headers) {
   return map;
 }
 
-const TEMPLATE_HEADERS = ["Student Name", "Roll Number", "Official Email ID", "Institute", "Class", "Mobile Number", "Department", "Program", "Batch/Year", "Section"];
+const TEMPLATE_HEADERS = ["Student Name", "Roll Number", "Official Email ID", "Institute", "Batch/Year", "Mobile Number", "Department", "Program", "Section"];
 
 // Any authenticated user: change their own email and/or password
 router.patch("/me", authenticate, async (req, res) => {
@@ -174,7 +208,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
   try {
     const {
       name, email, role, rollNumber, registrationNumber, department, mobile, gender, program,
-      batchYear, section, instituteId, classId,
+      batchYear, section, instituteId,
     } = req.body;
     if (!name || !email || !role) {
       return res.status(400).json({ error: "name, email, and role are required" });
@@ -184,7 +218,6 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
       return res.status(400).json({ error: "role must be STUDENT, STAFF, or ADMIN" });
     }
     if (!instituteId) return res.status(400).json({ error: "An institute is required" });
-    if (role === "STUDENT" && !classId) return res.status(400).json({ error: "A class is required for students" });
     if (role === "STUDENT" && !String(mobile || "").trim()) return res.status(400).json({ error: "A mobile number is required for students" });
     if (role === "STUDENT" && !String(batchYear || "").trim()) return res.status(400).json({ error: "A batch is required for students" });
     if (mobile && !MOBILE_RE.test(String(mobile).trim())) return res.status(400).json({ error: "Invalid mobile number" });
@@ -192,12 +225,9 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
     const institute = await prisma.institute.findUnique({ where: { id: instituteId } });
     if (!institute) return res.status(404).json({ error: "Institute not found" });
 
-    let cls = null;
-    if (classId) {
-      cls = await prisma.class.findUnique({ where: { id: classId } });
-      if (!cls || cls.instituteId !== instituteId) {
-        return res.status(400).json({ error: "Selected class does not belong to the selected institute" });
-      }
+    let academicGroup = null;
+    if (role === "STUDENT") {
+      academicGroup = await resolveAcademicGroup({ instituteId, batchYear, departmentName: department, section });
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -208,7 +238,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
     const user = await prisma.user.create({
       data: {
         name, email, passwordHash, role, rollNumber, registrationNumber, department, mobile, gender,
-        program, batchYear, section, instituteId, classId: classId || null, mustChangePassword: true,
+        program, batchYear, section, instituteId, academicGroupId: academicGroup?.id || null, mustChangePassword: true,
       },
       select: SELECT_FIELDS,
     });
@@ -229,7 +259,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
           <p>
             Name: ${user.name}<br/>
             Institute: ${institute.name}<br/>
-            ${cls ? `Class: ${cls.name}<br/>` : ""}
+            ${academicGroup ? `Department: ${academicGroup.department.name} · Section: ${academicGroup.section}<br/>` : ""}
             ${batchYear ? `Batch: ${batchYear}<br/>` : ""}
             Email: ${user.email}<br/>
             Temporary Password: <strong>${generatedPassword}</strong>
@@ -278,7 +308,7 @@ router.post("/", authenticate, requireRole("ADMIN"), async (req, res) => {
 // record of who edited what and when.
 const EDITABLE_FIELDS = [
   "name", "email", "mobile", "gender", "rollNumber", "registrationNumber", "department", "program",
-  "batchYear", "section", "instituteId", "classId", "isActive", "profilePhotoUrl",
+  "batchYear", "section", "instituteId", "isActive", "profilePhotoUrl",
 ];
 router.patch("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
   try {
@@ -306,12 +336,16 @@ router.patch("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
       const institute = await prisma.institute.findUnique({ where: { id: data.instituteId } });
       if (!institute) return res.status(404).json({ error: "Institute not found" });
     }
-    if (data.classId) {
-      const cls = await prisma.class.findUnique({ where: { id: data.classId } });
-      if (!cls) return res.status(404).json({ error: "Class not found" });
-      if ((data.instituteId || existing.instituteId) && cls.instituteId !== (data.instituteId || existing.instituteId)) {
-        return res.status(400).json({ error: "Selected class does not belong to the selected institute" });
-      }
+    // Re-resolve the academic group whenever any of its 4 keys change, so an edited batch/
+    // department/section (or a moved institute) keeps the student's group current.
+    if (existing.role === "STUDENT" && (data.batchYear !== undefined || data.department !== undefined || data.section !== undefined || data.instituteId !== undefined)) {
+      const group = await resolveAcademicGroup({
+        instituteId: data.instituteId !== undefined ? data.instituteId : existing.instituteId,
+        batchYear: data.batchYear !== undefined ? data.batchYear : existing.batchYear,
+        departmentName: data.department !== undefined ? data.department : existing.department,
+        section: data.section !== undefined ? data.section : existing.section,
+      });
+      data.academicGroupId = group.id;
     }
 
     const changedFields = Object.keys(data).filter((f) => String(existing[f] ?? "") !== String(data[f] ?? ""));
@@ -344,7 +378,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN"), async (req, res) => {
 
 // ADMIN: download a sample .xlsx template for bulk student upload
 router.get("/bulk-template", authenticate, requireRole("ADMIN"), (req, res) => {
-  const sampleRow = ["John Doe", "MCA2024001", "john.doe@codearena.edu.in", "CodeArena University", "MCA", "9876543210", "Computer Applications", "MCA", "2024-26", "A"];
+  const sampleRow = ["John Doe", "MCA2024001", "john.doe@codearena.edu.in", "CodeArena University", "2024-26", "9876543210", "Computer Applications", "MCA", "A"];
   const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, sampleRow]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, "Students");
@@ -356,9 +390,11 @@ router.get("/bulk-template", authenticate, requireRole("ADMIN"), (req, res) => {
 });
 
 // ADMIN: bulk-create student accounts from an uploaded .xlsx/.csv file.
-// Each row must name an existing Institute and, under it, an existing Class — both are validated
-// against the database. Each row gets its own unique, randomly generated password (not shared
-// with any other row), and the account is flagged to force a password change on first login.
+// Each row must name an existing Institute and a Batch/Year — Department and Section are optional
+// (falling back to "Unassigned"/"Section A"). Every (Institute, Batch, Department, Section)
+// combination is found-or-created automatically as an AcademicGroup; there's no separate "Class"
+// to create ahead of time anymore. Each row gets its own unique, randomly generated password (not
+// shared with any other row), and the account is flagged to force a password change on first login.
 router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -380,24 +416,24 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
         error: "Missing required columns. The file must include Student Name, Roll Number, and Official Email ID.",
       });
     }
-    if (!headerMap.instituteName || !headerMap.className) {
+    if (!headerMap.instituteName || !headerMap.batchYear) {
       return res.status(400).json({
-        error: "Missing required columns. The file must include Institute and Class.",
+        error: "Missing required columns. The file must include Institute and Batch/Year.",
       });
     }
 
     const sendCredentials = req.body.sendCredentials === "true";
 
-    const [existingUsers, institutes, classes] = await Promise.all([
+    const [existingUsers, institutes] = await Promise.all([
       prisma.user.findMany({ select: { email: true, rollNumber: true } }),
       prisma.institute.findMany(),
-      prisma.class.findMany(),
     ]);
     const existingEmails = new Set(existingUsers.map((u) => u.email.toLowerCase()));
     const existingRolls = new Set(existingUsers.filter((u) => u.rollNumber).map((u) => u.rollNumber.toLowerCase()));
     const seenEmails = new Set();
     const seenRolls = new Set();
     const instituteByName = new Map(institutes.map((i) => [i.name.toLowerCase(), i]));
+    const groupCache = new Map(); // reused across rows sharing the same (institute, batch, department, section)
 
     const created = [];
     const duplicates = [];
@@ -417,12 +453,11 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
       const batchYear = field(row, "batchYear");
       const section = field(row, "section");
       const instituteName = field(row, "instituteName");
-      const className = field(row, "className");
 
       if (!name && !rollNumber && !email) continue; // blank row
 
-      if (!name || !rollNumber || !email || !instituteName || !className) {
-        errors.push({ row: rowNum, name, email, rollNumber, reason: "Missing required field (name, roll number, email, institute, or class)" });
+      if (!name || !rollNumber || !email || !instituteName || !batchYear) {
+        errors.push({ row: rowNum, name, email, rollNumber, reason: "Missing required field (name, roll number, email, institute, or batch/year)" });
         continue;
       }
       if (!EMAIL_RE.test(email)) {
@@ -433,11 +468,6 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
       const institute = instituteByName.get(instituteName.toLowerCase());
       if (!institute) {
         errors.push({ row: rowNum, name, email, rollNumber, reason: `Institute "${instituteName}" was not found. Create it first in Institute Management.` });
-        continue;
-      }
-      const cls = classes.find((c) => c.instituteId === institute.id && c.name.toLowerCase() === className.toLowerCase());
-      if (!cls) {
-        errors.push({ row: rowNum, name, email, rollNumber, reason: `Class "${className}" was not found under institute "${instituteName}". Create it first in Class Management.` });
         continue;
       }
 
@@ -458,6 +488,7 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
       const passwordHash = await bcrypt.hash(generatedPassword, 10);
 
       try {
+        const group = await resolveAcademicGroup({ instituteId: institute.id, batchYear, departmentName: department, section }, groupCache);
         const user = await prisma.user.create({
           data: {
             name, email, rollNumber, passwordHash, role: "STUDENT",
@@ -467,7 +498,7 @@ router.post("/bulk-upload", authenticate, requireRole("ADMIN"), upload.single("f
             batchYear: batchYear || null,
             section: section || null,
             instituteId: institute.id,
-            classId: cls.id,
+            academicGroupId: group.id,
             mustChangePassword: true,
           },
         });
@@ -571,6 +602,7 @@ router.get("/search", authenticate, requireRole("ADMIN", "STAFF"), attachRequest
         id: true, name: true, email: true, rollNumber: true,
         institute: { select: { name: true } },
         class: { select: { name: true, batchYear: true } },
+        academicGroup: { select: { batch: true, section: true, department: { select: { name: true } } } },
       },
       orderBy: { name: "asc" },
       take: 20,

@@ -77,9 +77,11 @@ export default function BulkUpload() {
 
         <p style={{ color: "var(--ink-dim)", marginTop: 16, fontSize: 14 }}>
           Upload an Excel (.xlsx) or CSV file to create student accounts for an entire batch at once. Each row's
-          Institute and Class must already exist (create them first under Institute/Class Management). Every
-          account gets its own unique, randomly generated password — never shared with any other account — and
-          must be changed on first login. Download the full credentials list below after uploading.
+          Institute must already exist (create it first under Institute Management) and needs a Batch/Year — each
+          unique Institute + Batch + Department + Section combination is grouped automatically, with Department
+          defaulting to "Unassigned" and Section to "Section A" when left blank. Every account gets its own
+          unique, randomly generated password — never shared with any other account — and must be changed on
+          first login. Download the full credentials list below after uploading.
         </p>
 
         <div className="card" style={{ padding: 24, marginTop: 24 }}>
@@ -87,8 +89,8 @@ export default function BulkUpload() {
             <div>
               <div style={{ fontWeight: 600, fontSize: 14 }}>Required columns</div>
               <p style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 4 }}>
-                Student Name, Roll Number, Official Email ID, Institute, Class — plus optional Mobile Number,
-                Department, Program, Batch/Year, Section.
+                Student Name, Roll Number, Official Email ID, Institute, Batch/Year — plus optional Mobile Number,
+                Department, Program, Section.
               </p>
             </div>
             <button className="btn btn-ghost" onClick={downloadTemplate} disabled={downloadingTemplate}>
