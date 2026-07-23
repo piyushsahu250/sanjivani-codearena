@@ -662,6 +662,26 @@ router.get("/audit-log/actions", authenticate, requireRole("ADMIN", "STAFF"), at
   }
 });
 
+// ADMIN: read-only counters for the Institute->Batch->Department->Section migration (see
+// backend/scripts/migrateAcademicGroups.js) — lets the migration's zero-data-loss gate be checked
+// over HTTP instead of requiring direct database access. Kept permanently (cheap aggregate counts),
+// not a throwaway diagnostic.
+router.get("/migration-status", authenticate, requireRole("ADMIN"), async (req, res) => {
+  try {
+    const [classesTotal, academicGroupsTotal, studentsWithClassId, studentsWithGroupId, studentsUnlinked] = await Promise.all([
+      prisma.class.count(),
+      prisma.academicGroup.count(),
+      prisma.user.count({ where: { role: "STUDENT", classId: { not: null } } }),
+      prisma.user.count({ where: { role: "STUDENT", academicGroupId: { not: null } } }),
+      prisma.user.count({ where: { role: "STUDENT", classId: { not: null }, academicGroupId: null } }),
+    ]);
+    res.json({ classesTotal, academicGroupsTotal, studentsWithClassId, studentsWithGroupId, studentsUnlinked, zeroDataLossGatePassed: studentsUnlinked === 0 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load migration status" });
+  }
+});
+
 // Shared access check for the performance dashboard + both report exports: ADMIN/STAFF can view
 // any student under their own institute (platform-level accounts see everyone); a STUDENT may
 // only view their own. Returns the student's own institute-scope-relevant fields on success, or
