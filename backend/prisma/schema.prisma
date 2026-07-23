@@ -1398,31 +1398,28 @@ model Division {
   @@unique([departmentId, name])
 }
 
-// Admin-managed: which staff can mark/edit attendance for which classes, for which subject. A
-// staff member can hold multiple assignments against the same class (one per subject they teach
-// it) — Class itself stays a plain roster container shared platform-wide (Tests, etc.), so Subject
-// and Semester live here rather than on Class, keeping this a purely Attendance-scoped concept.
+// Admin-managed: which single staff member owns attendance for a division (Class). One division =
+// one staff assignment — enforced by the write route (routes/attendance.js's find-by-classId-then-
+// update-or-create logic), not a DB unique constraint, so re-assigning a division to a different
+// staff member updates this same row rather than creating a duplicate. Subject now lives on
+// LecturePlan (entered per lecture, not fixed per assignment) since a division's teacher can cover
+// multiple subjects across different lectures.
 model StaffClassAssignment {
   id      String @id @default(uuid())
   staff   User   @relation("StaffClassAssignments", fields: [staffId], references: [id], onDelete: Cascade)
   staffId String
   class   Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
   classId String
-  // Defaults exist only so `prisma db push` can backfill any pre-redesign rows non-destructively;
-  // every write path (routes/attendance.js) still requires a real, non-empty value at the
-  // application layer — these defaults are a migration safety net, not a relaxed validation rule.
-  subject String @default("")
-  // Free text (programs vary in term count/naming across institutes) — mutable, not part of the
-  // uniqueness key, since the same staff/class/subject offering carries across semesters and an
-  // admin can just update it rather than creating a new assignment each term.
+  // Free text (programs vary in term count/naming across institutes) — mutable; a division's
+  // assignment carries across semesters and an admin can just update it rather than recreating.
   semester String @default("")
 
   assignedAt DateTime @default(now())
 
   lecturePlans LecturePlan[]
 
-  @@unique([staffId, classId, subject])
   @@index([classId])
+  @@index([staffId])
 }
 
 enum LectureType {
@@ -1431,14 +1428,19 @@ enum LectureType {
   EXAM
 }
 
-// The "Add Plan" entity — a scheduled lecture for a staff-class-subject assignment, created ahead
-// of (and independently from) marking attendance. lectureNumber is explicit (manually assigned or
-// imported), scoped per-assignment so two subjects taught to the same class never collide.
+// The "Add Plan" entity — a scheduled lecture for a division assignment, created ahead of (and
+// independently from) marking attendance. lectureNumber is explicit (manually assigned or
+// imported), scoped per-assignment so lectures for the same division never collide. subject is
+// entered per-plan (not fixed on the assignment) since one division's teacher can cover several
+// subjects across different lectures; @default("") exists only so `prisma db push` can backfill
+// any plans already created before this field existed — every write path still requires a real
+// value at the application layer.
 model LecturePlan {
   id           String               @id @default(uuid())
   assignment   StaffClassAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   assignmentId String
   lectureNumber Int
+  subject      String @default("")
   topic        String
   scheduleDate DateTime // calendar date this lecture is scheduled for (time-of-day not meaningful)
   // "Slot 1".."Slot 7" or "Other" — startTime/endTime are always stored explicitly (even for the

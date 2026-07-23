@@ -5,6 +5,7 @@ import api from "../api";
 import Navbar from "../components/Navbar";
 import { SkeletonGrid } from "../components/Skeleton";
 import FolderPicker from "../components/FolderPicker";
+import ClassPicker from "../components/ClassPicker";
 
 const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "True/False", MULTISELECT: "Multiple Select" };
 
@@ -91,10 +92,6 @@ export default function CreateTest() {
       const extra = found.filter((q) => !known.has(q.id));
       return extra.length ? [...prev, ...extra] : prev;
     });
-  }
-
-  function toggleClass(classId) {
-    setClassIds((prev) => (prev.includes(classId) ? prev.filter((c) => c !== classId) : [...prev, classId]));
   }
 
   function updateField(field) {
@@ -247,14 +244,8 @@ export default function CreateTest() {
 
           <div style={{ marginTop: 20, fontWeight: 700, fontSize: 14 }}>Assign to classes</div>
           <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>Leave all unchecked to make this test visible to every class (default/legacy behavior).</p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-            {classes.map((c) => (
-              <label key={c.id} className="badge" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 6, background: classIds.includes(c.id) ? "var(--amber)" : undefined }}>
-                <input type="checkbox" checked={classIds.includes(c.id)} onChange={() => toggleClass(c.id)} />
-                {c.institute?.name ? `${c.institute.name} · ` : ""}{c.name}
-              </label>
-            ))}
-            {classes.length === 0 && <span style={{ fontSize: 12, color: "var(--ink-dim)" }}>No classes yet.</span>}
+          <div style={{ marginTop: 8 }}>
+            <ClassPicker multi classes={classes} value={classIds} onChange={setClassIds} />
           </div>
 
           <div style={{ marginTop: 24, fontWeight: 700, fontSize: 14 }}>Question Selection Mode</div>

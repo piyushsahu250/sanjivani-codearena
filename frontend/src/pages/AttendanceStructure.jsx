@@ -6,7 +6,7 @@ import ChalkUnderline from "../components/ChalkUnderline";
 
 const labelStyle = { display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 };
 const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 14 };
-const TABS = ["Departments & Divisions", "Assign Classes", "Assign Staff"];
+const TABS = ["Departments & Divisions", "Assign Classes", "Attendance Assignment"];
 
 // Admin-only structural setup for Attendance Management: this platform's existing hierarchy was
 // Institute -> Class -> Student, with no Department/Division concept — this page is where an
@@ -67,7 +67,7 @@ export default function AttendanceStructure() {
           <AssignClassesTab classes={classes} divisions={divisions} onChange={loadAll} setError={setError} />
         )}
         {tab === 2 && (
-          <AssignStaffTab classes={classes} staff={staff} onChange={loadAll} setError={setError} />
+          <DivisionAssignmentTab staff={staff} setError={setError} />
         )}
       </div>
     </div>
@@ -213,101 +213,105 @@ function AssignClassesTab({ classes, divisions, onChange, setError }) {
   );
 }
 
-function AssignStaffTab({ classes, staff, onChange, setError }) {
-  const [selectedClassId, setSelectedClassId] = useState("");
-  const [selectedStaffId, setSelectedStaffId] = useState("");
-  const [subject, setSubject] = useState("");
-  const [semester, setSemester] = useState("");
-  const [editingSemesters, setEditingSemesters] = useState({}); // assignmentId -> draft semester value
-  const selectedClass = classes.find((c) => c.id === selectedClassId);
+// Admin Attendance Assignment: Batch -> Fetch -> table of every division in that batch, one row
+// each, "Assigned Staff" as a searchable field (native <datalist>, filters as you type) scoped to
+// this institute's staff. Assigning/re-assigning takes effect immediately — POST /staff-assignments
+// finds any existing assignment for that division and updates its staff in place (one staff per
+// division), so there's never a second row to reconcile.
+function DivisionAssignmentTab({ staff, setError }) {
+  const [batches, setBatches] = useState([]);
+  const [batchYear, setBatchYear] = useState("");
+  const [rows, setRows] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [searchDrafts, setSearchDrafts] = useState({}); // classId -> in-progress search text
 
-  async function assign() {
-    if (!selectedClassId || !selectedStaffId || !subject.trim() || !semester.trim()) return;
+  useEffect(() => {
+    api.get("/attendance/admin/batches").then((res) => setBatches(res.data)).catch(() => setBatches([]));
+  }, []);
+
+  async function fetchTable() {
+    if (!batchYear) return;
+    setLoading(true);
+    setError("");
     try {
-      await api.post("/attendance/admin/staff-assignments", { staffId: selectedStaffId, classId: selectedClassId, subject: subject.trim(), semester: semester.trim() });
-      setSelectedStaffId("");
-      setSubject("");
-      setSemester("");
-      onChange();
+      const { data } = await api.get("/attendance/admin/division-table", { params: { batchYear } });
+      setRows(data);
+    } catch (err) {
+      setError(err.response?.data?.error || "Failed to load divisions");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function assignStaff(row, staffId) {
+    if (!staffId) return;
+    try {
+      await api.post("/attendance/admin/staff-assignments", { staffId, classId: row.classId, semester: row.assignment?.semester || "1" });
+      setSearchDrafts((prev) => { const next = { ...prev }; delete next[row.classId]; return next; });
+      fetchTable();
     } catch (err) {
       setError(err.response?.data?.error || "Failed to assign staff");
     }
   }
 
-  async function unassign(id) {
-    try {
-      await api.delete(`/attendance/admin/staff-assignments/${id}`);
-      onChange();
-    } catch (err) {
-      setError(err.response?.data?.error || "Failed to remove assignment");
-    }
-  }
-
-  async function saveSemester(a) {
-    const value = editingSemesters[a.id];
-    if (value === undefined || !value.trim() || value.trim() === a.semester) return;
-    try {
-      await api.patch(`/attendance/admin/staff-assignments/${a.id}`, { semester: value.trim() });
-      setEditingSemesters((prev) => { const next = { ...prev }; delete next[a.id]; return next; });
-      onChange();
-    } catch (err) {
-      setError(err.response?.data?.error || "Failed to update semester");
-    }
+  function handleSearchInput(row, text) {
+    setSearchDrafts((prev) => ({ ...prev, [row.classId]: text }));
+    const match = staff.find((s) => `${s.name} (${s.email})` === text);
+    if (match) assignStaff(row, match.id);
   }
 
   return (
     <div style={{ marginTop: 20 }}>
-      <div className="card" style={{ padding: 16, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+      <p style={{ fontSize: 13, color: "var(--ink-dim)" }}>
+        Each division gets exactly one assigned staff member. Assigning a new staff member replaces the current one.
+      </p>
+      <div className="card" style={{ padding: 16, marginTop: 10, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 200px" }}>
-          <label style={labelStyle}>Class</label>
-          <select style={inputStyle} value={selectedClassId} onChange={(e) => setSelectedClassId(e.target.value)}>
-            <option value="">Select class…</option>
-            {classes.map((c) => <option key={c.id} value={c.id}>{c.name} {c.batchYear ? `(${c.batchYear})` : ""}{c.division ? ` — ${c.division.department?.name}/${c.division.name}` : " — no division"}</option>)}
+          <label style={labelStyle}>Batch</label>
+          <select style={inputStyle} value={batchYear} onChange={(e) => setBatchYear(e.target.value)}>
+            <option value="">Select batch…</option>
+            {batches.map((b) => <option key={b} value={b}>{b}</option>)}
           </select>
         </div>
-        <div style={{ flex: "1 1 200px" }}>
-          <label style={labelStyle}>Staff member</label>
-          <select style={inputStyle} value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value)}>
-            <option value="">Select staff…</option>
-            {staff.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.email})</option>)}
-          </select>
-        </div>
-        <div style={{ flex: "1 1 160px" }}>
-          <label style={labelStyle}>Subject</label>
-          <input style={inputStyle} placeholder="e.g. Data Structures" value={subject} onChange={(e) => setSubject(e.target.value)} />
-        </div>
-        <div style={{ flex: "1 1 120px" }}>
-          <label style={labelStyle}>Semester</label>
-          <input style={inputStyle} placeholder="e.g. 3" value={semester} onChange={(e) => setSemester(e.target.value)} />
-        </div>
-        <button className="btn btn-primary" onClick={assign} disabled={!selectedClassId || !selectedStaffId || !subject.trim() || !semester.trim()}>Assign</button>
+        <button className="btn btn-primary" onClick={fetchTable} disabled={!batchYear || loading}>{loading ? "Fetching…" : "Fetch"}</button>
       </div>
 
-      {selectedClass && (
-        <div style={{ marginTop: 20 }}>
-          <h3 style={{ fontSize: 15 }}>Staff assigned to {selectedClass.name}</h3>
-          <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-            {(selectedClass.staffAssignments || []).map((a) => (
-              <div key={a.id} className="card" style={{ padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                <div>
-                  <span style={{ fontSize: 13 }}>{a.staff.name} <span className="mono" style={{ color: "var(--ink-dim)", fontSize: 11 }}>({a.staff.email})</span></span>
-                  <div style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>{a.subject}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <input
-                    style={{ ...inputStyle, width: 90, padding: "6px 8px", fontSize: 12 }}
-                    value={editingSemesters[a.id] ?? a.semester}
-                    onChange={(e) => setEditingSemesters((prev) => ({ ...prev, [a.id]: e.target.value }))}
-                    onBlur={() => saveSemester(a)}
-                  />
-                  <button className="btn btn-ghost" style={{ fontSize: 12, color: "var(--rust)" }} onClick={() => unassign(a.id)}>Remove</button>
-                </div>
-              </div>
-            ))}
-            {(!selectedClass.staffAssignments || selectedClass.staffAssignments.length === 0) && (
-              <p style={{ fontSize: 13, color: "var(--ink-dim)" }}>No staff assigned to this class yet.</p>
-            )}
-          </div>
+      <datalist id="attendance-staff-options">
+        {staff.map((s) => <option key={s.id} value={`${s.name} (${s.email})`} />)}
+      </datalist>
+
+      {rows && (
+        <div style={{ marginTop: 20, overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: "left", borderBottom: "2px solid var(--line)", color: "var(--ink-dim)" }}>
+                {["Department", "Division", "Assigned Staff", "Action"].map((h) => <th key={h} style={{ padding: "8px 10px" }}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.classId} style={{ borderBottom: "1px solid var(--line)" }}>
+                  <td style={{ padding: "8px 10px" }}>{r.department.name}</td>
+                  <td style={{ padding: "8px 10px" }}>{r.division.name}</td>
+                  <td style={{ padding: "8px 10px" }}>
+                    {r.assignment ? r.assignment.staff.name : <span style={{ color: "var(--ink-dim)" }}>Not Assigned</span>}
+                  </td>
+                  <td style={{ padding: "8px 10px" }}>
+                    <input
+                      style={{ ...inputStyle, maxWidth: 240 }}
+                      list="attendance-staff-options"
+                      placeholder={r.assignment ? "Change Staff…" : "Select Staff…"}
+                      value={searchDrafts[r.classId] ?? ""}
+                      onChange={(e) => handleSearchInput(r, e.target.value)}
+                    />
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr><td colSpan={4} style={{ padding: 24, textAlign: "center", color: "var(--ink-dim)" }}>No divisions found for this batch.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

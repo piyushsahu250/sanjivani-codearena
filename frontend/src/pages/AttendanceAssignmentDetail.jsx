@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import { formatClassLabel } from "../utils/classLabel";
 
 const SLOTS = [
   { label: "Slot 1", startTime: "09:50", endTime: "10:45" },
@@ -27,7 +28,7 @@ function todayStr() {
 }
 
 function emptyPlanForm(suggestedNumber) {
-  return { lectureNumber: String(suggestedNumber || 1), topic: "", scheduleDate: todayStr(), slotLabel: "Slot 1", startTime: SLOTS[0].startTime, endTime: SLOTS[0].endTime, lectureType: "REGULAR" };
+  return { subject: "", lectureNumber: String(suggestedNumber || 1), topic: "", scheduleDate: todayStr(), slotLabel: "Slot 1", startTime: SLOTS[0].startTime, endTime: SLOTS[0].endTime, lectureType: "REGULAR" };
 }
 
 async function downloadTemplate(assignmentId) {
@@ -129,11 +130,10 @@ export default function AttendanceAssignmentDetail() {
         <Link to="/staff/attendance" className="btn btn-ghost" style={{ fontSize: 12 }}>← Back to Attendance</Link>
         {assignment && (
           <div style={{ marginTop: 12 }}>
-            <h1>{assignment.subject}</h1>
+            <h1>{formatClassLabel(assignment.class)}</h1>
             <ChalkUnderline />
             <p style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 8 }}>
-              {assignment.class.division?.department?.name || "—"} · {assignment.class.division?.name || "—"} · {assignment.class.name}
-              {assignment.class.batchYear ? ` (${assignment.class.batchYear})` : ""} · Semester {assignment.semester}
+              Semester {assignment.semester} · Faculty: {assignment.staff.name}
             </p>
           </div>
         )}
@@ -156,7 +156,7 @@ export default function AttendanceAssignmentDetail() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "2px solid var(--line)", color: "var(--ink-dim)" }}>
-                {["Lecture #", "Topic", "Schedule Date", "Slot", "Lecture Type", "Attendance Status", "Actions"].map((h) => (
+                {["Subject", "Lecture #", "Topic", "Schedule Date", "Slot", "Lecture Type", "Attendance Status", "Actions"].map((h) => (
                   <th key={h} style={{ padding: "8px 10px" }}>{h}</th>
                 ))}
               </tr>
@@ -177,7 +177,7 @@ export default function AttendanceAssignmentDetail() {
                 />
               ))}
               {plans && plans.length === 0 && (
-                <tr><td colSpan={7} style={{ padding: 24, textAlign: "center", color: "var(--ink-dim)" }}>No lectures scheduled yet.</td></tr>
+                <tr><td colSpan={8} style={{ padding: 24, textAlign: "center", color: "var(--ink-dim)" }}>No lectures scheduled yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -203,6 +203,7 @@ function PlanRow({ plan, tab, assignmentId, navigate, onEdit, confirming, onAskD
   return (
     <>
       <tr style={{ borderBottom: "1px solid var(--line)" }}>
+        <td style={{ padding: "8px 10px" }}>{plan.subject}</td>
         <td style={{ padding: "8px 10px" }}>{plan.lectureNumber}</td>
         <td style={{ padding: "8px 10px" }}>{plan.topic}</td>
         <td style={{ padding: "8px 10px" }}>{plan.scheduleDate.slice(0, 10)}</td>
@@ -225,7 +226,7 @@ function PlanRow({ plan, tab, assignmentId, navigate, onEdit, confirming, onAskD
       </tr>
       {confirming && (
         <tr>
-          <td colSpan={7} style={{ padding: "10px", background: "rgba(220,38,38,0.06)" }}>
+          <td colSpan={8} style={{ padding: "10px", background: "rgba(220,38,38,0.06)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <span style={{ fontSize: 12, color: "var(--rust)", fontWeight: 600 }}>
                 {marked
@@ -249,7 +250,7 @@ function AddPlanModal({ assignmentId, suggestedNumber, editingPlan, onClose, onS
   const [mode, setMode] = useState("manual"); // "manual" | "excel"
   const [form, setForm] = useState(() => editingPlan
     ? {
-        lectureNumber: String(editingPlan.lectureNumber), topic: editingPlan.topic, scheduleDate: editingPlan.scheduleDate.slice(0, 10),
+        subject: editingPlan.subject, lectureNumber: String(editingPlan.lectureNumber), topic: editingPlan.topic, scheduleDate: editingPlan.scheduleDate.slice(0, 10),
         slotLabel: editingPlan.slotLabel, startTime: editingPlan.startTime, endTime: editingPlan.endTime, lectureType: editingPlan.lectureType,
       }
     : emptyPlanForm(suggestedNumber));
@@ -325,6 +326,10 @@ function AddPlanModal({ assignmentId, suggestedNumber, editingPlan, onClose, onS
         {(isEdit || mode === "manual") && (
           <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
             <div>
+              <label style={labelStyle}>Subject</label>
+              <input style={inputStyle} value={form.subject} onChange={setField("subject")} placeholder="e.g. Data Structures" />
+            </div>
+            <div>
               <label style={labelStyle}>Lecture Number</label>
               <input type="number" min="1" style={inputStyle} value={form.lectureNumber} onChange={setField("lectureNumber")} />
             </div>
@@ -371,8 +376,8 @@ function AddPlanModal({ assignmentId, suggestedNumber, editingPlan, onClose, onS
         {!isEdit && mode === "excel" && (
           <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
             <p style={{ fontSize: 12, color: "var(--ink-dim)" }}>
-              Columns: Lecture Number, Topic, Schedule Date, Slot, Lecture Type. If Slot is "Other", also fill in
-              Start Time (if Slot is Other) / End Time (if Slot is Other).
+              Columns: Subject, Lecture Number, Topic, Schedule Date, Slot, Lecture Type. If Slot is "Other", also
+              fill in Start Time (if Slot is Other) / End Time (if Slot is Other).
             </p>
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => downloadTemplate(assignmentId)}>Download Template</button>
             <input type="file" accept=".xlsx,.csv" onChange={(e) => setFile(e.target.files?.[0] || null)} />

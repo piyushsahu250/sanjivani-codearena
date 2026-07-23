@@ -26,6 +26,7 @@ router.get("/", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInst
       orderBy: [{ name: "asc" }, { batchYear: "asc" }],
       include: {
         institute: { select: { id: true, name: true } },
+        division: { include: { department: true } },
         _count: { select: { users: true } },
       },
     })

@@ -130,7 +130,7 @@ export default function ExecuteAttendance() {
           <h1 style={{ fontSize: 20 }}>{plan.topic}</h1>
           <ChalkUnderline />
           <p style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 8 }}>
-            Lecture {plan.lectureNumber} · {plan.scheduleDate.slice(0, 10)} · {plan.slotLabel} ({plan.startTime}–{plan.endTime}) · {LECTURE_TYPE_LABELS[plan.lectureType] || plan.lectureType}
+            {plan.subject} · Lecture {plan.lectureNumber} · {plan.scheduleDate.slice(0, 10)} · {plan.slotLabel} ({plan.startTime}–{plan.endTime}) · {LECTURE_TYPE_LABELS[plan.lectureType] || plan.lectureType}
           </p>
           {auditNote && <p style={{ fontSize: 12, color: "var(--amber)", marginTop: 6 }}>{auditNote}</p>}
         </div>

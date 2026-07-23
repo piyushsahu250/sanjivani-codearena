@@ -47,7 +47,6 @@ export default function AttendanceReports() {
     return [...map.entries()].map(([id, name]) => ({ id, name }));
   }, [myAssignments, filters.departmentId]);
 
-  const subjects = useMemo(() => [...new Set(myAssignments.map((a) => a.subject))], [myAssignments]);
   const semesters = useMemo(() => [...new Set(myAssignments.map((a) => a.semester))], [myAssignments]);
   const faculty = useMemo(() => {
     const map = new Map();
@@ -98,7 +97,7 @@ export default function AttendanceReports() {
     }
   }
 
-  const columns = ["Date", "Academic Year", "Department", "Division", "Class", "Subject", "Semester", "Faculty", "Lecture #", "Lecture Type", "Test", "Roll Number", "Student Name"];
+  const columns = ["Date", "Batch", "Department", "Division", "Class", "Subject", "Semester", "Faculty", "Lecture #", "Lecture Type", "Test", "Roll Number", "Student Name"];
 
   return (
     <div>
@@ -126,7 +125,7 @@ export default function AttendanceReports() {
             <input type="date" style={inputStyle} value={filters.dateTo} onChange={(e) => set("dateTo", e.target.value)} disabled={!!filters.date} />
           </div>
           <div>
-            <label style={labelStyle}>Academic Year</label>
+            <label style={labelStyle}>Batch</label>
             <select style={inputStyle} value={filters.academicYear} onChange={(e) => set("academicYear", e.target.value)}>
               <option value="">All</option>
               {academicYears.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -155,10 +154,7 @@ export default function AttendanceReports() {
           </div>
           <div>
             <label style={labelStyle}>Subject</label>
-            <select style={inputStyle} value={filters.subject} onChange={(e) => set("subject", e.target.value)}>
-              <option value="">All</option>
-              {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <input style={inputStyle} placeholder="e.g. Data Structures" value={filters.subject} onChange={(e) => set("subject", e.target.value)} />
           </div>
           {isAdmin && (
             <div>
