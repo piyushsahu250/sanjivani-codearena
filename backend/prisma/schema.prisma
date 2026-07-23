@@ -59,6 +59,7 @@ model Institute {
   questions       Question[]
   questionFolders QuestionFolder[]
   departments     Department[]
+  academicGroups  AcademicGroup[]
 }
 
 model Class {
@@ -113,6 +114,12 @@ model User {
   class       Class?     @relation(fields: [classId], references: [id])
   classId     String?
 
+  // Institute -> Batch -> Department -> Section: replaces Class/classId as the platform's real
+  // enrollment/grouping mechanism. classId above is kept populated for existing rows (rollback
+  // safety net) but is no longer read by any new code once the cutover phases ship.
+  academicGroup   AcademicGroup? @relation(fields: [academicGroupId], references: [id])
+  academicGroupId String?
+
   resetTokenHash   String?
   resetTokenExpiry DateTime?
 
@@ -153,6 +160,7 @@ model User {
 
   @@index([instituteId])
   @@index([classId])
+  @@index([academicGroupId])
   @@index([role])
   @@index([department])
 }
@@ -198,6 +206,7 @@ model Test {
   questions TestQuestion[]
   attempts  TestAttempt[]
   classes   TestClass[] // empty = open to all classes (legacy/unscoped tests)
+  academicGroups TestAcademicGroup[] // replaces classes[] as the real eligibility gate — see testEligibility.js
 
   // Attendance Management: when Lecture Type = Exam, a session can link back to the Test being
   // administered, so exam attendance is tied to the actual test rather than duplicated.
@@ -209,7 +218,7 @@ model Test {
   @@index([company])
 }
 
-// Join table: which classes a test is assigned to
+// Join table: which classes a test is assigned to — legacy, superseded by TestAcademicGroup below.
 model TestClass {
   id      String @id @default(uuid())
   test    Test   @relation(fields: [testId], references: [id], onDelete: Cascade)
@@ -218,6 +227,18 @@ model TestClass {
   classId String
 
   @@unique([testId, classId])
+}
+
+// Join table: which academic groups (Institute+Batch+Department+Section) a test is assigned to.
+// Empty = open to all groups (mirrors TestClass's "empty = open to all classes" convention).
+model TestAcademicGroup {
+  id              String        @id @default(uuid())
+  test            Test          @relation(fields: [testId], references: [id], onDelete: Cascade)
+  testId          String
+  academicGroup   AcademicGroup @relation(fields: [academicGroupId], references: [id], onDelete: Cascade)
+  academicGroupId String
+
+  @@unique([testId, academicGroupId])
 }
 
 model Question {
@@ -1385,7 +1406,8 @@ model Department {
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
 
-  divisions Division[]
+  divisions      Division[]
+  academicGroups AcademicGroup[]
 
   @@unique([instituteId, name])
 }
@@ -1403,6 +1425,33 @@ model Division {
   @@unique([departmentId, name])
 }
 
+// Institute -> Batch -> Department -> Section: the platform-wide replacement for Class/Division as
+// the real student-grouping/enrollment mechanism. Rows are auto-created (find-or-create by the
+// unique tuple below) from Bulk Upload/Registration and the one-time migration script — there is no
+// manual "create a group" admin flow, mirroring the Attendance module's existing "no standalone
+// entity" principle. batch/section are plain strings (no separate Batch/Section model), matching
+// the existing Class.batchYear / Division.name conventions.
+model AcademicGroup {
+  id           String     @id @default(uuid())
+  institute    Institute  @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  instituteId  String
+  batch        String     // e.g. "2025-2028", or "Unassigned" for pre-migration classes with no batch
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  departmentId String
+  section      String     // e.g. "Section A"
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+
+  users            User[]
+  testAssignments  TestAcademicGroup[]
+  staffAssignments StaffClassAssignment[]
+
+  @@unique([instituteId, batch, departmentId, section])
+  @@index([instituteId])
+  @@index([departmentId])
+  @@index([instituteId, batch])
+}
+
 // Admin-managed: which single staff member owns attendance for a division (Class). One division =
 // one staff assignment — enforced by the write route (routes/attendance.js's find-by-classId-then-
 // update-or-create logic), not a DB unique constraint, so re-assigning a division to a different
@@ -1413,8 +1462,13 @@ model StaffClassAssignment {
   id      String @id @default(uuid())
   staff   User   @relation("StaffClassAssignments", fields: [staffId], references: [id], onDelete: Cascade)
   staffId String
-  class   Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
-  classId String
+  // Legacy Class-based link — nullable so new assignments can be created via academicGroupId alone
+  // once the Attendance cutover phase ships. Kept (not dropped) for existing rows' rollback safety.
+  class   Class?  @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId String?
+  // Institute -> Batch -> Department -> Section replacement for the class/division link above.
+  academicGroup   AcademicGroup? @relation(fields: [academicGroupId], references: [id], onDelete: Cascade)
+  academicGroupId String?
   // Free text (programs vary in term count/naming across institutes) — mutable; a division's
   // assignment carries across semesters and an admin can just update it rather than recreating.
   semester String @default("")
@@ -1424,6 +1478,7 @@ model StaffClassAssignment {
   lecturePlans LecturePlan[]
 
   @@index([classId])
+  @@index([academicGroupId])
   @@index([staffId])
 }
 
