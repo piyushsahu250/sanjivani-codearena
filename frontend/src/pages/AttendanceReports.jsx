@@ -4,9 +4,12 @@ import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import { useAuth } from "../context/AuthContext";
+import useIsMobile from "../hooks/useIsMobile";
 
 const labelStyle = { display: "block", fontSize: 12, fontWeight: 600, marginBottom: 6 };
 const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13 };
+
+const STATUS_COLORS = { PRESENT: "var(--mint)", ABSENT: "var(--rust)", LATE: "var(--amber)", LEAVE: "#64748b" };
 
 // Filterable attendance report — STAFF automatically sees only their own assignments (enforced
 // server-side; the filter options here are derived from the same scoped my-assignments list the
@@ -15,6 +18,7 @@ const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border
 export default function AttendanceReports() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const isMobile = useIsMobile();
   const [myAssignments, setMyAssignments] = useState([]);
   const [filters, setFilters] = useState({
     date: "", dateFrom: "", dateTo: "", academicYear: "", departmentId: "", divisionId: "",
@@ -81,7 +85,9 @@ export default function AttendanceReports() {
     setExporting(format);
     try {
       const { data } = await api.get("/attendance/reports", { params: { ...activeParams(), format }, responseType: "blob" });
-      const mime = format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv";
+      const mime = format === "xlsx"
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : format === "pdf" ? "application/pdf" : "text/csv";
       const url = URL.createObjectURL(new Blob([data], { type: mime }));
       const a = document.createElement("a");
       a.href = url;
@@ -180,6 +186,8 @@ export default function AttendanceReports() {
               <option value="">All</option>
               <option value="PRESENT">Present</option>
               <option value="ABSENT">Absent</option>
+              <option value="LATE">Late</option>
+              <option value="LEAVE">Leave</option>
             </select>
           </div>
         </div>
@@ -188,33 +196,56 @@ export default function AttendanceReports() {
           <button className="btn btn-primary" onClick={runReport} disabled={loading}>{loading ? "Loading…" : "Run Report"}</button>
           <button className="btn btn-ghost" onClick={() => exportAs("csv")} disabled={!!exporting}>{exporting === "csv" ? "Exporting…" : "Export CSV"}</button>
           <button className="btn btn-ghost" onClick={() => exportAs("xlsx")} disabled={!!exporting}>{exporting === "xlsx" ? "Exporting…" : "Export Excel"}</button>
+          <button className="btn btn-ghost" onClick={() => exportAs("pdf")} disabled={!!exporting}>{exporting === "pdf" ? "Exporting…" : "Export PDF"}</button>
         </div>
         {error && <p style={{ color: "var(--rust)", fontSize: 13, marginTop: 10 }}>{error}</p>}
 
         {rows && (
-          <div style={{ marginTop: 24, overflowX: "auto" }}>
+          <div style={{ marginTop: 24 }}>
             <p style={{ fontSize: 13, color: "var(--ink-dim)" }}>{rows.length} record(s)</p>
-            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8, fontSize: 12 }}>
-              <thead>
-                <tr style={{ textAlign: "left", borderBottom: "2px solid var(--line)", color: "var(--ink-dim)" }}>
-                  {columns.map((h) => <th key={h} style={{ padding: "6px 8px" }}>{h}</th>)}
-                  <th style={{ padding: "6px 8px" }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
+
+            {rows.length === 0 && (
+              <p style={{ padding: 24, textAlign: "center", color: "var(--ink-dim)" }}>No records match these filters.</p>
+            )}
+
+            {rows.length > 0 && isMobile && (
+              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
                 {rows.map((r, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid var(--line)" }}>
-                    {columns.map((k) => (
-                      <td key={k} style={{ padding: "6px 8px" }} className={k === "Roll Number" ? "mono" : undefined}>{r[k]}</td>
-                    ))}
-                    <td style={{ padding: "6px 8px", fontWeight: 700, color: r.Status === "ABSENT" ? "var(--rust)" : "var(--mint)" }}>{r.Status}</td>
-                  </tr>
+                  <div key={i} className="card" style={{ padding: 12, fontSize: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <strong style={{ fontSize: 13 }}>{r["Student Name"]}</strong>
+                      <span style={{ fontWeight: 700, color: STATUS_COLORS[r.Status] || "var(--ink)" }}>{r.Status}</span>
+                    </div>
+                    <div style={{ color: "var(--ink-dim)", marginTop: 4 }}>{r.Subject} · Lecture {r["Lecture #"]} · {r.Date}</div>
+                    <div style={{ color: "var(--ink-dim)", marginTop: 2 }}>{r.Department} · {r.Division} · {r.Class}</div>
+                    <div style={{ color: "var(--ink-dim)", marginTop: 2 }}>Roll: {r["Roll Number"]} · Faculty: {r.Faculty}</div>
+                  </div>
                 ))}
-                {rows.length === 0 && (
-                  <tr><td colSpan={columns.length + 1} style={{ padding: 24, textAlign: "center", color: "var(--ink-dim)" }}>No records match these filters.</td></tr>
-                )}
-              </tbody>
-            </table>
+              </div>
+            )}
+
+            {rows.length > 0 && !isMobile && (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8, fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ textAlign: "left", borderBottom: "2px solid var(--line)", color: "var(--ink-dim)" }}>
+                      {columns.map((h) => <th key={h} style={{ padding: "6px 8px" }}>{h}</th>)}
+                      <th style={{ padding: "6px 8px" }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid var(--line)" }}>
+                        {columns.map((k) => (
+                          <td key={k} style={{ padding: "6px 8px" }} className={k === "Roll Number" ? "mono" : undefined}>{r[k]}</td>
+                        ))}
+                        <td style={{ padding: "6px 8px", fontWeight: 700, color: STATUS_COLORS[r.Status] || "var(--ink)" }}>{r.Status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

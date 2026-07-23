@@ -3,38 +3,53 @@ import { Link, useParams } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
+import useIsMobile from "../hooks/useIsMobile";
 
 const LECTURE_TYPE_LABELS = { REGULAR: "Regular Class", PRACTICE_TEST: "Practice Test", EXAM: "Exam" };
 
-// Modern ON/OFF toggle — ON (right, green) = Present (the default for every student), OFF (left,
-// red) = Absent. Staff only needs to flip the students who were actually absent.
-function Toggle({ present, onChange }) {
+const STATUS_OPTIONS = [
+  { value: "PRESENT", label: "P", color: "var(--mint)" },
+  { value: "ABSENT", label: "A", color: "var(--rust)" },
+  { value: "LATE", label: "L", color: "var(--amber)" },
+  { value: "LEAVE", label: "Lv", color: "#64748b" },
+];
+const STATUS_LABELS = { PRESENT: "Present", ABSENT: "Absent", LATE: "Late", LEAVE: "Leave" };
+
+// 4-way segmented control (Present/Absent/Late/Leave) — default PRESENT for every student, staff
+// only needs to tap the students who weren't simply present.
+function StatusButtons({ status, onChange, compact }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={present}
-      onClick={onChange}
-      style={{
-        width: 46, height: 26, borderRadius: 13, border: "none", cursor: "pointer", flexShrink: 0,
-        background: present ? "var(--mint)" : "var(--rust)", position: "relative", transition: "background 0.15s",
-      }}
-    >
-      <span style={{
-        position: "absolute", top: 3, left: present ? 23 : 3, width: 20, height: 20, borderRadius: "50%",
-        background: "#fff", transition: "left 0.15s",
-      }} />
-    </button>
+    <div style={{ display: "flex", gap: 4 }}>
+      {STATUS_OPTIONS.map((opt) => {
+        const active = status === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            title={STATUS_LABELS[opt.value]}
+            style={{
+              width: compact ? 30 : 34, height: compact ? 30 : 34, borderRadius: 8, border: active ? "none" : "1px solid var(--line)",
+              background: active ? opt.color : "transparent", color: active ? "#fff" : "var(--ink-dim)",
+              fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 export default function ExecuteAttendance() {
   const { assignmentId, planId } = useParams();
+  const isMobile = useIsMobile();
 
   const [plan, setPlan] = useState(null);
   const [roster, setRoster] = useState([]);
   const [eligibleTests, setEligibleTests] = useState([]);
-  const [statuses, setStatuses] = useState({}); // studentId -> present(boolean)
+  const [statuses, setStatuses] = useState({}); // studentId -> "PRESENT" | "ABSENT" | "LATE" | "LEAVE"
   const [testId, setTestId] = useState("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -52,9 +67,9 @@ export default function ExecuteAttendance() {
         setRoster(roster);
         setEligibleTests(eligibleTests);
         const next = {};
-        roster.forEach((s) => (next[s.id] = true));
+        roster.forEach((s) => (next[s.id] = "PRESENT"));
         if (plan.session) {
-          plan.session.records.forEach((r) => (next[r.studentId] = r.status === "PRESENT"));
+          plan.session.records.forEach((r) => (next[r.studentId] = r.status));
           setTestId(plan.session.testId || "");
           const who = plan.session.updatedBy?.name || plan.session.markedBy?.name;
           const when = plan.session.updatedBy ? plan.session.updatedAt : plan.session.markedAt;
@@ -72,14 +87,17 @@ export default function ExecuteAttendance() {
     return roster.filter((s) => s.name.toLowerCase().includes(q) || (s.rollNumber || "").toLowerCase().includes(q));
   }, [roster, search]);
 
-  const presentCount = roster.filter((s) => statuses[s.id] !== false).length;
-  const absentCount = roster.length - presentCount;
+  const counts = useMemo(() => {
+    const c = { PRESENT: 0, ABSENT: 0, LATE: 0, LEAVE: 0 };
+    roster.forEach((s) => { c[statuses[s.id] || "PRESENT"]++; });
+    return c;
+  }, [roster, statuses]);
 
   const requiresTest = plan && plan.lectureType !== "REGULAR";
   const canSave = !requiresTest || !!testId;
 
-  function toggle(studentId) {
-    setStatuses((prev) => ({ ...prev, [studentId]: prev[studentId] === false }));
+  function setStatus(studentId, status) {
+    setStatuses((prev) => ({ ...prev, [studentId]: status }));
   }
 
   async function save() {
@@ -87,7 +105,7 @@ export default function ExecuteAttendance() {
     setError("");
     setSaved(false);
     try {
-      const records = roster.map((s) => ({ studentId: s.id, status: statuses[s.id] === false ? "ABSENT" : "PRESENT" }));
+      const records = roster.map((s) => ({ studentId: s.id, status: statuses[s.id] || "PRESENT" }));
       await api.post(`/attendance/assignments/${assignmentId}/plans/${planId}/attendance`, {
         testId: requiresTest ? testId : undefined,
         records,
@@ -154,14 +172,16 @@ export default function ExecuteAttendance() {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 16, marginTop: 20, flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 12, fontSize: 13 }}>
+        <div style={{ display: "flex", gap: isMobile ? 8 : 16, marginTop: 20, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 10, fontSize: 12, flexWrap: "wrap" }}>
             <span>Total: <strong>{roster.length}</strong></span>
-            <span style={{ color: "var(--mint)" }}>Present: <strong>{presentCount}</strong></span>
-            <span style={{ color: "var(--rust)" }}>Absent: <strong>{absentCount}</strong></span>
+            <span style={{ color: "var(--mint)" }}>Present: <strong>{counts.PRESENT}</strong></span>
+            <span style={{ color: "var(--rust)" }}>Absent: <strong>{counts.ABSENT}</strong></span>
+            <span style={{ color: "var(--amber)" }}>Late: <strong>{counts.LATE}</strong></span>
+            <span style={{ color: "#64748b" }}>Leave: <strong>{counts.LEAVE}</strong></span>
           </div>
           <input
-            style={{ flex: 1, minWidth: 180, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13 }}
+            style={{ flex: 1, minWidth: 160, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13 }}
             placeholder="Search by name or roll number…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -173,17 +193,18 @@ export default function ExecuteAttendance() {
 
         <div style={{ display: "grid", gap: 6, marginTop: 16 }}>
           {filteredRoster.map((s) => {
-            const present = statuses[s.id] !== false;
+            const status = statuses[s.id] || "PRESENT";
             return (
-              <div key={s.id} className="card" style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div
+                key={s.id}
+                className="card"
+                style={{ padding: "10px 14px", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: isMobile ? 8 : 0 }}
+              >
                 <div>
                   <span className="mono" style={{ fontSize: 12, color: "var(--ink-dim)", marginRight: 10 }}>{s.rollNumber || "—"}</span>
                   <span style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12, color: present ? "var(--mint)" : "var(--rust)", fontWeight: 600 }}>{present ? "Present" : "Absent"}</span>
-                  <Toggle present={present} onChange={() => toggle(s.id)} />
-                </div>
+                <StatusButtons status={status} onChange={(v) => setStatus(s.id, v)} compact={isMobile} />
               </div>
             );
           })}

@@ -6,12 +6,29 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
 const { logAudit, AUDIT_ACTIONS } = require("../utils/auditLog");
 const { sendExport } = require("../utils/exportFile");
+const { generateAttendancePdf } = require("../utils/attendancePdf");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const LECTURE_TYPES = ["REGULAR", "PRACTICE_TEST", "EXAM"];
 const LECTURE_TYPE_LABELS = { REGULAR: "Regular Class", PRACTICE_TEST: "Practice Test", EXAM: "Exam" };
+
+// AttendanceRecord.status stays a plain validated string (not a Prisma enum) — converting an
+// already-populated column's type is exactly the kind of schema change that broke two deploys
+// earlier this session; app-layer validation carries zero migration risk.
+const ATTENDANCE_STATUSES = ["PRESENT", "ABSENT", "LATE", "LEAVE"];
+
+// LEAVE is excluded from the denominator (an approved leave neither helps nor hurts the
+// percentage); LATE counts toward presence (the student was there, just tardy).
+function computeAttendancePercent(counts) {
+  const present = counts.PRESENT || 0;
+  const absent = counts.ABSENT || 0;
+  const late = counts.LATE || 0;
+  const denominator = present + absent + late;
+  if (denominator === 0) return null;
+  return Math.round(((present + late) / denominator) * 100);
+}
 
 const SLOTS = [
   { label: "Slot 1", startTime: "09:50", endTime: "10:45" },
@@ -310,6 +327,42 @@ router.patch("/admin/classes/:classId/division", authenticate, requireRole("ADMI
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to update class's division" });
+  }
+});
+
+// ===================== Admin: Attendance Rules (display-only minimum-percentage threshold) =====================
+
+router.get("/admin/rules", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const instituteId = req.requesterInstituteId || req.query.instituteId;
+    if (!instituteId) return res.status(400).json({ error: "An institute is required" });
+    const institute = await prisma.institute.findUnique({ where: { id: instituteId }, select: { attendanceMinPercent: true } });
+    if (!institute) return res.status(404).json({ error: "Institute not found" });
+    res.json({ attendanceMinPercent: institute.attendanceMinPercent });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load attendance rules" });
+  }
+});
+
+router.patch("/admin/rules", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
+  try {
+    const instituteId = req.requesterInstituteId || req.body.instituteId;
+    if (!instituteId) return res.status(400).json({ error: "An institute is required" });
+    if (req.requesterInstituteId && req.body.instituteId && req.body.instituteId !== req.requesterInstituteId) {
+      return res.status(403).json({ error: "You can only manage rules under your own institute" });
+    }
+    let attendanceMinPercent = null;
+    if (req.body.attendanceMinPercent !== undefined && req.body.attendanceMinPercent !== null && req.body.attendanceMinPercent !== "") {
+      const n = Number(req.body.attendanceMinPercent);
+      if (!Number.isFinite(n) || n < 0 || n > 100) return res.status(400).json({ error: "Minimum percentage must be a number between 0 and 100" });
+      attendanceMinPercent = Math.round(n);
+    }
+    const institute = await prisma.institute.update({ where: { id: instituteId }, data: { attendanceMinPercent }, select: { attendanceMinPercent: true } });
+    res.json(institute);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update attendance rules" });
   }
 });
 
@@ -753,7 +806,7 @@ router.post("/assignments/:assignmentId/plans/:planId/attendance", authenticate,
     const rosterIds = new Set(roster.map((s) => s.id));
     const cleanRecords = records
       .filter((r) => r && rosterIds.has(r.studentId))
-      .map((r) => ({ studentId: r.studentId, status: r.status === "ABSENT" ? "ABSENT" : "PRESENT" }));
+      .map((r) => ({ studentId: r.studentId, status: ATTENDANCE_STATUSES.includes(r.status) ? r.status : "PRESENT" }));
 
     const session = await prisma.$transaction(async (tx) => {
       const existing = await tx.attendanceSession.findUnique({ where: { planId: plan.id } });
@@ -778,6 +831,8 @@ router.post("/assignments/:assignmentId/plans/:planId/attendance", authenticate,
         classId: assignment.classId, subject: plan.subject, lectureNumber: plan.lectureNumber,
         presentCount: cleanRecords.filter((r) => r.status === "PRESENT").length,
         absentCount: cleanRecords.filter((r) => r.status === "ABSENT").length,
+        lateCount: cleanRecords.filter((r) => r.status === "LATE").length,
+        leaveCount: cleanRecords.filter((r) => r.status === "LEAVE").length,
       },
     });
 
@@ -857,7 +912,7 @@ router.get("/reports", authenticate, requireRole("ADMIN", "STAFF"), attachReques
 
     const recordWhere = { session: { plan: planWhere } };
     if (studentId) recordWhere.studentId = studentId;
-    if (status && ["PRESENT", "ABSENT"].includes(status)) recordWhere.status = status;
+    if (status && ATTENDANCE_STATUSES.includes(status)) recordWhere.status = status;
 
     const records = await prisma.attendanceRecord.findMany({
       where: recordWhere,
@@ -906,6 +961,14 @@ router.get("/reports", authenticate, requireRole("ADMIN", "STAFF"), attachReques
         req, action: AUDIT_ACTIONS.DATA_EXPORTED, actorId: req.user.id, actorName: req.user.name, actorRole: req.user.role,
         instituteId: req.requesterInstituteId, details: { entity: "attendance", format: req.query.format, rowCount: rows.length },
       });
+      // PDF needs pdfkit's streaming model, not sendExport's XLSX/CSV/JSON buffer-based one — a
+      // parallel branch rather than an extension of sendExport. Reuses the exact same `rows` this
+      // route already built, so it's bound by the same institute/staff-scope filtering above.
+      if (req.query.format === "pdf") {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="attendance-report-${new Date().toISOString().slice(0, 10)}.pdf"`);
+        return generateAttendancePdf(rows, res);
+      }
       return sendExport(res, { rows, filenameBase: `attendance-report-${new Date().toISOString().slice(0, 10)}`, format: req.query.format });
     }
 
@@ -913,6 +976,67 @@ router.get("/reports", authenticate, requireRole("ADMIN", "STAFF"), attachReques
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to load attendance report" });
+  }
+});
+
+// ===================== Student: own attendance history + per-subject summary =====================
+
+// Always self-scoped by construction (studentId: req.user.id, no caller-supplied id accepted) —
+// there is no query parameter that could widen this to another student's records.
+router.get("/my-records", authenticate, requireRole("STUDENT"), async (req, res) => {
+  try {
+    const [records, student] = await Promise.all([
+      prisma.attendanceRecord.findMany({
+        where: { studentId: req.user.id },
+        include: {
+          session: {
+            include: {
+              test: { select: { title: true } },
+              plan: {
+                include: {
+                  assignment: {
+                    include: { class: { include: { division: { include: { department: true } } } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ session: { plan: { scheduleDate: "desc" } } }],
+        take: 5000,
+      }),
+      prisma.user.findUnique({ where: { id: req.user.id }, select: { institute: { select: { attendanceMinPercent: true } } } }),
+    ]);
+
+    const bySubjectCounts = {};
+    const rows = records.map((r) => {
+      const plan = r.session.plan;
+      const assignment = plan.assignment;
+      const subject = plan.subject;
+      if (!bySubjectCounts[subject]) bySubjectCounts[subject] = { PRESENT: 0, ABSENT: 0, LATE: 0, LEAVE: 0 };
+      bySubjectCounts[subject][r.status] = (bySubjectCounts[subject][r.status] || 0) + 1;
+
+      return {
+        date: plan.scheduleDate.toISOString().slice(0, 10),
+        subject,
+        department: assignment.class.division?.department?.name || "",
+        division: assignment.class.division?.name || "",
+        class: assignment.class.name,
+        lectureNumber: plan.lectureNumber,
+        lectureType: plan.lectureType,
+        test: r.session.test?.title || null,
+        status: r.status,
+      };
+    });
+
+    const bySubject = Object.entries(bySubjectCounts)
+      .map(([subject, counts]) => ({ subject, counts, percentage: computeAttendancePercent(counts) }))
+      .sort((a, b) => a.subject.localeCompare(b.subject));
+
+    res.json({ records: rows, bySubject, attendanceMinPercent: student?.institute?.attendanceMinPercent ?? null });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load your attendance records" });
   }
 });
 

@@ -4,6 +4,7 @@ import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import { formatClassLabel } from "../utils/classLabel";
+import useIsMobile from "../hooks/useIsMobile";
 
 const SLOTS = [
   { label: "Slot 1", startTime: "09:50", endTime: "10:45" },
@@ -51,6 +52,7 @@ export default function AttendanceAssignmentDetail() {
   const { assignmentId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const tab = searchParams.get("tab") === "mark" ? "mark" : "plans";
 
   const [assignment, setAssignment] = useState(null);
@@ -152,36 +154,58 @@ export default function AttendanceAssignmentDetail() {
 
         {error && <p style={{ color: "var(--rust)", fontSize: 13, marginTop: 16 }}>{error}</p>}
 
-        <div style={{ marginTop: 20, overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "2px solid var(--line)", color: "var(--ink-dim)" }}>
-                {["Subject", "Lecture #", "Topic", "Schedule Date", "Slot", "Lecture Type", "Attendance Status", "Actions"].map((h) => (
-                  <th key={h} style={{ padding: "8px 10px" }}>{h}</th>
+        {plans && plans.length === 0 && (
+          <p style={{ padding: 24, textAlign: "center", color: "var(--ink-dim)" }}>No lectures scheduled yet.</p>
+        )}
+
+        {plans && plans.length > 0 && isMobile && (
+          <div style={{ display: "grid", gap: 10, marginTop: 20 }}>
+            {plans.map((p) => (
+              <PlanCard
+                key={p.id}
+                plan={p}
+                tab={tab}
+                assignmentId={assignmentId}
+                navigate={navigate}
+                onEdit={() => openEditPlan(p)}
+                confirming={confirmingDeleteId === p.id}
+                onAskDelete={() => setConfirmingDeleteId(p.id)}
+                onCancelDelete={() => setConfirmingDeleteId(null)}
+                onConfirmDelete={() => deletePlan(p)}
+              />
+            ))}
+          </div>
+        )}
+
+        {plans && plans.length > 0 && !isMobile && (
+          <div style={{ marginTop: 20, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: "left", borderBottom: "2px solid var(--line)", color: "var(--ink-dim)" }}>
+                  {["Subject", "Lecture #", "Topic", "Schedule Date", "Slot", "Lecture Type", "Attendance Status", "Actions"].map((h) => (
+                    <th key={h} style={{ padding: "8px 10px" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {plans.map((p) => (
+                  <PlanRow
+                    key={p.id}
+                    plan={p}
+                    tab={tab}
+                    assignmentId={assignmentId}
+                    navigate={navigate}
+                    onEdit={() => openEditPlan(p)}
+                    confirming={confirmingDeleteId === p.id}
+                    onAskDelete={() => setConfirmingDeleteId(p.id)}
+                    onCancelDelete={() => setConfirmingDeleteId(null)}
+                    onConfirmDelete={() => deletePlan(p)}
+                  />
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(plans || []).map((p) => (
-                <PlanRow
-                  key={p.id}
-                  plan={p}
-                  tab={tab}
-                  assignmentId={assignmentId}
-                  navigate={navigate}
-                  onEdit={() => openEditPlan(p)}
-                  confirming={confirmingDeleteId === p.id}
-                  onAskDelete={() => setConfirmingDeleteId(p.id)}
-                  onCancelDelete={() => setConfirmingDeleteId(null)}
-                  onConfirmDelete={() => deletePlan(p)}
-                />
-              ))}
-              {plans && plans.length === 0 && (
-                <tr><td colSpan={8} style={{ padding: 24, textAlign: "center", color: "var(--ink-dim)" }}>No lectures scheduled yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {showPlanModal && (
@@ -242,6 +266,54 @@ function PlanRow({ plan, tab, assignmentId, navigate, onEdit, confirming, onAskD
         </tr>
       )}
     </>
+  );
+}
+
+// Mobile fallback for PlanRow — a flat <table> breaks down on narrow screens, so each lecture
+// renders as a small stacked card instead, same data and actions as the desktop row.
+function PlanCard({ plan, tab, assignmentId, navigate, onEdit, confirming, onAskDelete, onCancelDelete, onConfirmDelete }) {
+  const marked = !!plan.session;
+  const lectureTypeLabel = LECTURE_TYPE_OPTIONS.find((o) => o.value === plan.lectureType)?.label || plan.lectureType;
+  return (
+    <div className="card" style={{ padding: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{plan.subject}</div>
+          <div style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>{plan.topic}</div>
+        </div>
+        <span style={{ fontSize: 12 }}>{marked ? "🟢 Marked" : "🟠 Not Marked"}</span>
+      </div>
+      <div style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 8 }}>
+        Lecture {plan.lectureNumber} · {plan.scheduleDate.slice(0, 10)}<br />
+        {plan.slotLabel} ({plan.startTime}–{plan.endTime}) · {lectureTypeLabel}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+        <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => navigate(`/staff/attendance/${assignmentId}/execute/${plan.id}`)}>
+          Execute
+        </button>
+        {tab === "plans" && (
+          <>
+            <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={onEdit}>Edit</button>
+            <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px", color: "var(--rust)" }} onClick={onAskDelete}>Delete</button>
+          </>
+        )}
+      </div>
+      {confirming && (
+        <div style={{ marginTop: 10, padding: 10, background: "rgba(220,38,38,0.06)", borderRadius: 8 }}>
+          <p style={{ fontSize: 12, color: "var(--rust)", fontWeight: 600 }}>
+            {marked
+              ? "Attendance has already been marked for this lecture — deleting it will permanently remove those attendance records too. Continue?"
+              : "Delete this lecture plan?"}
+          </p>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={onCancelDelete}>Cancel</button>
+            <button className="btn" style={{ fontSize: 12, background: "var(--rust)", color: "#fff", border: "none" }} onClick={onConfirmDelete}>
+              {marked ? "Delete lecture and attendance" : "Delete"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

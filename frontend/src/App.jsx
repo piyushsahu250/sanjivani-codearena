@@ -43,6 +43,7 @@ import AttendanceHome from "./pages/AttendanceHome";
 import AttendanceAssignmentDetail from "./pages/AttendanceAssignmentDetail";
 import ExecuteAttendance from "./pages/ExecuteAttendance";
 import AttendanceReports from "./pages/AttendanceReports";
+import MyAttendance from "./pages/MyAttendance";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import ForceChangePassword from "./pages/ForceChangePassword";
@@ -131,6 +132,7 @@ export default function App() {
           <Route path="/certificate/verify/:code" element={<CertificateVerify />} />
           <Route path="/account" element={<Protected><AccountSettings /></Protected>} />
           <Route path="/certificates" element={<Protected roles={["STUDENT"]}><MyCertificates /></Protected>} />
+          <Route path="/attendance" element={<Protected roles={["STUDENT"]}><MyAttendance /></Protected>} />
 
           {/* Student */}
           <Route path="/dashboard" element={<Protected roles={["STUDENT"]}><StudentDashboard /></Protected>} />

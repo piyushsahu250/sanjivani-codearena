@@ -49,6 +49,11 @@ model Institute {
   singleSessionOnly    Boolean  @default(false) // true = a new login revokes this account's other active sessions
   aiHintsEnabled        Boolean @default(false) // Learning Module coding hints — off by default, admin opt-in
 
+  // Attendance Management: display-only warning threshold shown on a student's own attendance
+  // view when their per-subject percentage falls below it. Null = no threshold configured, no
+  // warning shown — this never blocks anything (tests, login, etc.), purely informational.
+  attendanceMinPercent Int?
+
   classes         Class[]
   users           User[]
   questions       Question[]
@@ -1491,7 +1496,7 @@ model AttendanceRecord {
   sessionId String
   student   User              @relation("AttendanceStudentRecords", fields: [studentId], references: [id], onDelete: Cascade)
   studentId String
-  status    String            @default("PRESENT") // PRESENT | ABSENT
+  status    String            @default("PRESENT") // PRESENT | ABSENT | LATE | LEAVE
 
   @@unique([sessionId, studentId])
   @@index([studentId])

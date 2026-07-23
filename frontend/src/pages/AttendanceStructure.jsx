@@ -6,7 +6,7 @@ import ChalkUnderline from "../components/ChalkUnderline";
 
 const labelStyle = { display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 };
 const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 14 };
-const TABS = ["Departments & Divisions", "Assign Classes", "Attendance Assignment"];
+const TABS = ["Departments & Divisions", "Assign Classes", "Attendance Assignment", "Attendance Rules"];
 
 // Admin-only structural setup for Attendance Management: this platform's existing hierarchy was
 // Institute -> Class -> Student, with no Department/Division concept — this page is where an
@@ -69,7 +69,61 @@ export default function AttendanceStructure() {
         {tab === 2 && (
           <DivisionAssignmentTab staff={staff} setError={setError} />
         )}
+        {tab === 3 && <AttendanceRulesTab setError={setError} />}
       </div>
+    </div>
+  );
+}
+
+// Display-only warning threshold: shown on a student's own attendance view when their per-subject
+// percentage falls below it. Never blocks anything (no test/login enforcement) — purely
+// informational, per the explicit scope decided for this feature.
+function AttendanceRulesTab({ setError }) {
+  const [value, setValue] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get("/attendance/admin/rules")
+      .then((res) => setValue(res.data.attendanceMinPercent != null ? String(res.data.attendanceMinPercent) : ""))
+      .catch((err) => setError(err.response?.data?.error || "Failed to load attendance rules"))
+      .finally(() => setLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setSaved(false);
+    setError("");
+    try {
+      await api.patch("/attendance/admin/rules", { attendanceMinPercent: value === "" ? null : value });
+      setSaved(true);
+    } catch (err) {
+      setError(err.response?.data?.error || "Failed to save attendance rules");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!loaded) return <p style={{ marginTop: 20, color: "var(--ink-dim)", fontSize: 13 }}>Loading…</p>;
+
+  return (
+    <div className="card" style={{ padding: 20, marginTop: 20, maxWidth: 420 }}>
+      <label style={labelStyle}>Minimum Attendance Percentage</label>
+      <p style={{ fontSize: 12, color: "var(--ink-dim)", marginBottom: 10 }}>
+        Students below this percentage (per subject) see a warning badge on their own Attendance page. This is
+        informational only — it never blocks a test or any other feature. Leave blank to turn the warning off.
+      </p>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="number" min="0" max="100" style={{ ...inputStyle, maxWidth: 120 }}
+          placeholder="e.g. 75" value={value} onChange={(e) => setValue(e.target.value)}
+        />
+        <span style={{ fontSize: 13 }}>%</span>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+      </div>
+      {saved && <p style={{ fontSize: 12, color: "var(--mint)", marginTop: 8 }}>Saved.</p>}
     </div>
   );
 }
