@@ -4,6 +4,7 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
 const { gradePendingCodingSubmissions } = require("../utils/gradeAttempt");
 const { processGamification } = require("../utils/gamification");
+const { isTestVisibleToStudent, studentCanAccessTest } = require("../utils/testEligibility");
 
 const router = express.Router();
 
@@ -72,18 +73,6 @@ function buildAttemptOrder(test) {
     }
   }
   return { questionOrder, optionOrder };
-}
-
-// A student can see/take a test if it has no class assignment (open to all, legacy default)
-// or their class is one of the assigned classes.
-async function studentCanAccessTest(test, studentClassId) {
-  const links = await prisma.testClass.count({ where: { testId: test.id } });
-  if (links === 0) return true;
-  if (!studentClassId) return false;
-  const match = await prisma.testClass.findUnique({
-    where: { testId_classId: { testId: test.id, classId: studentClassId } },
-  });
-  return !!match;
 }
 
 const SELECTION_MODES = ["FIXED", "RANDOM"];
@@ -337,6 +326,7 @@ router.get("/", authenticate, attachRequesterInstitute, async (req, res) => {
           },
         },
       },
+      academicGroups: { select: { academicGroupId: true } },
       createdBy: { select: { id: true, name: true } },
     },
   });
@@ -348,8 +338,8 @@ router.get("/", authenticate, attachRequesterInstitute, async (req, res) => {
     return res.json(visible);
   }
 
-  const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true } });
-  const visible = tests.filter((t) => t.classes.length === 0 || (student.classId && t.classes.some((c) => c.classId === student.classId)));
+  const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true, academicGroupId: true } });
+  const visible = tests.filter((t) => isTestVisibleToStudent(t, student.academicGroupId, student.classId));
 
   // Surface the student's own attempt status per test so the dashboard can show "Completed"
   // upfront, rather than only after they click Attend and get bounced by a 403.
@@ -371,6 +361,7 @@ router.get("/:id", authenticate, async (req, res) => {
     where: { id: req.params.id },
     include: {
       classes: { select: { classId: true } },
+      academicGroups: { select: { academicGroupId: true } },
       questions: {
         include: {
           question: {
@@ -401,8 +392,8 @@ router.get("/:id", authenticate, async (req, res) => {
   if (!test) return res.status(404).json({ error: "Test not found" });
 
   if (!isStaff) {
-    const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true } });
-    const allowed = test.classes.length === 0 || (student.classId && test.classes.some((c) => c.classId === student.classId));
+    const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true, academicGroupId: true } });
+    const allowed = isTestVisibleToStudent(test, student.academicGroupId, student.classId);
     if (!allowed) return res.status(404).json({ error: "Test not found" });
 
     // Apply this student's one-time-generated order (set at attempt creation, see POST
@@ -449,8 +440,8 @@ router.post("/:id/start", authenticate, requireRole("STUDENT"), async (req, res)
     const test = await prisma.test.findUnique({ where: { id: testId } });
     if (!test || !test.isPublished) return res.status(404).json({ error: "Test not available" });
 
-    const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true } });
-    const allowed = await studentCanAccessTest(test, student.classId);
+    const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { classId: true, academicGroupId: true } });
+    const allowed = await studentCanAccessTest(prisma, test.id, student.academicGroupId, student.classId);
     if (!allowed) return res.status(404).json({ error: "Test not available" });
 
     const existing = await prisma.testAttempt.findUnique({

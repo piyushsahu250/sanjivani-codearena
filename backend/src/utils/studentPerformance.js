@@ -1,4 +1,5 @@
 const prisma = require("../prisma");
+const { testEligibilityWhere } = require("./testEligibility");
 
 function round1(n) {
   return Math.round(n * 10) / 10;
@@ -20,6 +21,7 @@ async function computeStudentPerformance(studentId, { maskUnpublished = false } 
       department: true, program: true, batchYear: true, section: true, isActive: true, profilePhotoUrl: true,
       institute: { select: { id: true, name: true } },
       class: { select: { id: true, name: true, batchYear: true } },
+      academicGroup: { select: { id: true, batch: true, section: true, department: { select: { name: true } } } },
     },
   });
   if (!student || student.id !== studentId) return null;
@@ -28,10 +30,7 @@ async function computeStudentPerformance(studentId, { maskUnpublished = false } 
     prisma.test.findMany({
       where: {
         isPublished: true,
-        OR: [
-          { classes: { none: {} } },
-          ...(student.class?.id ? [{ classes: { some: { classId: student.class.id } } }] : []),
-        ],
+        ...testEligibilityWhere(student.academicGroup?.id, student.class?.id),
       },
       select: { id: true },
     }),

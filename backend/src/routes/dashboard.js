@@ -4,6 +4,7 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const { computeStudentPerformance } = require("../utils/studentPerformance");
 const { getModuleLockMap } = require("../utils/learningLock");
 const { computeClassRank } = require("../utils/classRank");
+const { testEligibilityWhere } = require("../utils/testEligibility");
 
 const router = express.Router();
 
@@ -80,7 +81,7 @@ async function getNotifications(student) {
     prisma.test.findMany({
       where: {
         isPublished: true,
-        OR: [{ classes: { none: {} } }, ...(student.classId ? [{ classes: { some: { classId: student.classId } } }] : [])],
+        ...testEligibilityWhere(student.academicGroupId, student.classId),
       },
       select: { id: true, title: true, startTime: true, createdAt: true },
     }),

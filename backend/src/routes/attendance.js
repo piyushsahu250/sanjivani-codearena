@@ -7,6 +7,7 @@ const { attachRequesterInstitute } = require("../middleware/institute");
 const { logAudit, AUDIT_ACTIONS } = require("../utils/auditLog");
 const { sendExport } = require("../utils/exportFile");
 const { generateAttendancePdf } = require("../utils/attendancePdf");
+const { testEligibilityWhere } = require("../utils/testEligibility");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -754,7 +755,7 @@ router.get("/assignments/:assignmentId/plans/:planId/execute", authenticate, req
               attendanceMandatory: true,
               startTime: { lte: now },
               endTime: { gte: now },
-              OR: [{ classes: { none: {} } }, { classes: { some: { classId: assignment.classId } } }],
+              ...testEligibilityWhere(null, assignment.classId),
             },
             select: { id: true, title: true },
             orderBy: { title: "asc" },
@@ -789,7 +790,7 @@ router.post("/assignments/:assignmentId/plans/:planId/attendance", authenticate,
           attendanceMandatory: true,
           startTime: { lte: now },
           endTime: { gte: now },
-          OR: [{ classes: { none: {} } }, { classes: { some: { classId: assignment.classId } } }],
+          ...testEligibilityWhere(null, assignment.classId),
         },
         select: { id: true },
       });
