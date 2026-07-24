@@ -145,7 +145,10 @@ export default function StudentSearch({ basePath }) {
                       {s.rollNumber || "—"} · {s.email}
                     </div>
                     <div className="mono" style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 2 }}>
-                      {s.institute?.name || "—"}{s.class?.name ? ` · ${s.class.name}${s.class.batchYear ? ` (${s.class.batchYear})` : ""}` : ""}
+                      {s.institute?.name || "—"}
+                      {s.academicGroup
+                        ? ` · ${s.academicGroup.department?.name || "—"} - ${s.academicGroup.section}${s.academicGroup.batch ? ` (${s.academicGroup.batch})` : ""}`
+                        : (s.class?.name ? ` · ${s.class.name}${s.class.batchYear ? ` (${s.class.batchYear})` : ""}` : "")}
                     </div>
                   </Link>
                 </div>

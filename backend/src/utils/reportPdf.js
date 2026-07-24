@@ -29,8 +29,9 @@ function generatePerformancePdf(data, res) {
   row(doc, "Official Email", data.student.email);
   row(doc, "Mobile", data.student.mobile);
   row(doc, "Institute", data.student.institute?.name);
-  row(doc, "Class / Department", data.student.class?.name || data.student.department);
-  row(doc, "Batch Year", data.student.class?.batchYear || data.student.batchYear);
+  row(doc, "Department", data.student.academicGroup?.department?.name || data.student.department);
+  row(doc, "Section", data.student.academicGroup?.section || data.student.section);
+  row(doc, "Batch Year", data.student.academicGroup?.batch || data.student.batchYear);
   doc.moveDown(1);
 
   doc.fontSize(13).text("Overall Statistics");

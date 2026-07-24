@@ -65,7 +65,7 @@ export default function InterviewReportDetail() {
             <div><div style={{ color: "var(--ink-dim)", fontSize: 11 }}>Student</div><div style={{ fontWeight: 600 }}>{student.name}</div></div>
             <div><div style={{ color: "var(--ink-dim)", fontSize: 11 }}>Roll No.</div><div className="mono">{student.rollNumber || "—"}</div></div>
             <div><div style={{ color: "var(--ink-dim)", fontSize: 11 }}>Institute</div><div>{student.institute?.name || "—"}</div></div>
-            <div><div style={{ color: "var(--ink-dim)", fontSize: 11 }}>Class / Batch</div><div>{student.class?.name || "—"} {student.batchYear ? `(${student.batchYear})` : ""}</div></div>
+            <div><div style={{ color: "var(--ink-dim)", fontSize: 11 }}>Group / Batch</div><div>{student.academicGroup ? `${student.academicGroup.department?.name || "—"} - ${student.academicGroup.section}` : (student.class?.name || "—")} {(student.academicGroup?.batch || student.batchYear) ? `(${student.academicGroup?.batch || student.batchYear})` : ""}</div></div>
             <div><div style={{ color: "var(--ink-dim)", fontSize: 11 }}>Department</div><div>{student.department || "—"}</div></div>
             <div><div style={{ color: "var(--ink-dim)", fontSize: 11 }}>Interview Type</div><div>{sessionTypeLabel(session)}{session.config?.company ? ` · ${session.config.company}` : ""}</div></div>
             <div><div style={{ color: "var(--ink-dim)", fontSize: 11 }}>Date</div><div className="mono">{session.submittedAt ? new Date(session.submittedAt).toLocaleString() : "—"}</div></div>

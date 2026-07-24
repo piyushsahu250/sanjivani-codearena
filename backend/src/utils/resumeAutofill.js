@@ -11,7 +11,7 @@ const EXAM_QUIZ_TYPES = ["MCQ", "TRUE_FALSE", "MULTISELECT"];
 async function buildAutofillData(studentId) {
   const student = await prisma.user.findUnique({
     where: { id: studentId },
-    include: { institute: true, class: true },
+    include: { institute: true, class: true, academicGroup: true },
   });
   if (!student) return null;
 
@@ -36,8 +36,8 @@ async function buildAutofillData(studentId) {
   }));
 
   const education = [];
-  if (student.class || student.institute) {
-    const [startYear, endYear] = (student.class?.batchYear || "").split("-");
+  if (student.class || student.academicGroup || student.institute) {
+    const [startYear, endYear] = (student.academicGroup?.batch || student.class?.batchYear || student.batchYear || "").split("-");
     education.push({
       degree: student.class?.name || student.program || "",
       specialization: student.department || "",
