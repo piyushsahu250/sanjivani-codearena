@@ -3,12 +3,12 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
-import { formatClassLabel } from "../utils/classLabel";
+import { formatAcademicGroupLabel } from "../utils/classLabel";
 
-// Landing page for Attendance — no more manual Department/Division/Class dropdowns. Every card is
-// one division assignment (my-assignments already enforces "staff only sees what they're assigned
-// to"), showing exactly the fields the redesign asked for, with the two primary actions routing
-// straight into the assignment's detail page.
+// Landing page for Attendance — no more manual Department/Section/Class dropdowns. Every card is
+// one academic-group assignment (my-assignments already enforces "staff only sees what they're
+// assigned to"), showing exactly the fields the redesign asked for, with the two primary actions
+// routing straight into the assignment's detail page.
 export default function AttendanceHome() {
   const [assignments, setAssignments] = useState(null);
   const [error, setError] = useState("");
@@ -46,11 +46,11 @@ export default function AttendanceHome() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16, marginTop: 24 }}>
             {assignments.map((a) => (
               <div key={a.id} className="card" style={{ padding: 20, display: "flex", flexDirection: "column" }}>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>{formatClassLabel(a.class)}</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{formatAcademicGroupLabel(a.academicGroup, a.class)}</div>
                 <div style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 8, display: "grid", gap: 3 }}>
-                  <div>Academic Year: {a.class.batchYear || "—"}</div>
+                  <div>Batch: {a.academicGroup?.batch || a.class?.batchYear || "—"}</div>
                   <div>Semester: {a.semester}</div>
-                  <div>Division: {a.class.division?.name || "—"}</div>
+                  <div>Section: {a.academicGroup?.section || a.class?.division?.name || "—"}</div>
                   <div>Faculty: {a.staff.name}</div>
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 16 }}>

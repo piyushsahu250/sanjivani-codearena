@@ -70,7 +70,7 @@ export default function MyAttendance() {
                   <div style={{ fontSize: 13 }}>
                     <strong>{r.subject}</strong> · Lecture {r.lectureNumber} · {r.date}
                     <div style={{ fontSize: 11, color: "var(--ink-dim)", marginTop: 2 }}>
-                      {r.department} · {r.division} · {r.class} · {LECTURE_TYPE_LABELS[r.lectureType] || r.lectureType}
+                      {r.department} · {r.section} · {r.batch} · {LECTURE_TYPE_LABELS[r.lectureType] || r.lectureType}
                       {r.test ? ` · ${r.test}` : ""}
                     </div>
                   </div>

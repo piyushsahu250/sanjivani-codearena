@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import api from "../api";
 import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
-import { formatClassLabel } from "../utils/classLabel";
+import { formatAcademicGroupLabel } from "../utils/classLabel";
 import useIsMobile from "../hooks/useIsMobile";
 
 const SLOTS = [
@@ -132,7 +132,7 @@ export default function AttendanceAssignmentDetail() {
         <Link to="/staff/attendance" className="btn btn-ghost" style={{ fontSize: 12 }}>← Back to Attendance</Link>
         {assignment && (
           <div style={{ marginTop: 12 }}>
-            <h1>{formatClassLabel(assignment.class)}</h1>
+            <h1>{formatAcademicGroupLabel(assignment.academicGroup, assignment.class)}</h1>
             <ChalkUnderline />
             <p style={{ fontSize: 13, color: "var(--ink-dim)", marginTop: 8 }}>
               Semester {assignment.semester} · Faculty: {assignment.staff.name}

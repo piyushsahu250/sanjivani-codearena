@@ -16,7 +16,7 @@ function generateAttendancePdf(rows, res) {
   doc.moveDown(1);
 
   const colX = [40, 100, 180, 320, 350, 400, 470, 570, 680, 802];
-  const headers = ["Date", "Department", "Division", "Sem", "Lec#", "Subject", "Roll No.", "Student", "Type", "Status"];
+  const headers = ["Date", "Department", "Section", "Sem", "Lec#", "Subject", "Roll No.", "Student", "Type", "Status"];
   doc.font("Helvetica-Bold").fontSize(9);
   headers.forEach((h, i) => doc.text(h, colX[i], doc.y, { width: (colX[i + 1] || 802) - colX[i] - 4 }));
   doc.moveDown(0.3);
@@ -29,7 +29,7 @@ function generateAttendancePdf(rows, res) {
     const y = doc.y;
     doc.text(r.Date, colX[0], y, { width: colX[1] - colX[0] - 4 });
     doc.text(r.Department || "—", colX[1], y, { width: colX[2] - colX[1] - 4 });
-    doc.text(r.Division || "—", colX[2], y, { width: colX[3] - colX[2] - 4 });
+    doc.text(r.Section || "—", colX[2], y, { width: colX[3] - colX[2] - 4 });
     doc.text(r.Semester || "—", colX[3], y, { width: colX[4] - colX[3] - 4 });
     doc.text(String(r["Lecture #"]), colX[4], y, { width: colX[5] - colX[4] - 4 });
     doc.text(r.Subject || "—", colX[5], y, { width: colX[6] - colX[5] - 4 });

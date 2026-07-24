@@ -21,7 +21,7 @@ export default function AttendanceReports() {
   const isMobile = useIsMobile();
   const [myAssignments, setMyAssignments] = useState([]);
   const [filters, setFilters] = useState({
-    date: "", dateFrom: "", dateTo: "", academicYear: "", departmentId: "", divisionId: "",
+    date: "", dateFrom: "", dateTo: "", academicYear: "", departmentId: "", section: "",
     subject: "", semester: "", facultyId: "", lectureType: "", status: "",
   });
   const [rows, setRows] = useState(null);
@@ -34,21 +34,21 @@ export default function AttendanceReports() {
   }, []);
 
   const academicYears = useMemo(() => {
-    return [...new Set(myAssignments.map((a) => a.class.batchYear).filter(Boolean))];
+    return [...new Set(myAssignments.map((a) => a.academicGroup?.batch || a.class?.batchYear).filter(Boolean))];
   }, [myAssignments]);
 
   const departments = useMemo(() => {
     const map = new Map();
-    myAssignments.forEach((a) => a.class.division?.department && map.set(a.class.division.department.id, a.class.division.department.name));
+    myAssignments.forEach((a) => a.academicGroup?.department && map.set(a.academicGroup.department.id, a.academicGroup.department.name));
     return [...map.entries()].map(([id, name]) => ({ id, name }));
   }, [myAssignments]);
 
-  const divisions = useMemo(() => {
-    const map = new Map();
+  const sections = useMemo(() => {
+    const set = new Set();
     myAssignments.forEach((a) => {
-      if (a.class.division && (!filters.departmentId || a.class.division.departmentId === filters.departmentId)) map.set(a.class.division.id, a.class.division.name);
+      if (a.academicGroup && (!filters.departmentId || a.academicGroup.departmentId === filters.departmentId)) set.add(a.academicGroup.section);
     });
-    return [...map.entries()].map(([id, name]) => ({ id, name }));
+    return [...set];
   }, [myAssignments, filters.departmentId]);
 
   const semesters = useMemo(() => [...new Set(myAssignments.map((a) => a.semester))], [myAssignments]);
@@ -103,7 +103,7 @@ export default function AttendanceReports() {
     }
   }
 
-  const columns = ["Date", "Batch", "Department", "Division", "Class", "Subject", "Semester", "Faculty", "Lecture #", "Lecture Type", "Test", "Roll Number", "Student Name"];
+  const columns = ["Date", "Batch", "Department", "Section", "Subject", "Semester", "Faculty", "Lecture #", "Lecture Type", "Test", "Roll Number", "Student Name"];
 
   return (
     <div>
@@ -139,16 +139,16 @@ export default function AttendanceReports() {
           </div>
           <div>
             <label style={labelStyle}>Department</label>
-            <select style={inputStyle} value={filters.departmentId} onChange={(e) => { set("departmentId", e.target.value); set("divisionId", ""); }}>
+            <select style={inputStyle} value={filters.departmentId} onChange={(e) => { set("departmentId", e.target.value); set("section", ""); }}>
               <option value="">All</option>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={labelStyle}>Division</label>
-            <select style={inputStyle} value={filters.divisionId} onChange={(e) => set("divisionId", e.target.value)}>
+            <label style={labelStyle}>Section</label>
+            <select style={inputStyle} value={filters.section} onChange={(e) => set("section", e.target.value)}>
               <option value="">All</option>
-              {divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              {sections.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
@@ -217,7 +217,7 @@ export default function AttendanceReports() {
                       <span style={{ fontWeight: 700, color: STATUS_COLORS[r.Status] || "var(--ink)" }}>{r.Status}</span>
                     </div>
                     <div style={{ color: "var(--ink-dim)", marginTop: 4 }}>{r.Subject} · Lecture {r["Lecture #"]} · {r.Date}</div>
-                    <div style={{ color: "var(--ink-dim)", marginTop: 2 }}>{r.Department} · {r.Division} · {r.Class}</div>
+                    <div style={{ color: "var(--ink-dim)", marginTop: 2 }}>{r.Department} · {r.Section}</div>
                     <div style={{ color: "var(--ink-dim)", marginTop: 2 }}>Roll: {r["Roll Number"]} · Faculty: {r.Faculty}</div>
                   </div>
                 ))}

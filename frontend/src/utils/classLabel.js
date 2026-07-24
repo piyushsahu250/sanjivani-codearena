@@ -14,6 +14,19 @@ export function formatClassLabel(cls) {
   return `${institute}${cls.name}${batch}`;
 }
 
+// Institute -> Batch -> Department -> Section label for an AcademicGroup: "SCOE · COMP(2028) - A".
+// Falls back to formatClassLabel(assignment.class) for any pre-migration assignment that somehow
+// still only carries the legacy class link.
+export function formatAcademicGroupLabel(group, cls) {
+  if (group) {
+    const institute = group.institute?.name ? `${group.institute.name} · ` : "";
+    const department = group.department?.name || "—";
+    const batch = group.batch ? `(${group.batch})` : "";
+    return `${institute}${department}${batch} - ${group.section}`;
+  }
+  return cls ? formatClassLabel(cls) : "—";
+}
+
 // Groups a flat class list into { [batchYear]: Class[] } (sorted by batch year descending) plus a
 // separate `legacy` bucket for classes with no Division set — the shared grouping logic every
 // cascading Institute -> Batch -> Department/Division picker on the platform reuses instead of

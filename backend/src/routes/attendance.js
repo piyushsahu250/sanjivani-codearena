@@ -96,33 +96,46 @@ function validatePlanInput(body) {
 // Central access gate for every assignment-scoped attendance route. ADMIN: institute-scoped (same
 // convention as attachRequesterInstitute everywhere else on this platform). STAFF: must own this
 // exact StaffClassAssignment — this is the enforcement point for "staff must not access another
-// staff member's (or another subject's) attendance." Returns the assignment (with class/division/
-// department joined) on success, or null after already sending the appropriate 403/404 itself.
+// staff member's (or another subject's) attendance." Returns the assignment (with both the legacy
+// class/division and the new academicGroup joined — academicGroup is authoritative wherever both
+// are populated; class/division is kept only as a fallback for any pre-migration row that somehow
+// never got backfilled) on success, or null after already sending the appropriate 403/404 itself.
 async function resolveAssignmentAccess(req, res, assignmentId) {
   const assignment = await prisma.staffClassAssignment.findUnique({
     where: { id: assignmentId },
     include: {
       staff: { select: { id: true, name: true, email: true } },
       class: { include: { institute: { select: { id: true, name: true } }, division: { include: { department: true } } } },
+      academicGroup: { include: { institute: { select: { id: true, name: true } }, department: true } },
     },
   });
   if (!assignment) {
     res.status(404).json({ error: "Assignment not found" });
     return null;
   }
+  const instituteId = assignment.academicGroup?.instituteId || assignment.class?.instituteId;
   if (req.user.role === "STAFF") {
     if (assignment.staffId !== req.user.id) {
-      res.status(403).json({ error: "You are not assigned to this class" });
+      res.status(403).json({ error: "You are not assigned to this group" });
       return null;
     }
     return assignment;
   }
   // ADMIN
-  if (req.requesterInstituteId && assignment.class.instituteId !== req.requesterInstituteId) {
+  if (req.requesterInstituteId && instituteId !== req.requesterInstituteId) {
     res.status(403).json({ error: "You can only manage attendance under your own institute" });
     return null;
   }
   return assignment;
+}
+
+// Roster where-clause for an assignment: academicGroupId when populated (every current
+// assignment, post-migration), classId as a defensive fallback for any row that somehow wasn't
+// backfilled.
+function rosterWhereForAssignment(assignment) {
+  return assignment.academicGroupId
+    ? { academicGroupId: assignment.academicGroupId, role: "STUDENT" }
+    : { classId: assignment.classId, role: "STUDENT" };
 }
 
 // ===================== Admin: Department CRUD =====================
@@ -202,135 +215,6 @@ router.delete("/admin/departments/:id", authenticate, requireRole("ADMIN"), atta
   }
 });
 
-// ===================== Admin: Division CRUD =====================
-
-router.get("/admin/divisions", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
-  const where = {};
-  if (req.query.departmentId) where.departmentId = req.query.departmentId;
-  const divisions = await prisma.division.findMany({
-    where,
-    orderBy: { name: "asc" },
-    include: { department: { select: { id: true, name: true, instituteId: true } }, _count: { select: { classes: true } } },
-  });
-  const scoped = req.requesterInstituteId
-    ? divisions.filter((d) => d.department.instituteId === req.requesterInstituteId)
-    : divisions;
-  res.json(scoped);
-});
-
-router.post("/admin/divisions", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
-  try {
-    const { name, departmentId } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: "Division name is required" });
-    if (!departmentId) return res.status(400).json({ error: "A department is required" });
-
-    const department = await prisma.department.findUnique({ where: { id: departmentId } });
-    if (!department) return res.status(404).json({ error: "Department not found" });
-    if (req.requesterInstituteId && department.instituteId !== req.requesterInstituteId) {
-      return res.status(403).json({ error: "You can only add divisions under your own institute" });
-    }
-
-    const existing = await prisma.division.findFirst({ where: { departmentId, name: name.trim() } });
-    if (existing) return res.status(409).json({ error: "A division with this name already exists in this department" });
-
-    const division = await prisma.division.create({ data: { name: name.trim(), departmentId } });
-    res.json(division);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to create division" });
-  }
-});
-
-router.patch("/admin/divisions/:id", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
-  try {
-    const existing = await prisma.division.findUnique({ where: { id: req.params.id }, include: { department: true } });
-    if (!existing) return res.status(404).json({ error: "Division not found" });
-    if (req.requesterInstituteId && existing.department.instituteId !== req.requesterInstituteId) {
-      return res.status(403).json({ error: "You can only manage divisions under your own institute" });
-    }
-    const { name, isActive } = req.body;
-    const nextName = name?.trim() || existing.name;
-    if (name && nextName !== existing.name) {
-      const dup = await prisma.division.findFirst({ where: { departmentId: existing.departmentId, name: nextName, NOT: { id: existing.id } } });
-      if (dup) return res.status(409).json({ error: "A division with this name already exists in this department" });
-    }
-    const division = await prisma.division.update({
-      where: { id: req.params.id },
-      data: { name: nextName, isActive: isActive ?? existing.isActive },
-    });
-    res.json(division);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to update division" });
-  }
-});
-
-router.delete("/admin/divisions/:id", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
-  try {
-    const existing = await prisma.division.findUnique({ where: { id: req.params.id }, include: { department: true } });
-    if (!existing) return res.status(404).json({ error: "Division not found" });
-    if (req.requesterInstituteId && existing.department.instituteId !== req.requesterInstituteId) {
-      return res.status(403).json({ error: "You can only manage divisions under your own institute" });
-    }
-    await prisma.division.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
-  } catch (err) {
-    if (err.code === "P2003" || err.code === "P2014") {
-      return res.status(409).json({ error: "This division has classes assigned to it and can't be deleted. Unassign its classes first." });
-    }
-    console.error(err);
-    res.status(500).json({ error: "Failed to delete division" });
-  }
-});
-
-// ===================== Admin: assign existing Classes into Divisions =====================
-
-// Reuses the existing Class table — this never creates a new class, just sets/clears its
-// (new, optional) divisionId, so Attendance never duplicates class/student data.
-router.get("/admin/classes", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
-  const where = {};
-  if (req.requesterInstituteId) where.instituteId = req.requesterInstituteId;
-  else if (req.query.instituteId) where.instituteId = req.query.instituteId;
-  const classes = await prisma.class.findMany({
-    where,
-    orderBy: [{ name: "asc" }, { batchYear: "asc" }],
-    include: {
-      institute: { select: { id: true, name: true } },
-      division: { include: { department: true } },
-      staffAssignments: { include: { staff: { select: { id: true, name: true, email: true } } } },
-      _count: { select: { users: true } },
-    },
-  });
-  res.json(classes);
-});
-
-router.patch("/admin/classes/:classId/division", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
-  try {
-    const cls = await prisma.class.findUnique({ where: { id: req.params.classId } });
-    if (!cls) return res.status(404).json({ error: "Class not found" });
-    if (req.requesterInstituteId && cls.instituteId !== req.requesterInstituteId) {
-      return res.status(403).json({ error: "You can only manage classes under your own institute" });
-    }
-    const { divisionId } = req.body;
-    if (divisionId) {
-      const division = await prisma.division.findUnique({ where: { id: divisionId }, include: { department: true } });
-      if (!division) return res.status(404).json({ error: "Division not found" });
-      if (division.department.instituteId !== cls.instituteId) {
-        return res.status(400).json({ error: "That division belongs to a different institute than this class" });
-      }
-    }
-    const updated = await prisma.class.update({
-      where: { id: req.params.classId },
-      data: { divisionId: divisionId || null },
-      include: { division: { include: { department: true } } },
-    });
-    res.json(updated);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to update class's division" });
-  }
-});
-
 // ===================== Admin: Attendance Rules (display-only minimum-percentage threshold) =====================
 
 router.get("/admin/rules", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
@@ -377,107 +261,112 @@ router.get("/admin/staff", authenticate, requireRole("ADMIN"), attachRequesterIn
   res.json(staff);
 });
 
-// Distinct batch years available for a Batch dropdown — the first step of every cascading
-// Institute -> Batch -> Department/Division picker across the platform.
+// Distinct batches available for a Batch dropdown — the first step of every cascading
+// Institute -> Batch -> Department/Section picker across the platform. Academic groups are
+// auto-derived from registered students (Bulk Upload/Registration, or the one-time migration) —
+// there is no manual "create a batch" admin step.
 router.get("/admin/batches", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
-  const where = { batchYear: { not: null } };
+  const where = {};
   if (req.requesterInstituteId) where.instituteId = req.requesterInstituteId;
   else if (req.query.instituteId) where.instituteId = req.query.instituteId;
-  const rows = await prisma.class.findMany({ where, select: { batchYear: true }, distinct: ["batchYear"], orderBy: { batchYear: "desc" } });
-  res.json(rows.map((r) => r.batchYear));
+  const rows = await prisma.academicGroup.findMany({ where, select: { batch: true }, distinct: ["batch"], orderBy: { batch: "desc" } });
+  res.json(rows.map((r) => r.batch));
 });
 
-// The Admin Attendance Assignment Page's data source: every division (Class with a divisionId
-// set) for the given institute+batch, each with its department, division, and current assignment
-// (at most one, per the "one staff per division" model) joined in a single call.
-router.get("/admin/division-table", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
+// The Admin Attendance Assignment Page's data source: every academic group (Institute+Batch+
+// Department+Section, auto-derived from registered students) for the given institute+batch, each
+// with its department, section, and current staff assignment (at most one, per the "one staff per
+// group" model) joined in a single call.
+router.get("/admin/group-table", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
   try {
     const instituteId = req.requesterInstituteId || req.query.instituteId;
     if (!instituteId) return res.status(400).json({ error: "An institute is required" });
     if (req.requesterInstituteId && req.query.instituteId && req.query.instituteId !== req.requesterInstituteId) {
-      return res.status(403).json({ error: "You can only view divisions under your own institute" });
+      return res.status(403).json({ error: "You can only view groups under your own institute" });
     }
     if (!req.query.batchYear) return res.status(400).json({ error: "A batch is required" });
 
-    const classes = await prisma.class.findMany({
-      where: { instituteId, batchYear: req.query.batchYear, divisionId: { not: null } },
+    const groups = await prisma.academicGroup.findMany({
+      where: { instituteId, batch: req.query.batchYear },
       include: {
-        division: { include: { department: true } },
+        department: true,
         staffAssignments: { include: { staff: { select: { id: true, name: true, email: true } } }, orderBy: { assignedAt: "desc" }, take: 1 },
       },
-      orderBy: [{ division: { department: { name: "asc" } } }, { division: { name: "asc" } }],
+      orderBy: [{ department: { name: "asc" } }, { section: "asc" }],
     });
 
-    res.json(classes.map((c) => ({
-      classId: c.id,
-      batchYear: c.batchYear,
-      department: c.division.department,
-      division: { id: c.division.id, name: c.division.name },
-      assignment: c.staffAssignments[0] || null,
+    res.json(groups.map((g) => ({
+      academicGroupId: g.id,
+      batchYear: g.batch,
+      department: g.department,
+      section: g.section,
+      assignment: g.staffAssignments[0] || null,
     })));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to load the division table" });
+    res.status(500).json({ error: "Failed to load the group table" });
   }
 });
 
-// One row per division (Class): assigning a staff member who's already assigned elsewhere on this
-// division UPDATES that same row rather than creating a second one — this find-then-update-or-
-// create logic is the sole enforcement point for "one staff per division," deliberately not a DB
-// unique constraint (safer to deploy against any pre-existing rows, and this is the only write path).
+// One row per academic group: assigning a staff member who's already assigned elsewhere on this
+// group UPDATES that same row rather than creating a second one — this find-then-update-or-create
+// logic is the sole enforcement point for "one staff per group," deliberately not a DB unique
+// constraint (safer to deploy against any pre-existing rows, and this is the only write path).
 router.post("/admin/staff-assignments", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
   try {
-    const { staffId, classId } = req.body;
+    const { staffId, academicGroupId } = req.body;
     const semester = String(req.body.semester || "").trim();
-    if (!staffId || !classId) return res.status(400).json({ error: "Both a staff member and a class are required" });
+    if (!staffId || !academicGroupId) return res.status(400).json({ error: "Both a staff member and an academic group are required" });
     if (!semester) return res.status(400).json({ error: "A semester is required" });
 
-    const [staff, cls] = await Promise.all([
+    const [staff, group] = await Promise.all([
       prisma.user.findUnique({ where: { id: staffId } }),
-      prisma.class.findUnique({ where: { id: classId } }),
+      prisma.academicGroup.findUnique({ where: { id: academicGroupId }, include: { department: true } }),
     ]);
     if (!staff || staff.role !== "STAFF") return res.status(404).json({ error: "Staff member not found" });
-    if (!cls) return res.status(404).json({ error: "Class not found" });
-    if (req.requesterInstituteId && (staff.instituteId !== req.requesterInstituteId || cls.instituteId !== req.requesterInstituteId)) {
-      return res.status(403).json({ error: "You can only assign staff and classes under your own institute" });
+    if (!group) return res.status(404).json({ error: "Academic group not found" });
+    if (req.requesterInstituteId && (staff.instituteId !== req.requesterInstituteId || group.instituteId !== req.requesterInstituteId)) {
+      return res.status(403).json({ error: "You can only assign staff and groups under your own institute" });
     }
 
-    const existing = await prisma.staffClassAssignment.findFirst({ where: { classId } });
+    const existing = await prisma.staffClassAssignment.findFirst({ where: { academicGroupId } });
     const assignment = existing
       ? await prisma.staffClassAssignment.update({
           where: { id: existing.id },
           data: { staffId, semester },
-          include: { staff: { select: { id: true, name: true, email: true } }, class: { select: { id: true, name: true } } },
+          include: { staff: { select: { id: true, name: true, email: true } }, academicGroup: { include: { department: true } } },
         })
       : await prisma.staffClassAssignment.create({
-          data: { staffId, classId, semester },
-          include: { staff: { select: { id: true, name: true, email: true } }, class: { select: { id: true, name: true } } },
+          data: { staffId, academicGroupId, semester },
+          include: { staff: { select: { id: true, name: true, email: true } }, academicGroup: { include: { department: true } } },
         });
 
+    const groupLabel = `${group.department.name} · ${group.section} (${group.batch})`;
     logAudit({
       req, action: AUDIT_ACTIONS.STAFF_CLASS_ASSIGNMENT_CHANGED, actorId: req.user.id, actorName: req.user.name, actorRole: req.user.role,
-      instituteId: req.requesterInstituteId, details: { change: existing ? "reassigned" : "assigned", staffId, staffName: staff.name, classId, className: cls.name, semester },
+      instituteId: req.requesterInstituteId, details: { change: existing ? "reassigned" : "assigned", staffId, staffName: staff.name, academicGroupId, groupLabel, semester },
     });
 
     res.json(assignment);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to assign staff to class" });
+    res.status(500).json({ error: "Failed to assign staff to group" });
   }
 });
 
 router.patch("/admin/staff-assignments/:id", authenticate, requireRole("ADMIN"), attachRequesterInstitute, async (req, res) => {
   try {
-    const existing = await prisma.staffClassAssignment.findUnique({ where: { id: req.params.id }, include: { class: true } });
+    const existing = await prisma.staffClassAssignment.findUnique({ where: { id: req.params.id }, include: { class: true, academicGroup: true } });
     if (!existing) return res.status(404).json({ error: "Assignment not found" });
-    if (req.requesterInstituteId && existing.class.instituteId !== req.requesterInstituteId) {
+    const instituteId = existing.academicGroup?.instituteId || existing.class?.instituteId;
+    if (req.requesterInstituteId && instituteId !== req.requesterInstituteId) {
       return res.status(403).json({ error: "You can only manage assignments under your own institute" });
     }
     const nextSemester = req.body.semester?.trim() || existing.semester;
     const updated = await prisma.staffClassAssignment.update({
       where: { id: req.params.id },
       data: { semester: nextSemester },
-      include: { staff: { select: { id: true, name: true, email: true } }, class: { select: { id: true, name: true } } },
+      include: { staff: { select: { id: true, name: true, email: true } }, academicGroup: { include: { department: true } } },
     });
     res.json(updated);
   } catch (err) {
@@ -490,17 +379,21 @@ router.delete("/admin/staff-assignments/:id", authenticate, requireRole("ADMIN")
   try {
     const assignment = await prisma.staffClassAssignment.findUnique({
       where: { id: req.params.id },
-      include: { staff: true, class: true },
+      include: { staff: true, class: true, academicGroup: { include: { department: true } } },
     });
     if (!assignment) return res.status(404).json({ error: "Assignment not found" });
-    if (req.requesterInstituteId && assignment.class.instituteId !== req.requesterInstituteId) {
+    const instituteId = assignment.academicGroup?.instituteId || assignment.class?.instituteId;
+    if (req.requesterInstituteId && instituteId !== req.requesterInstituteId) {
       return res.status(403).json({ error: "You can only manage assignments under your own institute" });
     }
     await prisma.staffClassAssignment.delete({ where: { id: req.params.id } });
 
+    const groupLabel = assignment.academicGroup
+      ? `${assignment.academicGroup.department.name} · ${assignment.academicGroup.section} (${assignment.academicGroup.batch})`
+      : assignment.class?.name;
     logAudit({
       req, action: AUDIT_ACTIONS.STAFF_CLASS_ASSIGNMENT_CHANGED, actorId: req.user.id, actorName: req.user.name, actorRole: req.user.role,
-      instituteId: req.requesterInstituteId, details: { change: "unassigned", staffId: assignment.staffId, staffName: assignment.staff.name, classId: assignment.classId, className: assignment.class.name },
+      instituteId: req.requesterInstituteId, details: { change: "unassigned", staffId: assignment.staffId, staffName: assignment.staff.name, academicGroupId: assignment.academicGroupId, groupLabel },
     });
 
     res.json({ success: true });
@@ -519,19 +412,22 @@ router.get("/my-assignments", authenticate, requireRole("ADMIN", "STAFF"), attac
     const include = {
       staff: { select: { id: true, name: true } },
       class: { include: { institute: { select: { id: true, name: true } }, division: { include: { department: true } } } },
+      academicGroup: { include: { institute: { select: { id: true, name: true } }, department: true } },
     };
     let assignments;
     if (req.user.role === "STAFF") {
       assignments = await prisma.staffClassAssignment.findMany({
         where: { staffId: req.user.id },
         include,
-        orderBy: [{ class: { name: "asc" } }],
       });
     } else {
       const where = {};
-      if (req.requesterInstituteId) where.class = { instituteId: req.requesterInstituteId };
-      assignments = await prisma.staffClassAssignment.findMany({ where, include, orderBy: [{ class: { name: "asc" } }] });
+      if (req.requesterInstituteId) where.academicGroup = { instituteId: req.requesterInstituteId };
+      assignments = await prisma.staffClassAssignment.findMany({ where, include });
     }
+    // Sorted in JS (not the DB query) since the sort key differs by which relation is populated —
+    // academicGroup.section for post-migration rows, class.name for any pre-migration fallback.
+    assignments.sort((a, b) => (a.academicGroup?.section || a.class?.name || "").localeCompare(b.academicGroup?.section || b.class?.name || ""));
     res.json(assignments);
   } catch (err) {
     console.error(err);
@@ -743,7 +639,7 @@ router.get("/assignments/:assignmentId/plans/:planId/execute", authenticate, req
     const now = new Date();
     const [roster, eligibleTests] = await Promise.all([
       prisma.user.findMany({
-        where: { classId: assignment.classId, role: "STUDENT" },
+        where: rosterWhereForAssignment(assignment),
         select: { id: true, name: true, rollNumber: true },
         orderBy: { name: "asc" },
       }),
@@ -755,7 +651,7 @@ router.get("/assignments/:assignmentId/plans/:planId/execute", authenticate, req
               attendanceMandatory: true,
               startTime: { lte: now },
               endTime: { gte: now },
-              ...testEligibilityWhere(null, assignment.classId),
+              ...testEligibilityWhere(assignment.academicGroupId, assignment.classId),
             },
             select: { id: true, title: true },
             orderBy: { title: "asc" },
@@ -790,7 +686,7 @@ router.post("/assignments/:assignmentId/plans/:planId/attendance", authenticate,
           attendanceMandatory: true,
           startTime: { lte: now },
           endTime: { gte: now },
-          ...testEligibilityWhere(null, assignment.classId),
+          ...testEligibilityWhere(assignment.academicGroupId, assignment.classId),
         },
         select: { id: true },
       });
@@ -800,10 +696,10 @@ router.post("/assignments/:assignmentId/plans/:planId/attendance", authenticate,
       testId = req.body.testId;
     }
 
-    // Only accept records for students who actually belong to this class — defensive against a
+    // Only accept records for students who actually belong to this group — defensive against a
     // stale roster on the client (a student transferred out between load and save) rather than
     // failing the whole save over it.
-    const roster = await prisma.user.findMany({ where: { classId: assignment.classId, role: "STUDENT" }, select: { id: true } });
+    const roster = await prisma.user.findMany({ where: rosterWhereForAssignment(assignment), select: { id: true } });
     const rosterIds = new Set(roster.map((s) => s.id));
     const cleanRecords = records
       .filter((r) => r && rosterIds.has(r.studentId))
@@ -829,7 +725,7 @@ router.post("/assignments/:assignmentId/plans/:planId/attendance", authenticate,
       req, action: AUDIT_ACTIONS.ATTENDANCE_MARKED, actorId: req.user.id, actorName: req.user.name, actorRole: req.user.role,
       instituteId: req.requesterInstituteId,
       details: {
-        classId: assignment.classId, subject: plan.subject, lectureNumber: plan.lectureNumber,
+        academicGroupId: assignment.academicGroupId, subject: plan.subject, lectureNumber: plan.lectureNumber,
         presentCount: cleanRecords.filter((r) => r.status === "PRESENT").length,
         absentCount: cleanRecords.filter((r) => r.status === "ABSENT").length,
         lateCount: cleanRecords.filter((r) => r.status === "LATE").length,
@@ -858,7 +754,7 @@ router.post("/assignments/:assignmentId/plans/:planId/attendance", authenticate,
 router.get("/reports", authenticate, requireRole("ADMIN", "STAFF"), attachRequesterInstitute, async (req, res) => {
   try {
     const {
-      date, dateFrom, dateTo, academicYear, departmentId, divisionId, classId,
+      date, dateFrom, dateTo, academicYear, departmentId, section, academicGroupId,
       subject, semester, facultyId, lectureType, status, studentId,
     } = req.query;
 
@@ -872,7 +768,7 @@ router.get("/reports", authenticate, requireRole("ADMIN", "STAFF"), attachReques
       const own = await prisma.staffClassAssignment.findMany({ where: { staffId: req.user.id }, select: { id: true } });
       staffAssignedIds = own.map((a) => a.id);
     } else if (req.requesterInstituteId) {
-      assignmentWhere.class = { instituteId: req.requesterInstituteId };
+      assignmentWhere.academicGroup = { instituteId: req.requesterInstituteId };
     }
 
     if (facultyId) {
@@ -885,12 +781,12 @@ router.get("/reports", authenticate, requireRole("ADMIN", "STAFF"), attachReques
       }
     }
     if (semester) assignmentWhere.semester = semester;
-    if (classId || divisionId || departmentId || academicYear) {
-      assignmentWhere.class = { ...(assignmentWhere.class || {}) };
-      if (classId) assignmentWhere.class.id = classId;
-      if (divisionId) assignmentWhere.class.divisionId = divisionId;
-      if (departmentId) assignmentWhere.class.division = { departmentId };
-      if (academicYear) assignmentWhere.class.batchYear = academicYear; // "Batch" in the UI
+    if (academicGroupId || section || departmentId || academicYear) {
+      assignmentWhere.academicGroup = { ...(assignmentWhere.academicGroup || {}) };
+      if (academicGroupId) assignmentWhere.academicGroup.id = academicGroupId;
+      if (section) assignmentWhere.academicGroup.section = section;
+      if (departmentId) assignmentWhere.academicGroup.departmentId = departmentId;
+      if (academicYear) assignmentWhere.academicGroup.batch = academicYear; // "Batch" in the UI
     }
 
     if (staffAssignedIds) {
@@ -925,7 +821,11 @@ router.get("/reports", authenticate, requireRole("ADMIN", "STAFF"), attachReques
             plan: {
               include: {
                 assignment: {
-                  include: { staff: { select: { name: true } }, class: { include: { division: { include: { department: true } } } } },
+                  include: {
+                    staff: { select: { name: true } },
+                    class: { include: { division: { include: { department: true } } } },
+                    academicGroup: { include: { department: true } },
+                  },
                 },
               },
             },
@@ -939,12 +839,12 @@ router.get("/reports", authenticate, requireRole("ADMIN", "STAFF"), attachReques
     const rows = records.map((r) => {
       const plan = r.session.plan;
       const assignment = plan.assignment;
+      const group = assignment.academicGroup;
       return {
         Date: plan.scheduleDate.toISOString().slice(0, 10),
-        Batch: assignment.class.batchYear || "",
-        Department: assignment.class.division?.department?.name || "",
-        Division: assignment.class.division?.name || "",
-        Class: assignment.class.name,
+        Batch: group?.batch || assignment.class?.batchYear || "",
+        Department: group?.department?.name || assignment.class?.division?.department?.name || "",
+        Section: group?.section || assignment.class?.division?.name || "",
         Subject: plan.subject,
         Semester: assignment.semester,
         Faculty: assignment.staff.name,
@@ -996,7 +896,10 @@ router.get("/my-records", authenticate, requireRole("STUDENT"), async (req, res)
               plan: {
                 include: {
                   assignment: {
-                    include: { class: { include: { division: { include: { department: true } } } } },
+                    include: {
+                      class: { include: { division: { include: { department: true } } } },
+                      academicGroup: { include: { department: true } },
+                    },
                   },
                 },
               },
@@ -1013,6 +916,7 @@ router.get("/my-records", authenticate, requireRole("STUDENT"), async (req, res)
     const rows = records.map((r) => {
       const plan = r.session.plan;
       const assignment = plan.assignment;
+      const group = assignment.academicGroup;
       const subject = plan.subject;
       if (!bySubjectCounts[subject]) bySubjectCounts[subject] = { PRESENT: 0, ABSENT: 0, LATE: 0, LEAVE: 0 };
       bySubjectCounts[subject][r.status] = (bySubjectCounts[subject][r.status] || 0) + 1;
@@ -1020,9 +924,9 @@ router.get("/my-records", authenticate, requireRole("STUDENT"), async (req, res)
       return {
         date: plan.scheduleDate.toISOString().slice(0, 10),
         subject,
-        department: assignment.class.division?.department?.name || "",
-        division: assignment.class.division?.name || "",
-        class: assignment.class.name,
+        department: group?.department?.name || assignment.class?.division?.department?.name || "",
+        section: group?.section || assignment.class?.division?.name || "",
+        batch: group?.batch || assignment.class?.batchYear || "",
         lectureNumber: plan.lectureNumber,
         lectureType: plan.lectureType,
         test: r.session.test?.title || null,
