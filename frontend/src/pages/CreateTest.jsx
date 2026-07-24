@@ -5,7 +5,7 @@ import api from "../api";
 import Navbar from "../components/Navbar";
 import { SkeletonGrid } from "../components/Skeleton";
 import FolderPicker from "../components/FolderPicker";
-import ClassPicker from "../components/ClassPicker";
+import AcademicGroupPicker from "../components/AcademicGroupPicker";
 
 const TYPE_LABELS = { CODING: "Coding", MCQ: "Multiple Choice", TRUE_FALSE: "True/False", MULTISELECT: "Multiple Select" };
 
@@ -33,15 +33,15 @@ export default function CreateTest() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
   const [form, setForm] = useState(emptyForm);
-  const [classes, setClasses] = useState([]);
-  const [classIds, setClassIds] = useState([]);
+  const [academicGroups, setAcademicGroups] = useState([]);
+  const [academicGroupIds, setAcademicGroupIds] = useState([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
   const [showBankModal, setShowBankModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
 
   useEffect(() => {
-    api.get("/classes").then((res) => setClasses(res.data));
+    api.get("/academic-groups").then((res) => setAcademicGroups(res.data));
   }, []);
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function CreateTest() {
         randomMedium: t.difficultyDistribution?.medium ?? "",
         randomHard: t.difficultyDistribution?.hard ?? "",
       });
-      setClassIds((t.classes || []).map((c) => c.classId));
+      setAcademicGroupIds((t.academicGroups || []).map((g) => g.academicGroupId));
       const qIds = t.questions.map((tq) => tq.question.id);
       setSelected(qIds);
       setQuestions((prev) => {
@@ -130,7 +130,7 @@ export default function CreateTest() {
         startTime: new Date(form.startTime).toISOString(),
         endTime: new Date(form.endTime).toISOString(),
         questionIds: isRandomMode ? undefined : selected,
-        classIds,
+        academicGroupIds,
         randomQuestionsPerStudent: isRandomMode ? Number(form.randomQuestionsPerStudent) : undefined,
         difficultyDistribution: isRandomMode && distributionSum > 0
           ? { easy: Number(form.randomEasy || 0), medium: Number(form.randomMedium || 0), hard: Number(form.randomHard || 0) }
@@ -242,10 +242,10 @@ export default function CreateTest() {
             </label>
           </div>
 
-          <div style={{ marginTop: 20, fontWeight: 700, fontSize: 14 }}>Assign to classes</div>
-          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>Leave all unchecked to make this test visible to every class (default/legacy behavior).</p>
+          <div style={{ marginTop: 20, fontWeight: 700, fontSize: 14 }}>Assign to academic groups</div>
+          <p style={{ fontSize: 12, color: "var(--ink-dim)", marginTop: 2 }}>Leave all unchecked to make this test visible to every group (default).</p>
           <div style={{ marginTop: 8 }}>
-            <ClassPicker multi classes={classes} value={classIds} onChange={setClassIds} />
+            <AcademicGroupPicker multi groups={academicGroups} value={academicGroupIds} onChange={setAcademicGroupIds} />
           </div>
 
           <div style={{ marginTop: 24, fontWeight: 700, fontSize: 14 }}>Question Selection Mode</div>

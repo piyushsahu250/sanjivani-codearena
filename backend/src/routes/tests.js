@@ -116,7 +116,7 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
   try {
     const {
       title, code, description, instructions, durationMin, passingMarks, showResults,
-      startTime, endTime, questionIds, questionTimeLimits, classIds,
+      startTime, endTime, questionIds, questionTimeLimits, academicGroupIds,
       requireFullscreen, requireWebcam, requireMicrophone, attendanceMandatory,
       shuffleQuestions, shuffleOptions,
       questionSelectionMode, randomBankFolderId, randomQuestionsPerStudent, difficultyDistribution,
@@ -151,9 +151,9 @@ router.post("/", authenticate, requireRole("ADMIN", "STAFF"), async (req, res) =
         difficultyDistribution: mode === "RANDOM" ? difficultyDistribution || null : null,
         createdById: req.user.id,
         questions: { create: questionCreateData(resolvedQuestionIds, questionTimeLimits) },
-        classes: { create: (classIds || []).map((classId) => ({ classId })) },
+        academicGroups: { create: (academicGroupIds || []).map((academicGroupId) => ({ academicGroupId })) },
       },
-      include: { questions: true, classes: true },
+      include: { questions: true, classes: true, academicGroups: true },
     });
     res.json(test);
   } catch (err) {
@@ -170,7 +170,7 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
 
     const {
       title, code, description, instructions, durationMin, passingMarks, showResults,
-      startTime, endTime, questionIds, questionTimeLimits, classIds,
+      startTime, endTime, questionIds, questionTimeLimits, academicGroupIds,
       requireFullscreen, requireWebcam, requireMicrophone, attendanceMandatory,
       shuffleQuestions, shuffleOptions,
       questionSelectionMode, randomBankFolderId, randomQuestionsPerStudent, difficultyDistribution,
@@ -225,17 +225,17 @@ router.patch("/:id", authenticate, requireRole("ADMIN", "STAFF"), async (req, re
         });
       }
 
-      if (classIds) {
-        await tx.testClass.deleteMany({ where: { testId: existing.id } });
-        if (classIds.length > 0) {
-          await tx.testClass.createMany({ data: classIds.map((classId) => ({ testId: existing.id, classId })) });
+      if (academicGroupIds) {
+        await tx.testAcademicGroup.deleteMany({ where: { testId: existing.id } });
+        if (academicGroupIds.length > 0) {
+          await tx.testAcademicGroup.createMany({ data: academicGroupIds.map((academicGroupId) => ({ testId: existing.id, academicGroupId })) });
         }
       }
     });
 
     const test = await prisma.test.findUnique({
       where: { id: existing.id },
-      include: { questions: true, classes: true },
+      include: { questions: true, classes: true, academicGroups: true },
     });
     res.json(test);
   } catch (err) {
@@ -249,7 +249,7 @@ router.post("/:id/duplicate", authenticate, requireRole("ADMIN", "STAFF"), async
   try {
     const original = await prisma.test.findUnique({
       where: { id: req.params.id },
-      include: { questions: true, classes: true },
+      include: { questions: true, classes: true, academicGroups: true },
     });
     if (!original) return res.status(404).json({ error: "Test not found" });
 
@@ -269,11 +269,11 @@ router.post("/:id/duplicate", authenticate, requireRole("ADMIN", "STAFF"), async
         questions: {
           create: original.questions.map((q) => ({ questionId: q.questionId, order: q.order, timeLimitSec: q.timeLimitSec })),
         },
-        classes: {
-          create: original.classes.map((c) => ({ classId: c.classId })),
+        academicGroups: {
+          create: original.academicGroups.map((g) => ({ academicGroupId: g.academicGroupId })),
         },
       },
-      include: { questions: true, classes: true },
+      include: { questions: true, classes: true, academicGroups: true },
     });
     res.json(copy);
   } catch (err) {
@@ -326,14 +326,33 @@ router.get("/", authenticate, attachRequesterInstitute, async (req, res) => {
           },
         },
       },
-      academicGroups: { select: { academicGroupId: true } },
+      academicGroups: {
+        include: {
+          academicGroup: {
+            select: {
+              id: true,
+              batch: true,
+              section: true,
+              instituteId: true,
+              institute: { select: { id: true, name: true } },
+              department: { select: { id: true, name: true } },
+              _count: { select: { users: true } },
+            },
+          },
+        },
+      },
       createdBy: { select: { id: true, name: true } },
     },
   });
 
   if (isStaff) {
     const visible = req.requesterInstituteId
-      ? tests.filter((t) => t.classes.length === 0 || t.classes.some((tc) => tc.class.instituteId === req.requesterInstituteId))
+      ? tests.filter((t) => {
+          if (t.classes.length === 0 && t.academicGroups.length === 0) return true; // open to all
+          const classMatch = t.classes.some((tc) => tc.class.instituteId === req.requesterInstituteId);
+          const groupMatch = t.academicGroups.some((tg) => tg.academicGroup.instituteId === req.requesterInstituteId);
+          return classMatch || groupMatch;
+        })
       : tests;
     return res.json(visible);
   }

@@ -29,7 +29,7 @@ export default function StaffDashboard() {
 
   const [nameFilter, setNameFilter] = useState("");
   const [instituteFilter, setInstituteFilter] = useState("");
-  const [classFilter, setClassFilter] = useState("");
+  const [groupFilter, setGroupFilter] = useState("");
   const [batchFilter, setBatchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
@@ -61,30 +61,50 @@ export default function StaffDashboard() {
     refresh();
   }
 
-  // Distinct filter option lists, derived from whatever assignments actually exist
-  const { instituteOptions, classOptions, batchOptions } = useMemo(() => {
+  // Distinct filter option lists, derived from whatever assignments actually exist — academicGroups
+  // for tests created/edited since the Institute/Batch/Department/Section cutover, classes[] as a
+  // fallback for older tests that still only carry the legacy assignment.
+  const { instituteOptions, groupOptions, batchOptions } = useMemo(() => {
     const institutes = new Map();
-    const classes = new Map();
+    const groups = new Map();
     const batches = new Set();
     for (const t of tests) {
+      for (const tg of t.academicGroups) {
+        const g = tg.academicGroup;
+        if (g?.institute) institutes.set(g.institute.id, g.institute.name);
+        if (g) groups.set(g.id, `${g.department?.name || "—"} - ${g.section}`);
+        if (g?.batch) batches.add(g.batch);
+      }
       for (const tc of t.classes) {
         if (tc.class?.institute) institutes.set(tc.class.institute.id, tc.class.institute.name);
-        if (tc.class) classes.set(tc.class.id, tc.class.name);
+        if (tc.class) groups.set(tc.class.id, tc.class.name);
         if (tc.class?.batchYear) batches.add(tc.class.batchYear);
       }
     }
     return {
       instituteOptions: [...institutes.entries()],
-      classOptions: [...classes.entries()],
+      groupOptions: [...groups.entries()],
       batchOptions: [...batches].sort(),
     };
   }, [tests]);
 
   const filtered = tests.filter((t) => {
     if (nameFilter && !t.title.toLowerCase().includes(nameFilter.toLowerCase())) return false;
-    if (instituteFilter && !t.classes.some((tc) => tc.class?.institute?.id === instituteFilter)) return false;
-    if (classFilter && !t.classes.some((tc) => tc.class?.id === classFilter)) return false;
-    if (batchFilter && !t.classes.some((tc) => tc.class?.batchYear === batchFilter)) return false;
+    if (instituteFilter) {
+      const match = t.academicGroups.some((tg) => tg.academicGroup?.institute?.id === instituteFilter)
+        || t.classes.some((tc) => tc.class?.institute?.id === instituteFilter);
+      if (!match) return false;
+    }
+    if (groupFilter) {
+      const match = t.academicGroups.some((tg) => tg.academicGroup?.id === groupFilter)
+        || t.classes.some((tc) => tc.class?.id === groupFilter);
+      if (!match) return false;
+    }
+    if (batchFilter) {
+      const match = t.academicGroups.some((tg) => tg.academicGroup?.batch === batchFilter)
+        || t.classes.some((tc) => tc.class?.batchYear === batchFilter);
+      if (!match) return false;
+    }
     if (statusFilter && statusOf(t).label !== statusFilter) return false;
     return true;
   });
@@ -173,13 +193,13 @@ export default function StaffDashboard() {
             value={nameFilter}
             onChange={(e) => setNameFilter(e.target.value)}
           />
-          <select style={{ ...inputStyle, flex: "1 1 160px" }} value={instituteFilter} onChange={(e) => { setInstituteFilter(e.target.value); setClassFilter(""); }}>
+          <select style={{ ...inputStyle, flex: "1 1 160px" }} value={instituteFilter} onChange={(e) => { setInstituteFilter(e.target.value); setGroupFilter(""); }}>
             <option value="">All institutes</option>
             {instituteOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
-          <select style={{ ...inputStyle, flex: "1 1 140px" }} value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
-            <option value="">All classes</option>
-            {classOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          <select style={{ ...inputStyle, flex: "1 1 140px" }} value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
+            <option value="">All groups</option>
+            {groupOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
           <select style={{ ...inputStyle, flex: "1 1 120px" }} value={batchFilter} onChange={(e) => setBatchFilter(e.target.value)}>
             <option value="">All batches</option>
@@ -197,8 +217,10 @@ export default function StaffDashboard() {
         <div style={{ display: "grid", gap: 16, marginTop: 24 }}>
           {filtered.map((test) => {
             const status = statusOf(test);
-            const studentCount = test.classes.length > 0
-              ? test.classes.reduce((sum, tc) => sum + (tc.class?._count?.users || 0), 0)
+            const hasAssignment = test.academicGroups.length > 0 || test.classes.length > 0;
+            const studentCount = hasAssignment
+              ? test.academicGroups.reduce((sum, tg) => sum + (tg.academicGroup?._count?.users || 0), 0)
+                + test.classes.reduce((sum, tc) => sum + (tc.class?._count?.users || 0), 0)
               : null;
             return (
               <div key={test.id} className="card" style={{ padding: 24 }}>
@@ -217,15 +239,23 @@ export default function StaffDashboard() {
                     </p>
 
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-                      {test.classes.length === 0 ? (
-                        <span className="badge">All classes</span>
+                      {!hasAssignment ? (
+                        <span className="badge">All groups</span>
                       ) : (
-                        test.classes.map((tc) => (
-                          <span key={tc.id} className="badge">
-                            {tc.class?.institute?.name || "—"} · {tc.class?.name || "—"}
-                            {tc.class?.batchYear ? ` (${tc.class.batchYear})` : ""}
-                          </span>
-                        ))
+                        <>
+                          {test.academicGroups.map((tg) => (
+                            <span key={tg.id} className="badge">
+                              {tg.academicGroup?.institute?.name || "—"} · {tg.academicGroup?.department?.name || "—"} - {tg.academicGroup?.section}
+                              {tg.academicGroup?.batch ? ` (${tg.academicGroup.batch})` : ""}
+                            </span>
+                          ))}
+                          {test.classes.map((tc) => (
+                            <span key={tc.id} className="badge">
+                              {tc.class?.institute?.name || "—"} · {tc.class?.name || "—"}
+                              {tc.class?.batchYear ? ` (${tc.class.batchYear})` : ""}
+                            </span>
+                          ))}
+                        </>
                       )}
                     </div>
                   </div>

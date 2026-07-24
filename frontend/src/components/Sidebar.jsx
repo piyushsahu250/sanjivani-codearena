@@ -60,7 +60,7 @@ const MENU = {
     { group: "Main", items: [
       { label: "Dashboard", to: "/admin", icon: LayoutDashboard },
       { label: "Institutes", to: "/admin/institutes", icon: Building2 },
-      { label: "Classes", to: "/admin/classes", icon: School },
+      { label: "Academic Groups", to: "/admin/academic-groups", icon: School },
       { label: "Bulk Upload", to: "/admin/bulk-upload", icon: Upload },
       { label: "Students", to: "/admin/students", icon: Users },
     ] },

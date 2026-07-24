@@ -46,3 +46,16 @@ export function groupClassesByBatch(classes) {
   const batches = Object.keys(byBatch).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   return { batches, byBatch, legacy };
 }
+
+// Same shape as groupClassesByBatch, for a flat AcademicGroup list — every group always has all 4
+// keys by construction, so there's no "legacy" bucket to carry.
+export function groupAcademicGroupsByBatch(groups) {
+  const byBatch = {};
+  for (const g of groups) {
+    const batch = g.batch || "Unknown";
+    if (!byBatch[batch]) byBatch[batch] = [];
+    byBatch[batch].push(g);
+  }
+  const batches = Object.keys(byBatch).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  return { batches, byBatch };
+}
