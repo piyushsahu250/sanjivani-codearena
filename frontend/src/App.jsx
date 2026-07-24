@@ -8,6 +8,7 @@ import { ConfirmProvider } from "./context/ConfirmContext";
 import { SidebarUIProvider } from "./context/SidebarContext";
 import LoadingScreen from "./components/LoadingScreen";
 import Sidebar from "./components/Sidebar";
+import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import StudentDashboard from "./pages/StudentDashboard";
@@ -105,7 +106,10 @@ function Protected({ roles, children, noChrome = false }) {
 
 function Home() {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  // Signed-out visitors get the public marketing page; a signed-in user landing on "/" (e.g. via
+  // the browser back button, or the catch-all 404 route below) still gets bounced straight to
+  // their role's dashboard, same as before.
+  if (!user) return <Landing />;
   if (user.mustChangePassword) return <Navigate to="/change-password" replace />;
   return <Navigate to={HOME_BY_ROLE[user.role] || "/login"} replace />;
 }
