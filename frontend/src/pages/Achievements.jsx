@@ -6,14 +6,14 @@ import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 
 const CATEGORY_LABEL = { LEARNING: "Learning", CODING: "Coding", ASSESSMENT: "Assessment", CONSISTENCY: "Consistency", SPECIAL: "Special" };
-const SCOPES = [{ id: "class", label: "Class" }, { id: "department", label: "Department" }, { id: "institute", label: "Institute" }, { id: "overall", label: "Overall" }];
+const SCOPES = [{ id: "group", label: "Group" }, { id: "department", label: "Department" }, { id: "institute", label: "Institute" }, { id: "overall", label: "Overall" }];
 const METRICS = [{ id: "xp", label: "XP" }, { id: "problems", label: "Problems Solved" }, { id: "learning", label: "Learning Progress" }, { id: "streak", label: "Streak" }];
 
 export default function Achievements() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
-  const [scope, setScope] = useState("class");
+  const [scope, setScope] = useState("group");
   const [metric, setMetric] = useState("xp");
   const [leaderboard, setLeaderboard] = useState(null);
   const [lbError, setLbError] = useState("");

@@ -3,7 +3,7 @@ const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { computeStudentPerformance } = require("../utils/studentPerformance");
 const { getModuleLockMap } = require("../utils/learningLock");
-const { computeClassRank } = require("../utils/classRank");
+const { computeGroupRank } = require("../utils/groupRank");
 const { testEligibilityWhere } = require("../utils/testEligibility");
 
 const router = express.Router();
@@ -137,7 +137,7 @@ router.get("/student", authenticate, requireRole("STUDENT"), async (req, res) =>
 
     const [perf, rank, streak, certificatesEarned, recentActivity, notifications, javaCourse] = await Promise.all([
       computeStudentPerformance(student.id, { maskUnpublished: true }),
-      computeClassRank(student.id, student.classId),
+      computeGroupRank(student.id, student.academicGroupId),
       getCodingStreak(student.id),
       prisma.certificate.count({ where: { studentId: student.id } }),
       getRecentActivity(student.id),

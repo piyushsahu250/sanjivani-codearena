@@ -6,11 +6,11 @@ import Navbar from "../components/Navbar";
 import ChalkUnderline from "../components/ChalkUnderline";
 import "./interviewPrep.css";
 
-const SCOPES = [{ id: "class", label: "Class" }, { id: "institute", label: "Institute" }, { id: "overall", label: "Overall" }];
+const SCOPES = [{ id: "group", label: "Group" }, { id: "institute", label: "Institute" }, { id: "overall", label: "Overall" }];
 
 export default function InterviewLeaderboard() {
   const { user } = useAuth();
-  const [scope, setScope] = useState("class");
+  const [scope, setScope] = useState("group");
   const [rows, setRows] = useState(null);
 
   useEffect(() => {

@@ -3,7 +3,7 @@ const prisma = require("../prisma");
 const { authenticate, requireRole } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
 const { computeLevel, getTotalXp } = require("../utils/gamification");
-const { computeClassRank } = require("../utils/classRank");
+const { computeGroupRank } = require("../utils/groupRank");
 const { cached, invalidate } = require("../utils/cache");
 
 const router = express.Router();
@@ -34,7 +34,7 @@ router.get("/me", authenticate, requireRole("STUDENT"), async (req, res) => {
       prisma.studentBadge.findMany({ where: { studentId }, include: { badge: true }, orderBy: { earnedAt: "desc" } }),
       prisma.badge.findMany({ where: { isActive: true }, orderBy: [{ category: "asc" }, { name: "asc" }] }),
       prisma.xpEvent.findMany({ where: { studentId }, orderBy: { createdAt: "desc" }, take: 50 }),
-      computeClassRank(studentId, student.classId),
+      computeGroupRank(studentId, student.academicGroupId),
     ]);
     const earnedIds = new Set(earnedBadges.map((b) => b.badgeId));
 
@@ -54,11 +54,13 @@ router.get("/me", authenticate, requireRole("STUDENT"), async (req, res) => {
   }
 });
 
+// "class" kept as a deprecated alias for "group" for one release, so a stale cached frontend
+// request doesn't 400 — both resolve identically, off academicGroupId.
 async function resolveScopeStudentIds(scope, req, requester) {
-  if (scope === "class") {
-    const classId = req.user.role === "STUDENT" ? requester.classId : req.query.classId;
-    if (!classId) return { error: "classId is required for this scope" };
-    return { ids: (await prisma.user.findMany({ where: { classId, role: "STUDENT" }, select: { id: true } })).map((u) => u.id) };
+  if (scope === "group" || scope === "class") {
+    const academicGroupId = req.user.role === "STUDENT" ? requester.academicGroupId : (req.query.academicGroupId || req.query.classId);
+    if (!academicGroupId) return { error: "academicGroupId is required for this scope" };
+    return { ids: (await prisma.user.findMany({ where: { academicGroupId, role: "STUDENT" }, select: { id: true } })).map((u) => u.id) };
   }
   if (scope === "department") {
     const department = req.user.role === "STUDENT" ? requester.department : req.query.department;
@@ -144,7 +146,7 @@ router.get("/leaderboard", authenticate, async (req, res) => {
   try {
     const scope = req.query.scope || "overall";
     const metric = req.query.metric || "xp";
-    if (!["class", "department", "institute", "overall"].includes(scope)) return res.status(400).json({ error: "Invalid scope" });
+    if (!["group", "class", "department", "institute", "overall"].includes(scope)) return res.status(400).json({ error: "Invalid scope" });
     if (!["xp", "problems", "learning", "streak"].includes(metric)) return res.status(400).json({ error: "Invalid metric" });
 
     const requester = await prisma.user.findUnique({ where: { id: req.user.id } });
@@ -156,7 +158,7 @@ router.get("/leaderboard", authenticate, async (req, res) => {
     // Short TTL — a leaderboard doesn't need to reflect a submission from 30 seconds ago, and
     // this is the single most expensive read on the platform to recompute from scratch (multiple
     // groupBy passes even after the top-100 restructuring above).
-    const cacheKey = `leaderboard:${scope}:${metric}:${req.query.classId || ""}:${req.query.department || ""}:${req.query.instituteId || requester.instituteId || ""}`;
+    const cacheKey = `leaderboard:${scope}:${metric}:${req.query.academicGroupId || req.query.classId || ""}:${req.query.department || ""}:${req.query.instituteId || requester.instituteId || ""}`;
     const rows = await cached(cacheKey, 30 * 1000, async () => {
       const topIds = await resolveTopIdsForMetric(metric, ids);
       if (topIds.length === 0) return [];

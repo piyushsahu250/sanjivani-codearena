@@ -1,14 +1,15 @@
 const prisma = require("../prisma");
 
-// Ranks a student against classmates by overall test percentage (score summed across every
-// completed attempt, divided by the max possible across those same tests). Students with no
-// completed attempts rank last (sentinel -1), tied among themselves. Returns nulls if the
-// student has no class (nothing meaningful to rank against). Shared by routes/dashboard.js
-// (rank card) and utils/gamification.js (TOP_10_CLASS badge).
-async function computeClassRank(studentId, classId) {
-  if (!classId) return { rank: null, totalStudents: null };
-  const classmates = await prisma.user.findMany({ where: { classId, role: "STUDENT" }, select: { id: true } });
-  const ids = classmates.map((c) => c.id);
+// Ranks a student against groupmates (same academic group: Institute+Batch+Department+Section) by
+// overall test percentage (score summed across every completed attempt, divided by the max
+// possible across those same tests). Students with no completed attempts rank last (sentinel -1),
+// tied among themselves. Returns nulls if the student has no academic group (nothing meaningful to
+// rank against). Shared by routes/dashboard.js (rank card) and utils/gamification.js (TOP_10_CLASS
+// badge — code string kept as-is, see BADGE_DEFS comment, only what it ranks against changed).
+async function computeGroupRank(studentId, academicGroupId) {
+  if (!academicGroupId) return { rank: null, totalStudents: null };
+  const groupmates = await prisma.user.findMany({ where: { academicGroupId, role: "STUDENT" }, select: { id: true } });
+  const ids = groupmates.map((c) => c.id);
   if (ids.length === 0) return { rank: null, totalStudents: null };
 
   const attempts = await prisma.testAttempt.findMany({
@@ -42,4 +43,4 @@ async function computeClassRank(studentId, classId) {
   return { rank: position || null, totalStudents: ids.length };
 }
 
-module.exports = { computeClassRank };
+module.exports = { computeGroupRank };

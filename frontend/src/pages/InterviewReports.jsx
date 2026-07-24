@@ -197,9 +197,9 @@ export default function InterviewReports() {
                 </LineChart>
               </ResponsiveContainer>
             </ChartCard>
-            <ChartCard title="Average Score by Class">
+            <ChartCard title="Average Score by Group">
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={analytics.byClass}>
+                <BarChart data={analytics.byGroup}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="key" tick={{ fontSize: 10 }} />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />

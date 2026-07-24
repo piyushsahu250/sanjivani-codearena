@@ -607,14 +607,16 @@ router.get("/sessions/:id/report/pdf", authenticate, requireRole("STUDENT"), asy
 router.get("/leaderboard", authenticate, requireRole("STUDENT"), async (req, res) => {
   try {
     const student = await prisma.user.findUnique({ where: { id: req.user.id } });
-    const scope = req.query.scope || "class";
+    const scope = req.query.scope || "group";
     let studentIds;
     if (scope === "institute" && student.instituteId) {
       studentIds = (await prisma.user.findMany({ where: { instituteId: student.instituteId, role: "STUDENT" }, select: { id: true } })).map((u) => u.id);
     } else if (scope === "overall") {
       studentIds = (await prisma.user.findMany({ where: { role: "STUDENT" }, select: { id: true } })).map((u) => u.id);
-    } else if (student.classId) {
-      studentIds = (await prisma.user.findMany({ where: { classId: student.classId, role: "STUDENT" }, select: { id: true } })).map((u) => u.id);
+    } else if (student.academicGroupId) {
+      // "group" (and the deprecated "class" alias) both land here — scoped to the student's own
+      // academic group.
+      studentIds = (await prisma.user.findMany({ where: { academicGroupId: student.academicGroupId, role: "STUDENT" }, select: { id: true } })).map((u) => u.id);
     } else {
       return res.json([]);
     }
@@ -1160,6 +1162,9 @@ router.get("/admin/sessions/:sessionId/violations", authenticate, requireRole("A
 function buildAdminSessionWhere(req) {
   const studentWhere = { role: "STUDENT" };
   if (req.requesterInstituteId) studentWhere.instituteId = req.requesterInstituteId;
+  if (req.query.academicGroupId) studentWhere.academicGroupId = req.query.academicGroupId;
+  // Legacy filter — the admin filter UI here still uses the old class picker (not yet rebuilt as
+  // an academic-group picker, see Phase E), so both continue to work until that rebuild ships.
   if (req.query.classId) studentWhere.classId = req.query.classId;
   if (req.query.batchYear) studentWhere.batchYear = req.query.batchYear;
   if (req.query.department) studentWhere.department = req.query.department;
@@ -1276,7 +1281,7 @@ router.get("/admin/analytics", authenticate, requireRole("ADMIN", "STAFF"), atta
       const sessions = await prisma.interviewSession.findMany({
         where,
         include: {
-          student: { select: { batchYear: true, department: true, class: { select: { name: true } } } },
+          student: { select: { batchYear: true, department: true, academicGroup: { select: { batch: true, section: true, department: { select: { name: true } } } } } },
           report: { select: { overallScore: true } },
         },
       });
@@ -1308,8 +1313,11 @@ router.get("/admin/analytics", authenticate, requireRole("ADMIN", "STAFF"), atta
       }
 
       const companyWise = groupAvg((s) => s.config?.company || null);
-      const byClass = groupAvg((s) => s.student.class?.name || null);
-      const byBatch = groupAvg((s) => s.student.batchYear || null);
+      const byGroup = groupAvg((s) => {
+        const g = s.student.academicGroup;
+        return g ? `${g.department?.name || "—"} - ${g.section}` : null;
+      });
+      const byBatch = groupAvg((s) => s.student.academicGroup?.batch || s.student.batchYear || null);
       const byType = groupAvg((s) => sessionTypeLabel(s));
 
       const weekly = new Map(), monthly = new Map();
@@ -1338,7 +1346,7 @@ router.get("/admin/analytics", authenticate, requireRole("ADMIN", "STAFF"), atta
 
       return {
         totalInterviews, completedCount, averageScore, highestScore, lowestScore, thisWeekCount, thisMonthCount,
-        companyWise, byClass, byBatch, byType,
+        companyWise, byGroup, byBatch, byType,
         weeklyTrend: toSeries(weekly), monthlyTrend: toSeries(monthly),
         placementReadiness,
         defaultDateRangeApplied,

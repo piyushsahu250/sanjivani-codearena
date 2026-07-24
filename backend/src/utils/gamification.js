@@ -1,7 +1,7 @@
 const prisma = require("../prisma");
 const { computeStudentPerformance } = require("./studentPerformance");
 const { getModuleLockMap } = require("./learningLock");
-const { computeClassRank } = require("./classRank");
+const { computeGroupRank } = require("./groupRank");
 
 // Gamification starts counting from when this system was deployed — it does not retroactively
 // backfill XP/badges for activity that already happened before these tables existed.
@@ -37,7 +37,10 @@ const BADGE_DEFS = [
   { code: "EARLY_LEARNER", name: "Early Learner", description: "Complete a lesson within 24 hours of joining.", icon: "🌱", category: "SPECIAL" },
   { code: "FAST_CODER", name: "Fast Coder", description: "Solve 5 coding problems in a single day.", icon: "⚡", category: "SPECIAL" },
   { code: "TOP_PERFORMER", name: "Top Performer", description: "Maintain an average score of 85% or higher.", icon: "🏅", category: "SPECIAL" },
-  { code: "TOP_10_CLASS", name: "Top 10 in Class", description: "Rank in the top 10 of your class.", icon: "🏆", category: "SPECIAL" },
+  // code intentionally left as "TOP_10_CLASS" — it's persisted, FK-referenced data (Badge.code,
+  // seeded via upsert, referenced by StudentBadge); renaming it would fork a duplicate badge and
+  // strand every already-earned one. Only the display name/description changed.
+  { code: "TOP_10_CLASS", name: "Top 10 in Group", description: "Rank in the top 10 of your academic group.", icon: "🏆", category: "SPECIAL" },
   { code: "BUG_HUNTER", name: "Bug Hunter", description: "Solve a problem after at least one failed attempt.", icon: "🐛", category: "SPECIAL" },
 ];
 
@@ -191,7 +194,7 @@ async function gatherStudentStats(studentId) {
     new Date(firstCompletedLesson.completedAt) - new Date(student.createdAt) <= 24 * 3600 * 1000
   );
 
-  const { rank } = await computeClassRank(studentId, student.classId);
+  const { rank } = await computeGroupRank(studentId, student.academicGroupId);
 
   return {
     modulesCompleted, totalModules, codingSolved, fastCoder, hasDebuggedThroughFailure,

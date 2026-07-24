@@ -21,12 +21,16 @@ const ENTITIES = {
       where: { role: "STUDENT", ...(instituteId ? { instituteId } : {}) },
       take: MAX_ROWS,
       orderBy: { createdAt: "desc" },
-      include: { institute: { select: { name: true } }, class: { select: { name: true } } },
+      include: {
+        institute: { select: { name: true } },
+        academicGroup: { select: { batch: true, section: true, department: { select: { name: true } } } },
+      },
     });
     return rows.map((u) => ({
       Name: u.name, Email: u.email, "Roll Number": u.rollNumber || "", "Registration Number": u.registrationNumber || "",
-      Department: u.department || "", Mobile: u.mobile || "", Program: u.program || "", "Batch Year": u.batchYear || "",
-      Section: u.section || "", Class: u.class?.name || "", Institute: u.institute?.name || "",
+      Department: u.academicGroup?.department?.name || u.department || "", Mobile: u.mobile || "", Program: u.program || "",
+      "Batch Year": u.academicGroup?.batch || u.batchYear || "", Section: u.academicGroup?.section || u.section || "",
+      Institute: u.institute?.name || "",
       Active: u.isActive ? "Yes" : "No", "Created At": u.createdAt.toISOString(),
     }));
   },
