@@ -1209,9 +1209,12 @@ const STUDENT_JOIN_SELECT = {
   id: true, name: true, email: true, rollNumber: true, registrationNumber: true, department: true, batchYear: true, section: true,
   institute: { select: { name: true } },
   class: { select: { name: true, batchYear: true } },
+  academicGroup: { select: { batch: true, section: true, department: { select: { name: true } } } },
 };
 
 function toReportRow(s) {
+  const g = s.student.academicGroup;
+  const groupLabel = g ? `${g.department?.name || "—"} - ${g.section}` : s.student.class?.name || null;
   return {
     sessionId: s.id,
     studentId: s.student.id,
@@ -1220,8 +1223,8 @@ function toReportRow(s) {
     rollNumber: s.student.rollNumber,
     registrationNumber: s.student.registrationNumber,
     institute: s.student.institute?.name || null,
-    className: s.student.class?.name || null,
-    batchYear: s.student.batchYear || s.student.class?.batchYear || null,
+    groupLabel,
+    batchYear: g?.batch || s.student.batchYear || s.student.class?.batchYear || null,
     department: s.student.department,
     type: sessionTypeLabel(s),
     company: s.config?.company || null,
@@ -1442,7 +1445,7 @@ router.get("/admin/sessions/export", authenticate, requireRole("ADMIN", "STAFF")
       const r = toReportRow(s);
       return {
         "Student Name": r.studentName, "Roll Number": r.rollNumber || "", "Registration Number": r.registrationNumber || "",
-        "Institute": r.institute || "", "Class": r.className || "", "Batch": r.batchYear || "", "Department": r.department || "",
+        "Institute": r.institute || "", "Academic Group": r.groupLabel || "", "Batch": r.batchYear || "", "Department": r.department || "",
         "Interview Type": r.type, "Company": r.company || "", "Date": r.date ? new Date(r.date).toLocaleString() : "",
         "Score (%)": r.score ?? "", "Status": r.status,
       };

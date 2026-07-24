@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../prisma");
 const { authenticate } = require("../middleware/auth");
 const { attachRequesterInstitute } = require("../middleware/institute");
+const { testEligibilityWhere } = require("../utils/testEligibility");
 
 const router = express.Router();
 
@@ -32,8 +33,9 @@ router.get("/", authenticate, attachRequesterInstitute, async (req, res) => {
       });
       results.push(...lessons.map((l) => ({ type: "Lesson", label: `${l.title} (${l.module.course.name})`, url: `/learning/${l.module.course.slug}/lesson/${l.id}` })));
 
+      const student = await prisma.user.findUnique({ where: { id: req.user.id }, select: { academicGroupId: true, classId: true } });
       const tests = await prisma.test.findMany({
-        where: { title: insensitive(q), classes: { some: { class: { users: { some: { id: req.user.id } } } } } },
+        where: { title: insensitive(q), ...testEligibilityWhere(student?.academicGroupId, student?.classId) },
         take: LIMIT,
       });
       results.push(...tests.map((t) => ({ type: "Test", label: t.title, url: `/dashboard` })));
@@ -47,8 +49,14 @@ router.get("/", authenticate, attachRequesterInstitute, async (req, res) => {
       const basePath = req.user.role === "ADMIN" ? "/admin" : "/staff";
       results.push(...students.map((s) => ({ type: "Student", label: `${s.name} (${s.rollNumber || s.email})`, url: `${basePath}/students/${s.id}` })));
 
-      const classes = await prisma.class.findMany({ where: { name: insensitive(q), ...instituteFilter }, take: LIMIT });
-      results.push(...classes.map((c) => ({ type: "Class", label: `${c.name}${c.batchYear ? ` (${c.batchYear})` : ""}`, url: req.user.role === "ADMIN" ? `/admin/classes/${c.id}/students` : "/staff/students" })));
+      if (req.user.role === "ADMIN") {
+        const groups = await prisma.academicGroup.findMany({
+          where: { ...instituteFilter, OR: [{ batch: insensitive(q) }, { section: insensitive(q) }, { department: { name: insensitive(q) } }] },
+          include: { department: true },
+          take: LIMIT,
+        });
+        results.push(...groups.map((g) => ({ type: "Academic Group", label: `${g.department.name} · ${g.section} (${g.batch})`, url: "/admin/academic-groups" })));
+      }
 
       const tests = await prisma.test.findMany({ where: { title: insensitive(q), createdBy: { ...instituteFilter } }, take: LIMIT });
       results.push(...tests.map((t) => ({ type: "Test", label: t.title, url: `/staff/tests/${t.id}/results` })));

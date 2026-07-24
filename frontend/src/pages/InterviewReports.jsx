@@ -22,13 +22,13 @@ const TYPE_OPTIONS = [
   { value: "BEHAVIORAL", label: "Behavioral" },
   { value: "MANAGERIAL", label: "Managerial" },
 ];
-const EMPTY_FILTERS = { search: "", classId: "", batchYear: "", department: "", company: "", type: "", status: "", dateFrom: "", dateTo: "", scoreMin: "", scoreMax: "" };
+const EMPTY_FILTERS = { search: "", academicGroupId: "", batchYear: "", department: "", company: "", type: "", status: "", dateFrom: "", dateTo: "", scoreMin: "", scoreMax: "" };
 
 export default function InterviewReports() {
   const { user } = useAuth();
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [applied, setApplied] = useState(EMPTY_FILTERS);
-  const [classes, setClasses] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [rows, setRows] = useState(null);
@@ -37,7 +37,7 @@ export default function InterviewReports() {
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    api.get("/classes").then((res) => setClasses(res.data)).catch(() => {});
+    api.get("/academic-groups").then((res) => setGroups(res.data)).catch(() => {});
     api.get("/interview/companies").then((res) => setCompanies(res.data)).catch(() => {});
   }, []);
 
@@ -138,10 +138,10 @@ export default function InterviewReports() {
         <form onSubmit={applyFilters} className="card" style={{ padding: 16, marginTop: 24 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 10 }}>
             <div><label style={labelStyle}>Search (name / roll)</label><input style={inputStyle} value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} /></div>
-            <div><label style={labelStyle}>Class</label>
-              <select style={inputStyle} value={filters.classId} onChange={(e) => setFilters({ ...filters, classId: e.target.value })}>
-                <option value="">All classes</option>
-                {classes.map((c) => <option key={c.id} value={c.id}>{c.name}{c.batchYear ? ` (${c.batchYear})` : ""}</option>)}
+            <div><label style={labelStyle}>Academic Group</label>
+              <select style={inputStyle} value={filters.academicGroupId} onChange={(e) => setFilters({ ...filters, academicGroupId: e.target.value })}>
+                <option value="">All groups</option>
+                {groups.map((g) => <option key={g.id} value={g.id}>{g.department.name} - {g.section} ({g.batch})</option>)}
               </select>
             </div>
             <div><label style={labelStyle}>Batch Year</label><input style={inputStyle} value={filters.batchYear} onChange={(e) => setFilters({ ...filters, batchYear: e.target.value })} placeholder="e.g. 2025" /></div>
@@ -252,7 +252,7 @@ export default function InterviewReports() {
               <tr style={{ textAlign: "left", fontSize: 12, opacity: 0.7 }}>
                 <th style={{ padding: 10 }}>Student</th><th style={{ padding: 10 }}>Roll No.</th>
                 {user?.role === "ADMIN" && <th style={{ padding: 10 }}>Institute</th>}
-                <th style={{ padding: 10 }}>Class</th><th style={{ padding: 10 }}>Batch</th>
+                <th style={{ padding: 10 }}>Group</th><th style={{ padding: 10 }}>Batch</th>
                 <th style={{ padding: 10 }}>Type</th><th style={{ padding: 10 }}>Company</th>
                 <th style={{ padding: 10 }}>Date</th><th style={{ padding: 10 }}>Score</th>
                 <th style={{ padding: 10 }}>Status</th><th style={{ padding: 10 }}></th>
@@ -264,7 +264,7 @@ export default function InterviewReports() {
                   <td style={{ padding: 10, fontWeight: 600 }}>{r.studentName}</td>
                   <td className="mono" style={{ padding: 10 }}>{r.rollNumber || "—"}</td>
                   {user?.role === "ADMIN" && <td style={{ padding: 10 }}>{r.institute || "—"}</td>}
-                  <td style={{ padding: 10 }}>{r.className || "—"}</td>
+                  <td style={{ padding: 10 }}>{r.groupLabel || "—"}</td>
                   <td style={{ padding: 10 }}>{r.batchYear || "—"}</td>
                   <td style={{ padding: 10 }}>{r.type}</td>
                   <td style={{ padding: 10 }}>{r.company || "—"}</td>

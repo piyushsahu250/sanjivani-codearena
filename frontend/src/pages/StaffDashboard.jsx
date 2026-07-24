@@ -21,7 +21,7 @@ function statusOf(test) {
 export default function StaffDashboard() {
   const { user } = useAuth();
   const [tests, setTests] = useState([]);
-  const [classes, setClasses] = useState(null);
+  const [groups, setGroups] = useState(null);
   const [gamiStats, setGamiStats] = useState(null);
   const [interviewStats, setInterviewStats] = useState(null);
   const [resumeStats, setResumeStats] = useState(null);
@@ -35,7 +35,7 @@ export default function StaffDashboard() {
 
   useEffect(() => {
     refresh();
-    api.get("/classes").then((res) => setClasses(res.data)).catch(() => setClasses([]));
+    api.get("/academic-groups").then((res) => setGroups(res.data)).catch(() => setGroups([]));
     api.get("/gamification/admin/stats").then((res) => setGamiStats(res.data)).catch(() => setGamiStats(null));
     api.get("/interview/admin/stats").then((res) => setInterviewStats(res.data)).catch(() => setInterviewStats(null));
     api.get("/resume/admin/stats").then((res) => setResumeStats(res.data)).catch(() => setResumeStats(null));
@@ -131,12 +131,12 @@ export default function StaffDashboard() {
         </div>
 
         {/* Summary cards */}
-        {classes === null ? (
+        {groups === null ? (
           <div style={{ marginTop: 24 }}><SkeletonGrid count={7} minWidth={150} /></div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 24 }}>
-            <StatCard icon={School} label="Total Classes" value={classes.length} />
-            <StatCard icon={GraduationCap} label="Total Students" value={classes.reduce((s, c) => s + (c._count?.users || 0), 0)} />
+            <StatCard icon={School} label="Academic Groups" value={groups.length} />
+            <StatCard icon={GraduationCap} label="Total Students" value={groups.reduce((s, g) => s + (g._count?.users || 0), 0)} />
             <StatCard icon={ClipboardList} label="Active Tests" value={tests.filter((t) => statusOf(t).label === "Active").length} />
             <StatCard icon={BarChart3} label="Total Tests" value={tests.length} />
             <StatCard icon={BookOpen} label="Learning Courses" value={courseCount ?? "—"} />

@@ -217,10 +217,10 @@ export default function StudentPerformance({ basePath }) {
           <Field label="Roll Number" value={student.rollNumber} mono />
           <Field label="Registration Number" value={student.registrationNumber} mono />
           <Field label="Institute" value={student.institute?.name} />
-          <Field label="Department / Class" value={student.class?.name || student.department} />
+          <Field label="Department" value={student.academicGroup?.department?.name || student.department} />
           <Field label="Course" value={student.program} />
-          <Field label="Section" value={student.section} />
-          <Field label="Batch Year" value={student.class?.batchYear || student.batchYear} />
+          <Field label="Section" value={student.academicGroup?.section || student.section} />
+          <Field label="Batch Year" value={student.academicGroup?.batch || student.batchYear} />
           <Field label="Official Email" value={student.email} mono />
           <Field label="Mobile" value={student.mobile} mono />
           <Field label="Status" value={student.isActive === false ? "Inactive" : "Active"} />
@@ -392,7 +392,6 @@ function EditProfileModal({ studentId, onClose, onSaved }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [institutes, setInstitutes] = useState([]);
-  const [classes, setClasses] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -402,7 +401,7 @@ function EditProfileModal({ studentId, onClose, onSaved }) {
       setForm({
         name: u.name || "", email: u.email || "", mobile: u.mobile || "", gender: u.gender || "",
         rollNumber: u.rollNumber || "", registrationNumber: u.registrationNumber || "",
-        instituteId: u.institute?.id || "", classId: u.class?.id || "",
+        instituteId: u.institute?.id || "",
         department: u.department || "", program: u.program || "",
         batchYear: u.batchYear || "", section: u.section || "",
         isActive: u.isActive !== false, profilePhotoUrl: u.profilePhotoUrl || "",
@@ -411,13 +410,8 @@ function EditProfileModal({ studentId, onClose, onSaved }) {
     api.get("/institutes").then((res) => setInstitutes(res.data));
   }, [studentId]);
 
-  useEffect(() => {
-    if (!form?.instituteId) { setClasses([]); return; }
-    api.get("/classes", { params: { instituteId: form.instituteId } }).then((res) => setClasses(res.data));
-  }, [form?.instituteId]);
-
   function updateField(field) {
-    return (e) => setForm({ ...form, [field]: e.target.value, ...(field === "instituteId" ? { classId: "" } : {}) });
+    return (e) => setForm({ ...form, [field]: e.target.value });
   }
 
   function handlePhotoChange(e) {
@@ -493,13 +487,6 @@ function EditProfileModal({ studentId, onClose, onSaved }) {
                 <select style={inputStyle} value={form.instituteId} onChange={updateField("instituteId")}>
                   <option value="">— None —</option>
                   {institutes.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Class</label>
-                <select style={inputStyle} value={form.classId} onChange={updateField("classId")} disabled={!form.instituteId}>
-                  <option value="">— None —</option>
-                  {classes.map((c) => <option key={c.id} value={c.id}>{c.name}{c.batchYear ? ` (${c.batchYear})` : ""}</option>)}
                 </select>
               </div>
               <div>
